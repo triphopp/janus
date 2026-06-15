@@ -1,0 +1,2 @@
+- [Quant Pipeline Summary](project_summary.md) — Architecture, iron rules, key decisions for agents
+- [File Index](INDEX.md) — Complete file-by-file index of quant_pipeline/ for navigation

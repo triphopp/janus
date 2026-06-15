@@ -1,0 +1,1831 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quant Pipeline Framework — Implementation Blueprint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FCFCFA; --panel:#FFFFFF; --ink:#191B1D; --ink-soft:#4A4D50; --ink-faint:#7C7F82;
+  --line:#E6E5DF; --line-soft:#F0EFEA;
+  --teal-50:#E1F5EE; --teal-100:#9FE1CB; --teal-600:#0F6E56; --teal-700:#0B5946; --teal-800:#085041;
+  --purple-50:#EEEDFE; --purple-100:#CECBF6; --purple-600:#534AB7; --purple-800:#3C3489;
+  --coral-50:#FAECE7; --coral-100:#F5C4B3; --coral-600:#993C1D; --coral-800:#712B13;
+  --amber-50:#FAEEDA; --amber-100:#FAC775; --amber-600:#854F0B; --amber-800:#633806;
+  --red-50:#FCEBEB; --red-100:#F7C1C1; --red-600:#A32D2D; --red-800:#791F1F;
+  --blue-50:#E6F1FB; --blue-100:#B5D4F4; --blue-600:#185FA5; --blue-800:#0C447C;
+  --gray-50:#F1EFE8; --gray-100:#D3D1C7; --gray-600:#5F5E5A;
+  --r:10px; --r-sm:6px;
+  --disp:"Space Grotesk","Noto Sans Thai",sans-serif;
+  --body:"Inter","Noto Sans Thai",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.shell{display:grid;grid-template-columns:266px minmax(0,1fr);max-width:1280px;margin:0 auto;gap:0}
+
+/* ===== sidebar ===== */
+aside{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;padding:30px 22px 40px;border-right:1px solid var(--line);background:linear-gradient(180deg,var(--paper),#FAFAF6)}
+.brandmark{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--teal-600);font-weight:700;margin-bottom:4px}
+.brandttl{font-family:var(--disp);font-weight:600;font-size:18px;line-height:1.25;letter-spacing:-.01em;margin-bottom:3px}
+.brandsub{font-size:11.5px;color:var(--ink-faint);margin-bottom:24px}
+nav a{display:block;font-size:13px;color:var(--ink-soft);text-decoration:none;padding:6px 10px;border-radius:var(--r-sm);border-left:2px solid transparent;transition:all .14s;line-height:1.35}
+nav a:hover{background:var(--line-soft);color:var(--ink)}
+nav a.active{color:var(--teal-700);border-left-color:var(--teal-600);background:var(--teal-50);font-weight:500}
+nav a .nx{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-right:8px}
+nav a.active .nx{color:var(--teal-600)}
+.navgrp{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:22px 0 7px 10px;font-weight:700}
+.navgrp:first-of-type{margin-top:0}
+
+/* ===== main ===== */
+main{padding:46px 54px 120px;min-width:0}
+.hero{border-bottom:2px solid var(--ink);padding-bottom:30px;margin-bottom:14px}
+.heyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--coral-600);font-weight:700;margin-bottom:14px;display:flex;gap:10px;align-items:center}
+.heyebrow::after{content:"";height:1px;flex:1;background:var(--line)}
+h1{font-family:var(--disp);font-weight:700;font-size:40px;line-height:1.04;letter-spacing:-.025em;margin-bottom:16px}
+h1 em{font-style:normal;color:var(--teal-600)}
+.lede{font-size:16.5px;color:var(--ink-soft);max-width:60ch;line-height:1.6}
+.metarow{display:flex;flex-wrap:wrap;gap:8px 10px;margin-top:22px}
+.metachip{font-family:var(--mono);font-size:11px;padding:5px 11px;border:1px solid var(--line);border-radius:100px;color:var(--ink-soft);background:var(--panel)}
+.metachip b{color:var(--ink);font-weight:700}
+
+section{padding-top:54px;scroll-margin-top:18px}
+.snum{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--teal-600);letter-spacing:.08em}
+h2{font-family:var(--disp);font-weight:600;font-size:27px;letter-spacing:-.02em;margin:7px 0 8px;line-height:1.15}
+.sintro{color:var(--ink-soft);max-width:66ch;margin-bottom:26px;font-size:15px}
+h3{font-family:var(--disp);font-weight:600;font-size:17px;letter-spacing:-.01em;margin:30px 0 12px;display:flex;align-items:center;gap:10px}
+h3 .hdot{width:7px;height:7px;border-radius:2px;background:var(--teal-600);flex:none}
+p{margin-bottom:13px}
+code{font-family:var(--mono);font-size:.87em;background:var(--gray-50);padding:1.5px 6px;border-radius:4px;color:var(--coral-800);font-weight:500}
+
+/* iron rule callout */
+.ironrule{display:flex;gap:16px;background:var(--ink);color:#F3F3EF;border-radius:var(--r);padding:20px 22px;margin:22px 0}
+.ironrule .irk{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal-100);font-weight:700;white-space:nowrap;padding-top:2px}
+.ironrule p{margin:0;font-size:14.5px;line-height:1.55;color:#EAEAE5}
+.ironrule code{background:rgba(255,255,255,.13);color:#C9F0E2}
+
+/* status legend */
+.legend{display:flex;flex-wrap:wrap;gap:16px;padding:13px 16px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin-bottom:22px;font-size:12.5px}
+.legend .li{display:flex;align-items:center;gap:7px;color:var(--ink-soft)}
+.sw{width:13px;height:13px;border-radius:3px;flex:none}
+.sw.s100{background:var(--teal-600)} .sw.spar{background:var(--amber-600)} .sw.ssep{background:var(--red-600)}
+
+.chip{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:4px;text-transform:uppercase;white-space:nowrap;display:inline-block}
+.chip.s100{background:var(--teal-50);color:var(--teal-800)}
+.chip.spar{background:var(--amber-50);color:var(--amber-800)}
+.chip.ssep{background:var(--red-50);color:var(--red-800)}
+
+/* svg cards */
+.fig{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px;margin:20px 0}
+.figcap{font-size:12.5px;color:var(--ink-faint);margin-top:12px;font-family:var(--mono)}
+svg{display:block;width:100%;height:auto}
+.svtxt{font-family:var(--body);font-size:13px;fill:var(--ink)}
+.svttl{font-family:var(--disp);font-size:13.5px;font-weight:600;fill:var(--ink)}
+.svsub{font-family:var(--mono);font-size:11px;fill:var(--ink-faint)}
+.svlbl{font-family:var(--mono);font-size:10.5px;fill:var(--ink-faint);letter-spacing:.04em}
+
+/* code blocks */
+.code{background:#1B1D1F;border-radius:var(--r);padding:0;margin:18px 0;overflow:hidden;border:1px solid #2A2D30}
+.codehd{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;background:#232629;border-bottom:1px solid #2D3033}
+.codehd .fn{font-family:var(--mono);font-size:12px;color:#A8DCC9;font-weight:500}
+.codehd .tag{font-family:var(--mono);font-size:10px;color:#71757A;text-transform:uppercase;letter-spacing:.08em}
+pre{font-family:var(--mono);font-size:12.5px;line-height:1.65;color:#D6D7D2;padding:16px 18px;overflow-x:auto}
+pre .kw{color:#C8A6F2} pre .fn2{color:#7FD4F0} pre .st{color:#A8DCC9} pre .cm{color:#6B6F73;font-style:italic} pre .ty{color:#E8B88A} pre .nm{color:#E5C07B}
+
+/* tables */
+.tw{overflow-x:auto;margin:18px 0;border:1px solid var(--line);border-radius:var(--r)}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:560px}
+th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;padding:11px 14px;background:var(--gray-50);border-bottom:1px solid var(--line)}
+td{padding:11px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+td b{color:var(--ink);font-weight:600}
+td .mn{font-family:var(--mono);font-size:12px;color:var(--ink)}
+
+/* module grid */
+.modgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:18px 0}
+.modcard{border:1px solid var(--line);border-radius:var(--r);padding:16px 17px;background:var(--panel)}
+.modcard .mh{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:4px}
+.modcard .mname{font-family:var(--mono);font-size:13.5px;font-weight:700;color:var(--ink)}
+.modcard .mstage{font-family:var(--mono);font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em}
+.modcard .mdesc{font-size:12.5px;color:var(--ink-soft);margin-bottom:11px;line-height:1.5}
+.modcard ul{list-style:none}
+.modcard li{font-family:var(--mono);font-size:11.5px;color:var(--ink-soft);padding:3px 0 3px 14px;position:relative;line-height:1.45}
+.modcard li::before{content:"›";position:absolute;left:0;color:var(--teal-600);font-weight:700}
+
+/* phase / gate */
+.phase{border:1px solid var(--line);border-radius:var(--r);margin:16px 0;overflow:hidden;background:var(--panel)}
+.phasehd{display:flex;align-items:center;gap:13px;padding:14px 18px;border-bottom:1px solid var(--line-soft)}
+.phaseno{font-family:var(--mono);font-weight:700;font-size:12px;color:#fff;background:var(--purple-600);padding:4px 9px;border-radius:5px;white-space:nowrap}
+.phasehd.p0 .phaseno{background:var(--gray-600)}
+.phasehd.p1 .phaseno{background:var(--teal-600)}
+.phasehd.p2 .phaseno{background:var(--amber-600)}
+.phasehd.p3 .phaseno{background:var(--coral-600)}
+.phasehd.p4 .phaseno{background:var(--purple-600)}
+.phasettl{font-family:var(--disp);font-weight:600;font-size:15.5px}
+.phasedur{font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-left:auto;white-space:nowrap}
+.phasebody{padding:15px 18px}
+.tasklist{list-style:none}
+.tasklist li{padding:6px 0 6px 22px;position:relative;font-size:13.5px;color:var(--ink-soft);line-height:1.5}
+.tasklist li::before{content:"";position:absolute;left:2px;top:11px;width:8px;height:8px;border:1.5px solid var(--teal-600);border-radius:2px}
+.tasklist li b{color:var(--ink);font-family:var(--mono);font-size:12.5px;font-weight:700}
+.gate{display:flex;gap:13px;align-items:flex-start;background:var(--teal-50);border:1px solid var(--teal-100);border-radius:var(--r);padding:13px 16px;margin-top:14px}
+.gate .gk{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--teal-800);background:#fff;padding:4px 9px;border-radius:5px;white-space:nowrap;border:1px solid var(--teal-100)}
+.gate .gt{font-size:13.5px;color:var(--teal-800);line-height:1.5}
+.gate .gt b{font-weight:600}
+
+/* rules do/dont */
+.rules{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0}
+.rulecol{border-radius:var(--r);padding:17px 18px;border:1px solid var(--line)}
+.rulecol.do{background:var(--teal-50);border-color:var(--teal-100)}
+.rulecol.dont{background:var(--red-50);border-color:var(--red-100)}
+.rulecol h4{font-family:var(--disp);font-size:14px;font-weight:600;margin-bottom:11px;display:flex;align-items:center;gap:8px}
+.rulecol.do h4{color:var(--teal-800)} .rulecol.dont h4{color:var(--red-800)}
+.rulecol ul{list-style:none}
+.rulecol li{font-size:13px;padding:5px 0 5px 20px;position:relative;line-height:1.5}
+.rulecol.do li{color:var(--teal-800)} .rulecol.dont li{color:var(--red-800)}
+.rulecol li::before{position:absolute;left:0;font-family:var(--mono);font-weight:700}
+.rulecol.do li::before{content:"+";color:var(--teal-600)}
+.rulecol.dont li::before{content:"–";color:var(--red-600)}
+.rulecol li code{background:rgba(0,0,0,.06);color:inherit}
+
+/* glossary */
+.gloss{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:2px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.glel{padding:13px 16px;background:var(--panel)}
+.glel dt{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--teal-700);margin-bottom:3px}
+.glel dd{font-size:12.5px;color:var(--ink-soft);line-height:1.5}
+
+.endnote{margin-top:50px;padding-top:22px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-faint);font-family:var(--mono);line-height:1.7}
+
+@media (max-width:920px){
+  .shell{grid-template-columns:1fr}
+  aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line);overflow:visible}
+  nav{columns:2;column-gap:14px}
+  .navgrp{column-span:all}
+  main{padding:34px 22px 80px}
+  h1{font-size:30px}
+  .rules,.modgrid{grid-template-columns:1fr}
+}
+@media print{
+  aside{display:none} .shell{grid-template-columns:1fr} main{padding:0}
+  .fig,.phase,.code,.modcard,.tw{break-inside:avoid}
+  body{font-size:11pt}
+}
+:focus-visible{outline:2px solid var(--teal-600);outline-offset:2px;border-radius:3px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+/* v1.1 additions */
+.metabar{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.foldviz{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px;margin:20px 0}
+.fbar-row{display:grid;grid-template-columns:120px 1fr 64px;align-items:center;gap:12px;padding:5px 0;font-size:12.5px}
+.fbar-lbl{font-family:var(--mono);font-size:11.5px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fbar-track{position:relative;height:20px;background:var(--line-soft);border-radius:4px}
+.fbar-mid{position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--ink-faint);opacity:.5}
+.fbar-fill{position:absolute;top:0;bottom:0;border-radius:4px}
+.fbar-pos{background:var(--teal-600);left:50%}
+.fbar-neg{background:var(--red-600)}
+.fbar-val{font-family:var(--mono);font-size:12px;font-weight:700;text-align:right}
+.fbar-val.pos{color:var(--teal-700)} .fbar-val.neg{color:var(--red-600)}
+.fnote{display:flex;gap:12px;margin-top:14px;padding:12px 14px;border-radius:var(--r);font-size:13px;line-height:1.5}
+.fnote.bad{background:var(--red-50);color:var(--red-800);border:1px solid var(--red-100)}
+.fnote.good{background:var(--teal-50);color:var(--teal-800);border:1px solid var(--teal-100)}
+.fnote .fnk{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.metcat{margin:18px 0 8px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--teal-700);font-weight:700}
+.newtag{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.06em;background:var(--coral-600);color:#fff;padding:1.5px 5px;border-radius:3px;text-transform:uppercase;vertical-align:middle;margin-left:6px}
+
+/* ===== v1.4: waterfall ===== */
+.wf-wrap{margin:22px 0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--panel)}
+.wf-hd{display:grid;grid-template-columns:220px 1fr 90px 90px;gap:0;background:var(--gray-50);border-bottom:1px solid var(--line)}
+.wf-hd span{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;padding:9px 14px}
+.wf-row{display:grid;grid-template-columns:220px 1fr 90px 90px;gap:0;border-bottom:1px solid var(--line-soft);align-items:center}
+.wf-row:last-child{border-bottom:none}
+.wf-row.wf-gross{background:var(--blue-50)}
+.wf-row.wf-net{background:var(--teal-50);border-top:2px solid var(--teal-100)}
+.wf-row.wf-sub{background:var(--panel)}
+.wf-row.wf-residual{background:var(--amber-50)}
+.wf-row.wf-divider{background:var(--gray-50);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.wf-label{padding:11px 14px;font-size:13px;color:var(--ink);font-weight:500;display:flex;align-items:center;gap:8px}
+.wf-label .wf-indent{width:18px;flex:none}
+.wf-label .wf-sign{font-family:var(--mono);font-size:12px;color:var(--ink-faint);font-weight:700;width:14px;flex:none}
+.wf-label .wf-name{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+.wf-label .wf-desc{font-size:12px;color:var(--ink-soft)}
+.wf-bar-cell{padding:8px 14px}
+.wf-bar-track{position:relative;height:16px;background:var(--line-soft);border-radius:3px}
+.wf-bar-fill{position:absolute;top:0;bottom:0;border-radius:3px}
+.wf-bar-fill.pos{background:var(--teal-600);left:0}
+.wf-bar-fill.neg{background:var(--red-600);right:0}
+.wf-bar-fill.warn{background:var(--amber-600);left:0}
+.wf-val{padding:11px 14px;font-family:var(--mono);font-size:12px;font-weight:700;text-align:right;white-space:nowrap}
+.wf-val.pos{color:var(--teal-700)} .wf-val.neg{color:var(--red-600)} .wf-val.neu{color:var(--ink-faint)} .wf-val.warn{color:var(--amber-800)}
+.wf-asset{padding:11px 14px;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);text-align:right}
+.wf-asset .badge{display:inline-block;padding:1.5px 6px;border-radius:3px;font-size:9.5px;font-weight:700;letter-spacing:.04em}
+.wf-asset .badge.opt{background:var(--purple-50);color:var(--purple-800)}
+.wf-asset .badge.eq{background:var(--blue-50);color:var(--blue-800)}
+.wf-asset .badge.both{background:var(--amber-50);color:var(--amber-800)}
+
+/* ===== v1.4: versioning timeline ===== */
+.vtimeline{margin:20px 0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--panel)}
+.vtl-row{display:grid;grid-template-columns:140px 1fr auto;gap:16px;padding:12px 16px;border-bottom:1px solid var(--line-soft);align-items:start;font-size:13px}
+.vtl-row:last-child{border-bottom:none}
+.vtl-ts{font-family:var(--mono);font-size:11.5px;color:var(--ink-soft)}
+.vtl-ev{color:var(--ink)}
+.vtl-ev b{color:var(--ink);font-weight:600}
+.vtl-ev code{font-size:11px}
+.vtl-tag{font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;white-space:nowrap;align-self:start}
+.vtl-tag.ok{background:var(--teal-50);color:var(--teal-800)}
+.vtl-tag.warn{background:var(--amber-50);color:var(--amber-800)}
+.vtl-tag.bad{background:var(--red-50);color:var(--red-800)}
+.vtl-tag.info{background:var(--blue-50);color:var(--blue-800)}
+
+/* ===== v1.4: tx cost levels ===== */
+.txlevels{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0}
+.txcard{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--panel)}
+.txcard-hd{padding:12px 15px 10px;border-bottom:1px solid var(--line-soft)}
+.txcard-lvl{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px}
+.txcard-lvl.l1{color:var(--teal-700)} .txcard-lvl.l2{color:var(--amber-700)} .txcard-lvl.l3{color:var(--coral-700)}
+.txcard-ttl{font-family:var(--disp);font-size:14.5px;font-weight:600;color:var(--ink)}
+.txcard-when{font-size:11.5px;color:var(--ink-faint);font-family:var(--mono);margin-top:3px}
+.txcard-body{padding:13px 15px;font-size:13px;color:var(--ink-soft);line-height:1.55}
+.txcard-body b{color:var(--ink);font-weight:600}
+.txcard-body code{font-size:11px}
+
+@media (max-width:920px){
+  .txlevels{grid-template-columns:1fr}
+  .wf-hd,.wf-row{grid-template-columns:1fr 1fr}
+  .wf-bar-cell,.wf-asset{display:none}
+  .vtl-row{grid-template-columns:1fr auto}
+  .vtl-ts{display:none}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<aside>
+  <div class="brandmark">Build Spec · v1.4</div>
+  <div class="brandttl">Quant Pipeline Framework</div>
+  <div class="brandsub">Multi-asset · equity / futures / options</div>
+  <nav id="toc">
+    <div class="navgrp">Foundation</div>
+    <a href="#arch"><span class="nx">01</span>สถาปัตยกรรม</a>
+    <a href="#tree"><span class="nx">02</span>โครงสร้างไฟล์</a>
+    <a href="#naming"><span class="nx">03</span>Naming convention</a>
+    <a href="#contract"><span class="nx">04</span>Interface contract</a>
+    <div class="navgrp">Implementation</div>
+    <a href="#ingest"><span class="nx">05</span>Ingestion layer</a>
+    <a href="#core"><span class="nx">06</span>Core modules</a>
+    <a href="#adapters"><span class="nx">07</span>Adapter layer</a>
+    <a href="#greeks"><span class="nx">08</span>Greeks &amp; spread math</a>
+    <a href="#diagnosis"><span class="nx">09</span>Performance diagnosis</a>
+    <a href="#reuse"><span class="nx">10</span>Reuse matrix</a>
+    <a href="#config"><span class="nx">11</span>Config schema</a>
+    <div class="navgrp">Additions v1.4</div>
+    <a href="#versioning"><span class="nx">12</span>Data versioning + available_at</a>
+    <a href="#txcost"><span class="nx">13</span>Transaction cost model</a>
+    <a href="#waterfall"><span class="nx">14</span>Attribution waterfall</a>
+    <div class="navgrp">Execution</div>
+    <a href="#tests"><span class="nx">15</span>Tests &amp; data audit</a>
+    <a href="#build"><span class="nx">16</span>Build order &amp; gates</a>
+    <a href="#rules"><span class="nx">17</span>กฎเหล็ก</a>
+    <a href="#gloss"><span class="nx">18</span>Glossary</a>
+  </nav>
+</aside>
+
+<main>
+  <header class="hero">
+    <div class="heyebrow">Implementation Blueprint · v1.4</div>
+    <h1>Layered pipeline สำหรับ <em>systematic</em> strategy validation</h1>
+    <p class="lede">Spec สำหรับทีม coder ในการสร้าง validation pipeline ที่ใช้ได้ทั้ง equity, futures และ options โดยมี core เดียวร่วมกัน ส่วน asset-specific แยกเป็น adapter ทุก function signature, build order และ acceptance criteria ระบุไว้เพื่อ implement โดยไม่ต้องเดา</p>
+    <div class="metarow">
+      <span class="metachip">Pattern · <b>Layered + Adapter</b></span>
+      <span class="metachip">Layers · <b>5</b></span>
+      <span class="metachip">Core reuse · <b>~100%</b></span>
+      <span class="metachip">Options reuse · <b>~65%</b></span>
+    </div>
+    <div class="metarow">
+      <span class="metachip" style="border-color:var(--coral-100);color:var(--coral-800)">v1.4 · <b>data versioning + available_at</b></span>
+      <span class="metachip" style="border-color:var(--coral-100);color:var(--coral-800)"><b>transaction cost</b> (3 ระดับ)</span>
+      <span class="metachip" style="border-color:var(--coral-100);color:var(--coral-800)"><b>attribution waterfall</b> (options + equity)</span>
+      <span class="metachip" style="border-color:var(--coral-100);color:var(--coral-800)">v1.3 · Greeks · tests · audit · Black-76</span>
+    </div>
+  </header>
+
+  <!-- ============ 01 ARCHITECTURE ============ -->
+  <section id="arch">
+    <span class="snum">01 / FOUNDATION</span>
+    <h2>สถาปัตยกรรมแบบ Layered</h2>
+    <p class="sintro">5 ชั้น ไหลจากบนลงล่าง <code>ingestion/</code> ดึงข้อมูลจาก provider ภายนอกแล้วคืน raw frame มาตรฐาน <code>adapters/</code> เตรียมข้อมูลเฉพาะ asset <code>core/</code> ประมวลผลโดยไม่รู้จัก asset เลย</p>
+
+    <div class="ironrule">
+      <div class="irk">กฎข้อเดียว<br>ที่ห้ามฝ่าฝืน</div>
+      <p><code>core/</code> ต้องไม่มี <code>if asset == ...</code> หรือชื่อ instrument จริง (เช่น <code>wti</code>, <code>cl</code>, <code>spx</code>) ปรากฏในโค้ดเลย ทุก function ใน core รับแค่ <code>DataFrame</code> + <code>cfg dict</code> ถ้าต้องเขียน asset logic ใน core แปลว่า logic นั้นต้องย้ายไป adapter</p>
+    </div>
+
+    <div class="fig">
+      <svg viewBox="0 0 700 470" role="img" aria-label="Five-layer architecture: providers, ingestion, adapters, core, outputs">
+        <defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+        <rect x="40" y="14" width="620" height="44" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.75"/>
+        <text class="svttl" x="58" y="32" fill="#2C2C2A">external providers</text>
+        <text class="svsub" x="58" y="48" fill="#5F5E5A">settlement file (energy futures+options) · equity provider A/B (POC สำหรับ test) · institutional feed (production)</text>
+        <line x1="350" y1="58" x2="350" y2="74" stroke="#888780" stroke-width="1.5" marker-end="url(#ar)"/>
+
+        <rect x="40" y="78" width="620" height="56" rx="10" fill="#FBEAF0" stroke="#993556" stroke-width="0.75"/>
+        <text class="svttl" x="58" y="98" fill="#72243E">ingestion/</text>
+        <text class="svlbl" x="58" y="113" fill="#993556">FETCH + CACHE — provider loader → raw frame มาตรฐาน + survivorship + PIT</text>
+        <text class="svsub" x="58" y="128" fill="#993556">provider_loader · raw_schema · cache(parquet) · incremental update</text>
+        <line x1="350" y1="134" x2="350" y2="150" stroke="#993556" stroke-width="1.5" marker-end="url(#ar)"/>
+
+        <rect x="40" y="154" width="620" height="56" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="0.75"/>
+        <text class="svttl" x="58" y="174" fill="#712B13">adapters/</text>
+        <text class="svlbl" x="58" y="189" fill="#993C1D">ASSET-AWARE — instrument family เท่านั้น ไม่มี business logic</text>
+        <text class="svsub" x="58" y="204" fill="#993C1D">equity · futures · equity_options · futures_options  →  prepare(raw) → (df, cfg)</text>
+        <line x1="350" y1="210" x2="350" y2="226" stroke="#993C1D" stroke-width="1.5" marker-end="url(#ar)"/>
+
+        <rect x="40" y="230" width="620" height="100" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.75"/>
+        <text class="svttl" x="58" y="250" fill="#3C3489">core/</text>
+        <text class="svlbl" x="58" y="265" fill="#534AB7">ASSET-AGNOSTIC — รับ DataFrame + cfg เท่านั้น</text>
+        <rect x="58" y="272" width="92" height="46" rx="5" fill="#fff" stroke="#CECBF6" stroke-width="0.75"/><text class="svsub" x="104" y="290" text-anchor="middle" fill="#3C3489">validators</text><text class="svsub" x="104" y="306" text-anchor="middle" fill="#534AB7" font-size="9.5">stage 1</text>
+        <rect x="158" y="272" width="92" height="46" rx="5" fill="#fff" stroke="#CECBF6" stroke-width="0.75"/><text class="svsub" x="204" y="290" text-anchor="middle" fill="#3C3489">stability</text><text class="svsub" x="204" y="306" text-anchor="middle" fill="#534AB7" font-size="9.5">stage 2</text>
+        <rect x="258" y="272" width="92" height="46" rx="5" fill="#fff" stroke="#CECBF6" stroke-width="0.75"/><text class="svsub" x="304" y="290" text-anchor="middle" fill="#3C3489">splitter</text><text class="svsub" x="304" y="306" text-anchor="middle" fill="#534AB7" font-size="9.5">stage 3</text>
+        <rect x="358" y="272" width="92" height="46" rx="5" fill="#fff" stroke="#CECBF6" stroke-width="0.75"/><text class="svsub" x="404" y="290" text-anchor="middle" fill="#3C3489">metrics</text><text class="svsub" x="404" y="306" text-anchor="middle" fill="#534AB7" font-size="9.5">stage 4</text>
+        <rect x="458" y="272" width="92" height="46" rx="5" fill="#fff" stroke="#CECBF6" stroke-width="0.75"/><text class="svsub" x="504" y="290" text-anchor="middle" fill="#3C3489">overfitting</text><text class="svsub" x="504" y="306" text-anchor="middle" fill="#534AB7" font-size="9.5">stage 4</text>
+        <rect x="558" y="272" width="84" height="46" rx="5" fill="#fff" stroke="#CECBF6" stroke-width="0.75"/><text class="svsub" x="600" y="290" text-anchor="middle" fill="#3C3489">regime</text><text class="svsub" x="600" y="306" text-anchor="middle" fill="#534AB7" font-size="9.5">all</text>
+        <line x1="350" y1="330" x2="350" y2="346" stroke="#534AB7" stroke-width="1.5" marker-end="url(#ar)"/>
+
+        <rect x="40" y="350" width="620" height="48" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.75"/>
+        <text class="svttl" x="58" y="370" fill="#085041">outputs/</text>
+        <text class="svsub" x="58" y="387" fill="#0F6E56">clean_data · stability_report · fold_manifest · perf_report (per-fold + per-regime)</text>
+      </svg>
+      <div class="figcap">Fig 1 — ห้าชั้น: provider → ingestion (ดึง+cache) → adapter (เตรียม) → core (ประมวลผล) → output</div>
+    </div>
+  </section>
+
+  <!-- ============ 02 FILE TREE ============ -->
+  <section id="tree">
+    <span class="snum">02 / FOUNDATION</span>
+    <h2>โครงสร้างไฟล์</h2>
+    <p class="sintro">เพิ่ม <code>ingestion/</code> และตั้งชื่อแบบ instrument-family (ไม่ผูกกับ wti) ทุกไฟล์มีหน้าที่เดียวที่ชัดเจน</p>
+    <div class="code">
+      <div class="codehd"><span class="fn">project structure</span><span class="tag">directory layout</span></div>
+<pre><span class="cm"># repository root</span>
+quant_pipeline/
+├── <span class="fn2">run_pipeline.py</span>          <span class="cm"># entry point — argparse, โหลด config, เรียก ingestion+adapter+core</span>
+│
+├── ingestion/               <span class="cm"># ดึงข้อมูลภายนอก → raw frame มาตรฐาน</span>
+│   ├── base.py              <span class="cm"># ProviderBase.fetch() contract + raw_schema validation</span>
+│   ├── settlement_loader.py <span class="cm"># pipe-delimited EOD settlement (energy futures+options)</span>
+│   ├── equity_loader_a.py   <span class="cm"># equity provider A (เช่น Yahoo สำหรับ POC/test) — raw vs adjusted</span>
+│   ├── equity_loader_b.py   <span class="cm"># equity provider B (cross-check provider A)</span>
+│   ├── symbology.py         <span class="cm"># PRODUCT_ID/HUB/CONTRACT → internal symbol map (กฎใน yaml)</span>
+│   ├── cache.py             <span class="cm"># raw parquet cache + incremental update + PIT roll</span>
+│   └── versioned_cache.py   <span class="cm"># NEW v1.4: immutable partition write + version read + manifest</span>
+│
+├── core/                    <span class="cm"># asset-agnostic — ห้ามมีชื่อ instrument จริง</span>
+│   ├── validators.py        <span class="cm"># stage 1: logical bounds, missing, outlier</span>
+│   ├── stability.py         <span class="cm"># stage 2: stationarity, distribution shift, feature quality</span>
+│   ├── splitter.py          <span class="cm"># stage 3: walk-forward, purge/embargo, diversity gate (KL+JS)</span>
+│   ├── metrics.py           <span class="cm"># stage 4: full metric set + per-fold/per-regime breakdown</span>
+│   ├── overfitting.py       <span class="cm"># deflated sharpe, PBO, min track record</span>
+│   ├── regime.py            <span class="cm"># rule-based label + transition + HMM/GMM validator</span>
+│   ├── pricing.py           <span class="cm"># Black-76 / BS-Merton + IV solver (Brent)</span>
+│   ├── greeks.py            <span class="cm"># delta/gamma/theta/vega + net greeks สำหรับ spread</span>
+│   ├── dte.py               <span class="cm"># calendar/DTE convention (single source of truth)</span>
+│   ├── txcost.py            <span class="cm"># NEW v1.4: 3-level transaction cost model</span>
+│   ├── attribution.py       <span class="cm"># NEW v1.4: waterfall (Greek decompose / factor decompose)</span>
+│   └── audit.py             <span class="cm"># lightweight before/after snapshot (row count, hash, key stats)</span>
+│
+├── adapters/                <span class="cm"># asset-aware — instrument family</span>
+│   ├── base.py              <span class="cm"># AdapterBase: prepare() contract</span>
+│   ├── equity_adapter.py    <span class="cm"># corp action, MAD clip, survivorship</span>
+│   ├── futures_adapter.py   <span class="cm"># roll, term structure, session, scheduled events</span>
+│   ├── options_base.py      <span class="cm"># OptionsBase: IV surface, greeks, PCP, VRP, skew (~65%)</span>
+│   ├── equity_options_adapter.py   <span class="cm"># override: strike-adjust, NYSE close — ใช้ BS-Merton</span>
+│   └── futures_options_adapter.py  <span class="cm"># override: roll, term structure — ใช้ Black-76</span>
+│
+├── configs/                 <span class="cm"># ทุก threshold + instrument spec อยู่ที่นี่</span>
+│   ├── equity.yaml          <span class="cm"># family-level default</span>
+│   ├── futures.yaml
+│   ├── instruments/         <span class="cm"># per-instrument: ชื่อจริงอยู่ที่นี่เท่านั้น</span>
+│   │   ├── bz.yaml          <span class="cm"># Brent — event_calendar ชี้ไป EIA/OPEC</span>
+│   │   ├── spx.yaml
+│   │   └── aapl.yaml
+│   ├── events/
+│   │   ├── eia.csv          <span class="cm"># scheduled event dates (data ไม่ใช่ code)</span>
+│   │   └── earnings.csv
+│   └── symbology/           <span class="cm"># NEW v1.3: mapping rules อยู่ใน yaml ไม่ใช่โค้ด</span>
+│       └── product_map.yaml <span class="cm"># product_id ↔ contract_root ↔ hub (validate ทุกครั้งที่โหลด)</span>
+│
+├── outputs/                 <span class="cm"># artifact (gitignore)</span>
+│   ├── clean_data/    ├── stability_report/
+│   ├── fold_manifest/ ├── perf_report/    <span class="cm"># per-fold + per-regime</span>
+│   ├── attribution/   <span class="cm"># NEW v1.4: waterfall per fold/regime (options + equity)</span>
+│   └── audit/         <span class="cm"># lightweight before/after snapshot per stage</span>
+│
+├── raw/                     <span class="cm"># NEW v1.4: immutable versioned raw data (gitignore)</span>
+│   ├── bz/ingested_at=YYYY-MM-DD/settlement.parquet
+│   ├── eq_a/ingested_at=YYYY-MM-DD/prices.parquet
+│   └── _versions.jsonl      <span class="cm"># manifest: ingested_at, rows, schema_hash, run_id</span>
+│
+└── tests/                   <span class="cm"># NEW v1.3: ขยายจาก stub เป็น test suite จริง</span>
+    ├── test_core/           <span class="cm"># pricing, greeks, dte, splitter, metrics</span>
+    ├── test_adapters/       <span class="cm"># prepare() contract tests + golden snapshots</span>
+    ├── test_ingestion/      <span class="cm"># symbology join, schema, future/option split, PIT</span>
+    ├── test_dte/            <span class="cm"># calendar convention edge cases (1st/last day, weekend, holiday)</span>
+    ├── golden/              <span class="cm"># reference Greek/IV values (cross-checked vs QuantLib offline)</span>
+    └── fixtures/            <span class="cm"># small synthetic+real-row samples (commit-safe)</span></pre>
+    </div>
+  </section>
+
+  <!-- ============ 03 NAMING ============ -->
+  <section id="naming">
+    <span class="snum">03 / FOUNDATION</span>
+    <h2>Naming convention</h2>
+    <p class="sintro">ปัญหาเดิม: ชื่อ <code>wti_adapter</code>, <code>wti.yaml</code>, <code>flag_eia_events()</code> ผูกกับ instrument เดียว ทำให้เพิ่ม Brent หรือ Gas ต้อง copy โค้ด หลักการใหม่: <b>โค้ดตั้งชื่อตาม instrument family / behaviour ส่วนชื่อ instrument จริงอยู่ใน config เท่านั้น</b></p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>เดิม (ผูก instrument)</th><th>ใหม่ (generic)</th><th>ชื่อ instrument จริงไปอยู่ที่</th></tr></thead>
+        <tbody>
+          <tr><td><span class="mn">wti_adapter.py</span></td><td><span class="mn">futures_adapter.py</span></td><td><span class="mn">configs/instruments/cl.yaml</span></td></tr>
+          <tr><td><span class="mn">wti_options_adapter.py</span></td><td><span class="mn">futures_options_adapter.py</span></td><td><span class="mn">cl.yaml</span> (มี options block)</td></tr>
+          <tr><td><span class="mn">wti.yaml</span></td><td><span class="mn">futures.yaml</span> + instrument file</td><td><span class="mn">instruments/cl.yaml</span></td></tr>
+          <tr><td><span class="mn">flag_eia_events()</span></td><td><span class="mn">flag_scheduled_events()</span></td><td><span class="mn">cfg['event_calendars']</span> → eia.csv</td></tr>
+          <tr><td><span class="mn">ovx</span> (hardcoded)</td><td><span class="mn">cfg['vol_col']</span></td><td><span class="mn">cl.yaml: vol_col: ovx</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>ผลลัพธ์: เพิ่ม Brent (BZ) = เพิ่มไฟล์ <code>configs/instruments/bz.yaml</code> ไฟล์เดียว ไม่แตะโค้ดเลย เพราะ <code>futures_adapter</code> และ <code>futures_options_adapter</code> ไม่รู้จักคำว่า WTI อยู่แล้ว มันรู้แค่ว่า "instrument นี้ roll, มี term structure, มี event calendar ตามที่ config ชี้มา"</p>
+    <div class="ironrule">
+      <div class="irk">Litmus<br>test</div>
+      <p>ถ้า <code>grep -ri "wti\|eia\|ovx" core/ adapters/</code> แล้วเจอผลลัพธ์ใน <code>.py</code> ใดก็ตาม แปลว่ายังตั้งชื่อเจาะจงเกินไป — ชื่อพวกนี้ต้องอยู่ใน <code>configs/</code> เท่านั้น (โค้ดเจอได้เฉพาะใน <code>symbology.py</code> ที่ map PRODUCT_ID/HUB/CONTRACT ของ provider จริง)</p>
+    </div>
+  </section>
+  <!-- ============ 04 CONTRACT ============ -->
+  <section id="contract">
+    <span class="snum">04 / FOUNDATION</span>
+    <h2>Interface contract</h2>
+    <p class="sintro">มี 2 contract: (1) <b>ingestion → adapter</b> คืน raw frame ตาม raw_schema และ (2) <b>adapter → core</b> คืน <code>(df, cfg)</code> ที่ core ใช้ได้ทันที ทั้งสอง contract ต้องนิ่งก่อนเขียนโค้ดบรรทัดแรก</p>
+
+    <div class="code">
+      <div class="codehd"><span class="fn">contract 1 + 2</span><span class="tag">the two seams</span></div>
+<pre><span class="cm"># ── contract 1: ingestion → adapter (raw_schema) ──</span>
+<span class="cm"># รองรับ futures + options ในตารางเดียว แยกด้วย instrument_type</span>
+RAW_SCHEMA = {
+    <span class="st">"as_of_date"</span>:    <span class="st">"datetime64[ns]"</span>,   <span class="cm"># = TRADE DATE (PIT anchor) — settlement รู้ EOD</span>
+    <span class="st">"timestamp"</span>:     <span class="st">"datetime64[ns, UTC]|None"</span>, <span class="cm"># เฉพาะ intraday; EOD = None</span>
+    <span class="st">"product_id"</span>:    <span class="st">"int"</span>,               <span class="cm"># stable key (เช่น 254) — join ใช้ตัวนี้</span>
+    <span class="st">"contract_root"</span>: <span class="st">"str"</span>,               <span class="cm"># B (Brent), CL (WTI) ...</span>
+    <span class="st">"hub"</span>:           <span class="st">"str"</span>,               <span class="cm"># North Sea ...</span>
+    <span class="st">"instrument_type"</span>: <span class="st">"str"</span>,             <span class="cm"># 'future' | 'option'</span>
+    <span class="st">"right"</span>:         <span class="st">"str|None"</span>,          <span class="cm"># 'C'|'P' (option); None (future)</span>
+    <span class="st">"strike"</span>:        <span class="st">"float|None"</span>,        <span class="cm"># None สำหรับ future</span>
+    <span class="st">"delivery_month"</span>: <span class="st">"datetime64[ns]"</span>,   <span class="cm"># = STRIP — สำหรับ term structure + roll</span>
+    <span class="st">"expiry"</span>:        <span class="st">"datetime64[ns]"</span>,   <span class="cm"># = EXPIRATION DATE — DTE/purge</span>
+    <span class="st">"price"</span>:         <span class="st">"float"</span>,             <span class="cm"># = SETTLEMENT (ไม่ใช่ last-trade!)</span>
+    <span class="st">"net_change"</span>:    <span class="st">"float"</span>,
+    <span class="st">"iv_provided"</span>:   <span class="st">"float|None"</span>,        <span class="cm"># = OPTION_VOLATILITY (exchange-calc) — validate</span>
+    <span class="st">"delta_provided"</span>: <span class="st">"float|None"</span>,       <span class="cm"># = DELTA_FACTOR</span>
+    <span class="st">"provider"</span>:      <span class="st">"str"</span>,             <span class="cm"># settlement | yfinance | massive</span>
+}
+<span class="cm"># equity (Yahoo/Massive) ใช้ schema ย่อ: as_of_date, symbol, raw_close,</span>
+<span class="cm"># adj_factor, volume, is_delisted — ไม่มี strike/expiry</span>
+
+<span class="cm"># ── contract 2: adapter → core (cfg) ──</span>
+cfg = {
+    <span class="st">"price_col"</span>: <span class="st">"price_std"</span>, <span class="st">"vol_col"</span>: <span class="st">"vol_std"</span>, <span class="st">"return_col"</span>: <span class="st">"return_std"</span>,
+    <span class="st">"vol_window"</span>: <span class="nm">21</span>, <span class="st">"trend_window"</span>: <span class="nm">126</span>, <span class="st">"purge_bars"</span>: <span class="nm">5</span>,
+    <span class="st">"regime_axes"</span>: [<span class="st">"vol_regime"</span>, <span class="st">"vrp_sign"</span>],
+    <span class="st">"rf_rate_col"</span>: <span class="st">"sofr"</span>, <span class="st">"event_flags"</span>: [],
+    <span class="st">"max_concentration"</span>: <span class="nm">0.80</span>, <span class="st">"kl_threshold"</span>: <span class="nm">0.5</span>, <span class="st">"js_threshold"</span>: <span class="nm">0.3</span>,
+}</pre>
+    </div>
+    <p>core ไม่เคยอ้างชื่อ column จริง (<code>ovx</code>, <code>cl_m1</code>) — อ่าน <code>cfg["vol_col"]</code> แล้ว adapter ชี้ว่ามันคืออะไร นี่คือกลไกที่ทำให้ core ใช้ร่วม 100%</p>
+  </section>
+
+  <!-- ============ 05 INGESTION ============ -->
+  <section id="ingest">
+    <span class="snum">05 / IMPLEMENTATION</span>
+    <h2>Ingestion layer <span class="newtag">new</span></h2>
+    <p class="sintro">ชั้นที่ blueprint เดิมขาด — รับผิดชอบดึงข้อมูลจาก provider, normalize เป็น raw_schema, cache และจัดการ survivorship/PIT แต่ละ provider มี schema ต่างกัน จึงแยกเป็น loader ต่อ provider โดยทุกตัว implement <code>ProviderBase</code> เดียวกัน</p>
+
+    <div class="code">
+      <div class="codehd"><span class="fn">ingestion/base.py</span><span class="tag">provider contract</span></div>
+<pre><span class="kw">class</span> <span class="ty">ProviderBase</span>(ABC):
+    <span class="nm">@abstractmethod</span>
+    <span class="kw">def</span> <span class="fn2">fetch</span>(self, symbol: <span class="ty">str</span>, start, end) -> pd.DataFrame:
+        <span class="st">"""ดึง raw → normalize เป็น RAW_SCHEMA → คืน
+        ห้ามทิ้ง expired series (survivorship). ต้องเป็น point-in-time"""</span>
+        ...
+    <span class="nm">@abstractmethod</span>
+    <span class="kw">def</span> <span class="fn2">list_expired</span>(self, root: <span class="ty">str</span>, asof) -> <span class="ty">list</span>:
+        <span class="st">"""option series ที่หมดอายุก่อน asof — ต้องเก็บไว้ backtest"""</span>
+        ...
+
+<span class="kw">def</span> <span class="fn2">load</span>(symbol, start, end, cfg) -> pd.DataFrame:
+    <span class="st">"""เช็ค cache ก่อน → ถ้าไม่มี/ไม่ครบ fetch เฉพาะส่วนที่ขาด (incremental)
+    → validate ตาม RAW_SCHEMA → เขียน parquet cache → คืน"""</span>
+    cached = cache.read(symbol, start, end)
+    <span class="kw">if</span> cache.is_complete(cached, start, end):
+        <span class="kw">return</span> cached
+    gap = cache.missing_ranges(cached, start, end)
+    fresh = _provider(cfg).fetch(symbol, *gap)   <span class="cm"># rate-limit aware</span>
+    out = validate_schema(pd.concat([cached, fresh]), RAW_SCHEMA)
+    cache.write(symbol, out); <span class="kw">return</span> out</pre>
+    </div>
+
+    <h3><span class="hdot"></span>Field mapping — จากไฟล์จริง (pipe-delimited settlement)</h3>
+    <p>ตัวอย่าง row จริง: <code>9/25/2024|North Sea|Brent Crude Futures|11/1/2024|B|C|10.0000|63.46000|-1.71000|9/25/2024|254|0.01000|0.00000</code> — <code>settlement_loader.py</code> map column ดังนี้ (ชื่อ instrument จริงไม่หลุดเข้าโค้ด core)</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Source column</th><th>→ standardized</th><th>หมายเหตุสำคัญ</th></tr></thead>
+        <tbody>
+          <tr><td><span class="mn">TRADE DATE</span></td><td><span class="mn">as_of_date</span></td><td>PIT anchor — settlement รู้ EOD ของวันนี้ (ไม่มี release lag)</td></tr>
+          <tr><td><span class="mn">HUB</span></td><td><span class="mn">hub</span></td><td>North Sea → ส่วนหนึ่งของ symbology</td></tr>
+          <tr><td><span class="mn">PRODUCT</span></td><td><span class="mn">(symbology)</span></td><td>"Brent Crude Futures" → resolve เป็น contract_root</td></tr>
+          <tr><td><span class="mn">STRIP</span></td><td><span class="mn">delivery_month</span></td><td>11/1/2024 = เดือนส่งมอบ — แกนของ term structure + roll</td></tr>
+          <tr><td><span class="mn">CONTRACT</span></td><td><span class="mn">contract_root</span></td><td>B = Brent</td></tr>
+          <tr><td><span class="mn">CONTRACT TYPE</span></td><td><span class="mn">right + instrument_type</span></td><td>C/P → option; ว่าง/F → future (ตัวแยกหลัก)</td></tr>
+          <tr><td><span class="mn">STRIKE</span></td><td><span class="mn">strike</span></td><td>มีค่า → option; null → future</td></tr>
+          <tr><td><span class="mn">SETTLEMENT PRICE</span></td><td><span class="mn">price</span></td><td><b>settlement ไม่ใช่ last-trade</b> — กระทบ timestamp audit (stage 3)</td></tr>
+          <tr><td><span class="mn">NET CHANGE</span></td><td><span class="mn">net_change</span></td><td>ใช้ validate: price[t] − price[t−1] ควรใกล้ค่านี้</td></tr>
+          <tr><td><span class="mn">EXPIRATION DATE</span></td><td><span class="mn">expiry</span></td><td>คำนวณ DTE → purge gap</td></tr>
+          <tr><td><span class="mn">PRODUCT_ID</span></td><td><span class="mn">product_id</span></td><td><b>stable numeric key</b> — ใช้เป็น join key ไม่ใช่ชื่อ product</td></tr>
+          <tr><td><span class="mn">OPTION_VOLATILITY</span></td><td><span class="mn">iv_provided</span></td><td>IV จาก exchange — validate/ใช้ ไม่ต้อง re-solve เสมอ</td></tr>
+          <tr><td><span class="mn">DELTA_FACTOR</span></td><td><span class="mn">delta_provided</span></td><td>greek จาก exchange</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="code">
+      <div class="codehd"><span class="fn">ingestion/settlement_loader.py</span><span class="tag">pipe parser + disambiguation</span></div>
+<pre><span class="kw">def</span> <span class="fn2">fetch</span>(self, path, start, end) -> pd.DataFrame:
+    df = pd.read_csv(path, sep=<span class="st">"|"</span>)                       <span class="cm"># pipe-delimited</span>
+    <span class="cm"># US date M/D/YYYY → datetime (ห้ามให้ pandas เดา format)</span>
+    <span class="kw">for</span> c <span class="kw">in</span> [<span class="st">"TRADE DATE"</span>, <span class="st">"STRIP"</span>, <span class="st">"EXPIRATION DATE"</span>]:
+        df[c] = pd.to_datetime(df[c], format=<span class="st">"%m/%d/%Y"</span>)
+    <span class="cm"># แยก future vs option จาก CONTRACT TYPE + STRIKE</span>
+    is_opt = df[<span class="st">"CONTRACT TYPE"</span>].isin([<span class="st">"C"</span>, <span class="st">"P"</span>]) &amp; df[<span class="st">"STRIKE"</span>].notna()
+    df[<span class="st">"instrument_type"</span>] = np.where(is_opt, <span class="st">"option"</span>, <span class="st">"future"</span>)
+    df.loc[~is_opt, [<span class="st">"STRIKE"</span>, <span class="st">"OPTION_VOLATILITY"</span>, <span class="st">"DELTA_FACTOR"</span>]] = np.nan
+    <span class="cm"># settlement = EOD → as_of_date เป็น date, timestamp = None</span>
+    out = _rename_to_schema(df)                          <span class="cm"># ตาม field mapping</span>
+    <span class="kw">return</span> validate_schema(out, RAW_SCHEMA)
+
+<span class="cm"># validate net_change: |price.diff() - net_change| ต้องเล็ก (ภายใน 1 tick)</span></pre>
+    </div>
+
+    <h3><span class="hdot"></span>สิ่งที่ ingestion ต้องรับผิดชอบ (acceptance)</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>หน้าที่</th><th>ทำไมต้องอยู่ที่นี่ ไม่ใช่ adapter</th></tr></thead>
+        <tbody>
+          <tr><td><b>Survivorship</b> — เก็บ expired option/contract series</td><td>ถ้าทิ้งตั้งแต่ดึง adapter จะไม่มีทางกู้คืน → bias ถาวร</td></tr>
+          <tr><td><b>PIT futures roll</b> — บันทึก roll ณ เวลาจริง</td><td>roll เป็นคุณสมบัติของ data ไม่ใช่ strategy ต้อง correct ก่อนถึง adapter</td></tr>
+          <tr><td><b>Symbology resolve</b> — PRODUCT_ID/HUB/CONTRACT → internal symbol</td><td>ชื่อ "Brent Crude Futures" ต้องไม่หลุดเข้า adapter/core; ใช้ product_id เป็น key</td></tr>
+          <tr><td><b>Future/option split</b> — แยกด้วย CONTRACT TYPE + STRIKE</td><td>ไฟล์เดียวมีทั้งสองชนิด ต้อง tag ก่อนส่งต่อ</td></tr>
+          <tr><td><b>EOD vs intraday</b> — settlement = date-only</td><td>as_of_date เป็น date, timestamp = None; กัน bug สมมติว่ามี intraday</td></tr>
+          <tr><td><b>Cache + incremental</b> — parquet, ดึงเฉพาะที่ขาด</td><td>แยกจาก logic การเตรียมข้อมูล</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3><span class="hdot"></span>Provider เริ่มต้น + PIT caveat ที่ต้องระวัง</h3>
+    <p class="sintro" style="margin-bottom:8px"><b>หมายเหตุเรื่อง vendor:</b> ชื่อ provider ด้านล่างเป็นเพียง <i>ตัวเลือกสำหรับ POC/test</i> เพื่อให้เห็น input/output ก่อน–หลังของ adapter ตัวจริง ระบบไม่ผูกกับ vendor — เพิ่ม provider ใหม่ = เขียน <code>NewLoader(ProviderBase)</code> ใหม่ตัวเดียว ไม่แตะ core/adapter</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Provider (ตัวอย่าง)</th><th>ใช้กับ</th><th>PIT caveat ที่ต้อง handle</th></tr></thead>
+        <tbody>
+          <tr><td><b>settlement file</b> (pipe)</td><td>energy futures + options (Brent/WTI)</td><td>settlement EOD (ไม่ใช่ last-trade); roll ต้อง PIT; เก็บ expired strikes</td></tr>
+          <tr><td><b>equity provider A</b><br><span style="color:var(--ink-faint);font-size:12px">(POC: Yahoo)</span></td><td>equity เริ่มต้นสำหรับ test pipeline</td><td><b>Adj Close ถูกคำนวณย้อนหลังใหม่ทุก split/div</b> → ต้องเก็บ raw_close + adj_factor แยก, backtest ใช้ raw ณ t; <b>delisted ticker หายจาก feed</b> → survivorship, ต้องมี delisting list เอง</td></tr>
+          <tr><td><b>equity provider B</b><br><span style="color:var(--ink-faint);font-size:12px">(POC: Massive/วัตถุประสงค์ test)</span></td><td>cross-check provider A</td><td>ตรวจ adjustment convention ว่าตรงกันไหมก่อน merge — ความต่างเป็นสัญญาณว่าใครคำนวณผิด</td></tr>
+          <tr><td><b>institutional feed</b><br><span style="color:var(--ink-faint);font-size:12px">(prod: Databento/Polygon/…)</span></td><td>production เมื่อ POC ผ่าน</td><td>swap ที่ <code>ingestion/</code> เท่านั้น — adapter/core ไม่รู้ตัวว่า provider เปลี่ยน</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="ironrule">
+      <div class="irk">Adj Close<br>PIT trap</div>
+      <p>provider ฟรีบางตัว (เช่น Yahoo) คืน <code>Close</code> และ <code>Adj Close</code> — <b>ห้ามใช้ Adj Close ตรงๆ ใน backtest</b> เพราะมันคือราคาที่ปรับด้วยข้อมูลอนาคต (ทุก dividend/split ในอนาคตเปลี่ยนค่าทั้ง history) เก็บ <code>raw_close</code> + <code>adj_factor</code> แยกกัน แล้วให้ adapter สร้าง adjusted-on-the-fly ด้วยข้อมูลถึง t เท่านั้น caveat นี้ใช้กับทุก vendor ที่ทำ retroactive adjustment</p>
+    </div>
+  </section>
+
+  <!-- ============ 06 CORE ============ -->
+  <section id="core">
+    <span class="snum">06 / IMPLEMENTATION</span>
+    <h2>Core modules</h2>
+    <p class="sintro">เครื่องมือคณิตศาสตร์ครบระดับ institutional — stage 2 มี feature-quality &amp; normality tests, stage 4 แยกเป็น metrics (วัด) + overfitting (กัน false discovery) แต่ละ function มี signature ตายตัวด้านล่าง</p>
+
+    <div class="modgrid">
+      <div class="modcard">
+        <div class="mh"><span class="mname">validators.py</span><span class="mstage">stage 1</span></div>
+        <div class="mdesc">logical bound, completeness, cap outlier — point-in-time, peer-group</div>
+        <ul>
+          <li>logical_bounds_check(df, cfg)</li>
+          <li>missing_completeness(df, cfg)</li>
+          <li>outlier_cap(df, cfg)</li>
+        </ul>
+      </div>
+      <div class="modcard">
+        <div class="mh"><span class="mname">stability.py</span><span class="mstage">stage 2</span></div>
+        <div class="mdesc">stationarity, distribution shift, normality และ feature quality</div>
+        <ul>
+          <li>adf_kpss_check(series)</li>
+          <li>arch_lm_test(series, lags)</li>
+          <li>variance_ratio_test(series) <span class="newtag">new</span></li>
+          <li>ljung_box(series, lags) <span class="newtag">new</span></li>
+          <li>jarque_bera(series) <span class="newtag">new</span></li>
+          <li>hurst_exponent(series) <span class="newtag">new</span></li>
+          <li>distribution_shift(train, val)</li>
+          <li>information_coefficient(pred, fwd) <span class="newtag">new</span></li>
+          <li>vif_condition_number(df) <span class="newtag">new</span></li>
+          <li>sign_consistency(df, cfg)</li>
+        </ul>
+      </div>
+      <div class="modcard">
+        <div class="mh"><span class="mname">splitter.py</span><span class="mstage">stage 3</span></div>
+        <div class="mdesc">walk-forward + purge/embargo + diversity gate (KL &amp; JS)</div>
+        <ul>
+          <li>walk_forward_split(df, cfg)</li>
+          <li>purge_embargo(folds, df, cfg)</li>
+          <li>regime_diversity_gate(folds, labels, cfg)</li>
+          <li>combinatorial_purged_cv(df, cfg) <span class="newtag">new</span></li>
+        </ul>
+      </div>
+      <div class="modcard">
+        <div class="mh"><span class="mname">metrics.py</span><span class="mstage">stage 4</span></div>
+        <div class="mdesc">full metric set + per-fold/per-regime breakdown (ดู section 08)</div>
+        <ul>
+          <li>return_metrics(returns)</li>
+          <li>risk_adjusted(returns, rf)</li>
+          <li>drawdown_metrics(equity) <span class="newtag">new</span></li>
+          <li>distribution_metrics(returns) <span class="newtag">new</span></li>
+          <li>tail_metrics(returns, α)</li>
+          <li>hit_metrics(returns) <span class="newtag">new</span></li>
+          <li>per_fold_breakdown(...) <span class="newtag">new</span></li>
+          <li>per_regime_breakdown(...) <span class="newtag">new</span></li>
+          <li>stability_score(per_fold) <span class="newtag">new</span></li>
+        </ul>
+      </div>
+      <div class="modcard">
+        <div class="mh"><span class="mname">overfitting.py</span><span class="mstage">stage 4 · new</span></div>
+        <div class="mdesc">กัน false discovery จากการ test หลายกลยุทธ์ — ระดับ Lopez de Prado</div>
+        <ul>
+          <li>deflated_sharpe_ratio(sr, n_trials, ...)</li>
+          <li>prob_backtest_overfitting(ret_matrix)</li>
+          <li>min_track_record_length(sr, target)</li>
+        </ul>
+      </div>
+      <div class="modcard">
+        <div class="mh"><span class="mname">regime.py</span><span class="mstage">all stages</span></div>
+        <div class="mdesc"><b>Primary labeler = rolling rule-based เท่านั้น</b> — HMM/GMM เป็น validator offline</div>
+        <ul>
+          <li>assign_regime_labels(df, cfg)</li>
+          <li>compute_transition_matrix(labels)</li>
+          <li>validate_labels_hmm(labels, df)</li>
+          <li>diversity_check_gmm(windows)</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3><span class="hdot"></span>เครื่องมือคณิตศาสตร์ครบชุด — แยกตามวัตถุประสงค์</h3>
+    <p>การประเมินว่า "math เพียงพอไหม": validation pipeline ที่รัดกุมต้องตอบ 4 คำถาม แต่ละข้อต้องมีเครื่องมือรองรับ ตารางนี้คือ checklist</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th>คำถามที่ pipeline ต้องตอบ</th><th>เครื่องมือ</th><th>stage</th></tr></thead>
+        <tbody>
+          <tr><td>feature นิ่งพอจะ model ไหม (stationary)</td><td>ADF, KPSS, Variance Ratio, Hurst</td><td>2</td></tr>
+          <tr><td>มี volatility clustering / autocorrelation ตกค้างไหม</td><td>ARCH-LM, Ljung-Box</td><td>2</td></tr>
+          <tr><td>feature กระจายตัวปกติไหม / fat tail แค่ไหน</td><td>Jarque-Bera, skew, kurtosis</td><td>2</td></tr>
+          <tr><td>train กับ val คนละ distribution ไหม</td><td>PSI, KS, Wasserstein, JS divergence</td><td>2/3</td></tr>
+          <tr><td>feature ทำนาย target ได้จริงไหม / collinear ไหม</td><td>Information Coefficient (IC, rank IC), VIF, condition number</td><td>2</td></tr>
+          <tr><td>fold มี regime หลากหลายพอไหม</td><td>KL divergence, JS divergence, concentration, unseen-regime</td><td>3</td></tr>
+          <tr><td>performance ดีจริงหรือฟลุ้คจากการ test เยอะ</td><td>Deflated Sharpe, PBO, Min Track Record Length</td><td>4</td></tr>
+          <tr><td>กำไรกระจายยังไงข้าม fold/regime (ไม่ใช่แค่ค่าเฉลี่ย)</td><td>per-fold/per-regime breakdown, stability score</td><td>4</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3><span class="hdot"></span>KL divergence gate — ยังจำเป็น แต่ต้องคู่กับ JS</h3>
+    <p>KL <b>ยังจำเป็น</b>ครับ แต่มีข้อจำกัดที่ต้องเข้าใจ: <code>KL(val‖train)</code> เป็น asymmetric และจะ <b>เป็นอนันต์</b>ทันทีถ้า val มี regime ที่ train ไม่มี (division by zero) — ซึ่งซ้อนกับ unseen-regime check อยู่แล้ว ดังนั้น KL ตัวเดียวจับได้แค่ "support ต่างกัน" แต่จับ "รูปร่าง distribution ต่างกันเมื่อ support เท่ากัน" ได้ไม่เสถียร</p>
+    <p>วิธีที่ถูกต้อง: ใช้ทั้งคู่ — KL จับ shift รุนแรง, JS divergence (symmetric, bounded 0–1) เป็นตัวหลักที่เสถียรกว่าและเทียบข้าม fold ได้ ทั้งสองอยู่ใน <code>regime_diversity_gate()</code></p>
+    <div class="code">
+      <div class="codehd"><span class="fn">core/splitter.py</span><span class="tag">diversity gate · KL + JS</span></div>
+<pre><span class="kw">def</span> <span class="fn2">regime_diversity_gate</span>(folds, labels, cfg) -> pd.DataFrame:
+    <span class="st">"""fail fold ถ้า: (1) unseen regime ใน val  (2) concentration &gt; max
+       (3) KL(val‖train) &gt; kl_threshold  (4) JS(val,train) &gt; js_threshold"""</span>
+    rows = []
+    <span class="kw">for</span> i, (tr, va) <span class="kw">in</span> <span class="fn2">enumerate</span>(folds):
+        p = labels.iloc[va].value_counts(normalize=<span class="kw">True</span>)
+        q = labels.iloc[tr].value_counts(normalize=<span class="kw">True</span>)
+        unseen = <span class="fn2">set</span>(p.index) - <span class="fn2">set</span>(q.index)
+        kl = _kl_div(p, q)                  <span class="cm"># asymmetric — จับ shift รุนแรง</span>
+        js = _js_div(p, q)                  <span class="cm"># symmetric bounded — เทียบข้าม fold</span>
+        ok = (<span class="kw">not</span> unseen) <span class="kw">and</span> p.max() &lt;= cfg[<span class="st">"max_concentration"</span>] \
+             <span class="kw">and</span> kl &lt;= cfg[<span class="st">"kl_threshold"</span>] <span class="kw">and</span> js &lt;= cfg[<span class="st">"js_threshold"</span>]
+        rows.append({<span class="st">"fold"</span>: i, <span class="st">"pass"</span>: ok, <span class="st">"unseen"</span>: unseen,
+                     <span class="st">"conc"</span>: p.max(), <span class="st">"kl"</span>: kl, <span class="st">"js"</span>: js})
+    <span class="kw">return</span> pd.DataFrame(rows)</pre>
+    </div>
+  </section>
+  <!-- ============ 07 ADAPTERS ============ -->
+  <section id="adapters">
+    <span class="snum">07 / IMPLEMENTATION</span>
+    <h2>Adapter layer</h2>
+    <p class="sintro">options math (IV, greeks, PCP, VRP, skew) เหมือนกันไม่ว่า underlying เป็น equity หรือ futures จึงใช้ inheritance: <code>OptionsBase</code> เก็บส่วนร่วม ~65% subclass override เฉพาะส่วนต่าง (ชื่อ generic แล้ว — ไม่มี wti)</p>
+
+    <div class="code">
+      <div class="codehd"><span class="fn">adapters/futures_options_adapter.py</span><span class="tag">override pattern · generic</span></div>
+<pre><span class="kw">class</span> <span class="ty">FuturesOptionsAdapter</span>(OptionsBase):
+    <span class="kw">def</span> <span class="fn2">prepare</span>(self, raw_df):
+        df = self.<span class="fn2">build_continuous_futures</span>(raw_df)        <span class="cm"># futures-general</span>
+        df = self.<span class="fn2">flag_scheduled_events</span>(df, self.cfg)    <span class="cm"># อ่าน cfg['event_calendars']</span>
+        df = self.<span class="fn2">compute_term_structure</span>(df)            <span class="cm"># futures-general</span>
+        <span class="cm"># iv_source: provided → ใช้ iv_provided จาก exchange (validate); else solve เอง</span>
+        df = self.<span class="fn2">build_iv_surface</span>(df, self.cfg)        <span class="cm"># inherited ✓ (เคารพ cfg['iv_source'])</span>
+        df = self.<span class="fn2">compute_greeks</span>(df, self.cfg)          <span class="cm"># inherited ✓ (ใช้ delta_provided ถ้ามี)</span>
+        df = self.<span class="fn2">compute_vrp_sign</span>(df, self.cfg)        <span class="cm"># inherited ✓</span>
+        cfg = {**self.cfg,
+               <span class="st">"regime_axes"</span>: [<span class="st">"vol_regime"</span>, <span class="st">"term_structure"</span>,
+                   <span class="st">"vrp_sign"</span>, <span class="st">"skew_direction"</span>] + self.cfg[<span class="st">"event_regimes"</span>],
+               <span class="st">"purge_bars"</span>: self.cfg[<span class="st">"max_dte"</span>]}
+        <span class="kw">return</span> df, cfg
+
+<span class="cm"># bz.yaml (Brent) ชี้: iv_source: provided, event_calendars: [events/eia.csv, opec.csv]</span>
+<span class="cm"># เพิ่ม WTI = สร้าง cl.yaml (iv_source: solve, vol_col: ovx) — โค้ดเดิม ไม่แก้อะไร</span></pre>
+    </div>
+    <p>สังเกต 2 จุด: <code>flag_scheduled_events()</code> เป็น generic — Brent ชี้ EIA/OPEC, equity ชี้ earnings/FOMC ตัว function ไม่รู้จัก "EIA"; และ <code>build_iv_surface()</code> เคารพ <code>cfg['iv_source']</code> — data Brent ให้ <code>OPTION_VOLATILITY</code> มาแล้ว จึง validate แล้วใช้เลย ไม่ต้อง re-solve ทุกจุด (ประหยัดและตรงกับ exchange convention)</p>
+  </section>
+
+  <!-- ============ 08 GREEKS &amp; SPREAD MATH (NEW v1.3) ============ -->
+  <section id="greeks">
+    <span class="snum">08 / IMPLEMENTATION</span>
+    <h2>Greeks &amp; spread math <span class="newtag">new v1.3</span></h2>
+    <p class="sintro">v1.2 บอกแค่ <code>iv_source: provided | solve</code> แต่ไม่ได้ระบุ <i>วิธี solve</i> และ <i>วิธี net Greeks สำหรับ spread</i> ส่วนนี้แก้ปัญหานั้น — ทุกอย่างอยู่ใน <code>core/pricing.py</code> + <code>core/greeks.py</code> ไม่ผูกกับ asset ใด (adapter เลือก model ผ่าน <code>cfg['pricing_model']</code>)</p>
+
+    <h3><span class="hdot"></span>เลือก model ตาม underlying</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Underlying</th><th>Pricing model</th><th>ทำไม</th><th>cfg</th></tr></thead>
+        <tbody>
+          <tr><td>Equity (ไม่มี div)</td><td>Black-Scholes</td><td>spot ราคาที่ใช้ซื้อ-ขายได้ตรง</td><td><code>pricing_model: bs</code></td></tr>
+          <tr><td>Equity (มี div) / Index</td><td>BS-Merton (q=div yield)</td><td>discount forward ด้วย div yield</td><td><code>pricing_model: bsm</code></td></tr>
+          <tr><td>Futures options (Brent, WTI, ฯลฯ)</td><td><b>Black-76</b></td><td>underlying คือ futures (no carry); ใช้ BS ตรงๆ จะผิด — เพราะ drift ≠ r</td><td><code>pricing_model: black76</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="ironrule">
+      <div class="irk">Black-76<br>≠ BS</div>
+      <p>ความผิดพลาดที่พบบ่อย: ใช้ Black-Scholes คำนวณ Greeks ของ futures options โดยใส่ futures price แทน spot — <b>delta จะผิดประมาณ <code>e^(rT)</code> เท่า</b> และ theta จะรวม cost-of-carry ของ underlying ที่ไม่มีจริง สำหรับ Brent/WTI ที่ DTE ~30 วันที่ r=5% ค่าผิดประมาณ 0.4% ของ delta — ดูเล็ก แต่พอเอามารวมกับ leverage ของ spread แล้วชี้ทิศทาง P&amp;L ผิด</p>
+    </div>
+
+    <h3><span class="hdot"></span>Black-76 — formula สำหรับ futures options</h3>
+    <p>ราคา call: <code>C = e^(-rT) · [F·N(d₁) − K·N(d₂)]</code>; put: <code>P = e^(-rT) · [K·N(-d₂) − F·N(-d₁)]</code> โดย <code>d₁ = [ln(F/K) + ½σ²T] / (σ√T)</code>, <code>d₂ = d₁ − σ√T</code></p>
+    <div class="code">
+      <div class="codehd"><span class="fn">core/pricing.py</span><span class="tag">Black-76 + BS-Merton (single API)</span></div>
+<pre><span class="kw">def</span> <span class="fn2">price</span>(model, S_or_F, K, T, r, sigma, right, q=<span class="nm">0.0</span>) -> <span class="ty">float</span>:
+    <span class="st">"""ราคา option ที่ค่าเดียว — adapter เรียกผ่าน vectorize() อีกชั้น"""</span>
+    <span class="kw">if</span> model == <span class="st">"black76"</span>:
+        F = S_or_F                                  <span class="cm"># futures price, ไม่ใช่ spot</span>
+        d1 = (np.log(F/K) + <span class="nm">0.5</span>*sigma**<span class="nm">2</span>*T) / (sigma*np.sqrt(T))
+        d2 = d1 - sigma*np.sqrt(T)
+        disc = np.exp(-r*T)
+        <span class="kw">if</span> right == <span class="st">"C"</span>: <span class="kw">return</span> disc*(F*norm.cdf(d1) - K*norm.cdf(d2))
+        <span class="kw">else</span>:            <span class="kw">return</span> disc*(K*norm.cdf(-d2) - F*norm.cdf(-d1))
+    <span class="kw">elif</span> model <span class="kw">in</span> (<span class="st">"bs"</span>, <span class="st">"bsm"</span>):
+        S = S_or_F
+        d1 = (np.log(S/K) + (r - q + <span class="nm">0.5</span>*sigma**<span class="nm">2</span>)*T) / (sigma*np.sqrt(T))
+        d2 = d1 - sigma*np.sqrt(T)
+        <span class="kw">if</span> right == <span class="st">"C"</span>:
+            <span class="kw">return</span> S*np.exp(-q*T)*norm.cdf(d1) - K*np.exp(-r*T)*norm.cdf(d2)
+        <span class="kw">else</span>:
+            <span class="kw">return</span> K*np.exp(-r*T)*norm.cdf(-d2) - S*np.exp(-q*T)*norm.cdf(-d1)
+    <span class="kw">raise</span> ValueError(<span class="st">f"unknown model </span>{model}<span class="st">"</span>)
+
+<span class="kw">def</span> <span class="fn2">solve_iv</span>(model, mkt_price, S_or_F, K, T, r, right, q=<span class="nm">0.0</span>,
+              bounds=(<span class="nm">1e-4</span>, <span class="nm">5.0</span>), tol=<span class="nm">1e-6</span>) -> <span class="ty">float</span>:
+    <span class="st">"""Brent root-find — ทนกว่า Newton เมื่อ vega ใกล้ 0 (deep ITM/OTM, T→0).
+       คืน NaN ถ้า: arb violation (มี intrinsic &gt; mkt_price), bounds ไม่ครอบ root"""</span>
+    intrinsic = <span class="fn2">max</span>(<span class="nm">0.0</span>, (S_or_F - K) <span class="kw">if</span> right == <span class="st">"C"</span> <span class="kw">else</span> (K - S_or_F))
+    <span class="kw">if</span> mkt_price &lt; intrinsic * np.exp(-r*T) - tol:
+        <span class="kw">return</span> np.nan                            <span class="cm"># arb — log แล้วข้าม</span>
+    f = <span class="kw">lambda</span> s: <span class="fn2">price</span>(model, S_or_F, K, T, r, s, right, q) - mkt_price
+    <span class="kw">try</span>:    <span class="kw">return</span> brentq(f, *bounds, xtol=tol)
+    <span class="kw">except</span> ValueError: <span class="kw">return</span> np.nan      <span class="cm"># root นอก bounds → log + skip</span></pre>
+    </div>
+
+    <h3><span class="hdot"></span>Greeks — formula closed-form (ห้ามใช้ numerical bump เป็น primary)</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Greek</th><th>Black-76 (call)</th><th>BS-Merton (call)</th><th>หมายเหตุ</th></tr></thead>
+        <tbody>
+          <tr><td><b>Delta</b></td><td><code>e^(-rT)·N(d₁)</code></td><td><code>e^(-qT)·N(d₁)</code></td><td>Black-76 delta &lt; BS เสมอ (ด้วย discount factor)</td></tr>
+          <tr><td><b>Gamma</b></td><td><code>e^(-rT)·φ(d₁) / (F·σ·√T)</code></td><td><code>e^(-qT)·φ(d₁) / (S·σ·√T)</code></td><td>per $1 ของ underlying</td></tr>
+          <tr><td><b>Vega</b></td><td><code>e^(-rT)·F·φ(d₁)·√T</code></td><td><code>e^(-qT)·S·φ(d₁)·√T</code></td><td>per 1.00 vol unit (หาร 100 = per vol point)</td></tr>
+          <tr><td><b>Theta</b></td><td>มี 2 term: vega-decay + interest</td><td>มี 3 term: vega-decay + interest + div</td><td>per 1 ปี — หาร 365 หรือ 252 ตาม convention</td></tr>
+          <tr><td><b>Rho</b></td><td><code>-T·C</code> (rate ติด disc)</td><td><code>K·T·e^(-rT)·N(d₂)</code></td><td>เล็กในระยะสั้น แต่สำคัญใน calendar spread</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sintro" style="margin-top:8px"><b>ทำไมห้ามใช้ bump?</b> bump method <code>(price(σ+ε) − price(σ−ε)) / 2ε</code> จะมี noise floor ที่ระดับ <code>ε</code> และผิดเป็นระบบใกล้ T→0 หรือ deep ITM/OTM ใช้ closed-form เป็น primary, bump เป็น sanity check ใน test เท่านั้น (tolerance ≤ 1e-4)</p>
+
+    <h3><span class="hdot"></span>Net Greeks สำหรับ spread (calendar เป็นหลัก)</h3>
+    <p>spread = ผลรวมเชิงเส้นของ leg แต่ละ leg มีน้ำหนัก ±qty ตามทิศทาง (+1 = long, −1 = short) net Greek ไม่ใช่แค่ <code>sum(greek)</code> — มี subtlety 3 จุดสำหรับ calendar spread:</p>
+    <div class="code">
+      <div class="codehd"><span class="fn">core/greeks.py</span><span class="tag">net greeks · spread-aware</span></div>
+<pre><span class="kw">def</span> <span class="fn2">net_greeks</span>(legs: <span class="ty">list[Leg]</span>, cfg) -> <span class="ty">dict</span>:
+    <span class="st">"""legs = [Leg(qty, right, K, expiry, F_at_t, iv_at_t, T_at_t), ...]
+       qty = +1 long / -1 short / +n multi-contract"""</span>
+    g = {<span class="st">"delta"</span>:<span class="nm">0</span>, <span class="st">"gamma"</span>:<span class="nm">0</span>, <span class="st">"theta"</span>:<span class="nm">0</span>,
+         <span class="st">"vega_total"</span>:<span class="nm">0</span>, <span class="st">"vega_short_term"</span>:<span class="nm">0</span>, <span class="st">"vega_long_term"</span>:<span class="nm">0</span>}
+    <span class="kw">for</span> L <span class="kw">in</span> legs:
+        leg_g = <span class="fn2">single_leg_greeks</span>(L, cfg)              <span class="cm"># closed-form ตามตารางข้างบน</span>
+        <span class="kw">for</span> k <span class="kw">in</span> (<span class="st">"delta"</span>,<span class="st">"gamma"</span>,<span class="st">"theta"</span>):
+            g[k] += L.qty * leg_g[k]
+        <span class="cm"># ── vega ต้องแยก bucket ── เพราะ calendar = long-vega ขายาว / short-vega ขาสั้น</span>
+        <span class="cm"># แต่ vega ของขายาวกับขาสั้น "ไม่ใช่ของอย่างเดียวกัน": IV term-structure</span>
+        <span class="cm"># shift ไม่ขนานกัน — short-end เคลื่อนแรงกว่า long-end (vega beta &lt; 1)</span>
+        bucket = <span class="st">"vega_short_term"</span> <span class="kw">if</span> L.T &lt; cfg[<span class="st">"vega_bucket_cutoff"</span>] <span class="kw">else</span> <span class="st">"vega_long_term"</span>
+        g[bucket] += L.qty * leg_g[<span class="st">"vega"</span>]
+        g[<span class="st">"vega_total"</span>] += L.qty * leg_g[<span class="st">"vega"</span>]            <span class="cm"># raw sum (มักทำให้ดู flat)</span>
+    <span class="cm"># vega_term_risk = ความเสี่ยงที่ term structure เคลื่อน "ไม่ขนาน" ซึ่ง</span>
+    <span class="cm"># vega_total = 0 จับไม่ได้ — นี่คือ root cause ของ vega bleed ใน calendar</span>
+    g[<span class="st">"vega_term_risk"</span>] = g[<span class="st">"vega_long_term"</span>] - cfg[<span class="st">"vega_beta"</span>] * g[<span class="st">"vega_short_term"</span>]
+    <span class="kw">return</span> g</pre>
+    </div>
+
+    <h3><span class="hdot"></span>3 จุดที่ calendar spread P&amp;L attribution พลาดบ่อย</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>จุดพลาด</th><th>อาการ</th><th>แก้ด้วย</th></tr></thead>
+        <tbody>
+          <tr><td><b>Vega = 0 แต่ขาดทุนจาก vol</b></td><td>net vega "ดู flat" แต่ short-end IV ตกแรงกว่า long-end → ขาดทุนจริง</td><td>แยก <code>vega_short_term</code> / <code>vega_long_term</code> + <code>vega_beta</code> calibrate รายเดือน (เก็บใน cfg)</td></tr>
+          <tr><td><b>Theta ไม่เท่ากันสองขา</b></td><td>short-leg θ ใกล้หมดอายุระเบิดเร็วกว่า; ถ้าใช้ avg theta จะ underestimate decay เร็วในช่วง 7–14 DTE</td><td>คำนวณ θ ของแต่ละ leg แยก ไม่ใช้ average; flag เมื่อ short-leg DTE &lt; 14</td></tr>
+          <tr><td><b>DTE convention ผสม</b></td><td>ขาหนึ่งใช้ calendar day อีกขาใช้ trading day → T ของสองขาคนละหน่วย → Greeks เพี้ยน</td><td>ใช้ <code>core/dte.py</code> เป็น single source of truth — adapter ห้ามคำนวณ DTE เอง</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3><span class="hdot"></span>เมื่อใช้ provided IV/Greeks — ยังต้อง validate</h3>
+    <p>data ที่ exchange ให้ <code>OPTION_VOLATILITY</code>/<code>DELTA_FACTOR</code> มาแล้ว <b>ก็ยังต้องตรวจ</b> เพราะ exchange ใช้ rate/dividend assumption ของตัวเอง (อาจไม่ตรงกับ rate ที่เราใช้ใน solver):</p>
+    <div class="code">
+      <div class="codehd"><span class="fn">core/greeks.py</span><span class="tag">provided vs solved cross-check</span></div>
+<pre><span class="kw">def</span> <span class="fn2">validate_provided_iv</span>(df, cfg) -> pd.DataFrame:
+    <span class="st">"""solve IV ของเราเอง แล้วเทียบกับ iv_provided — ถ้าต่างเกิน threshold = log + flag"""</span>
+    df[<span class="st">"iv_solved"</span>] = df.<span class="fn2">apply</span>(<span class="kw">lambda</span> r: <span class="fn2">solve_iv</span>(
+        cfg[<span class="st">"pricing_model"</span>], r.price, r.F, r.strike, r.T, r.r, r.right
+    ), axis=<span class="nm">1</span>)
+    df[<span class="st">"iv_diff"</span>] = (df[<span class="st">"iv_solved"</span>] - df[<span class="st">"iv_provided"</span>]).<span class="fn2">abs</span>()
+    <span class="cm"># threshold 0.5 vol-point เป็นจุดเริ่มต้น — ถ้าเกินบ่อย ตรวจ rate convention</span>
+    df[<span class="st">"iv_flag"</span>] = df[<span class="st">"iv_diff"</span>] &gt; cfg[<span class="st">"iv_validate_threshold"</span>]
+    <span class="kw">return</span> df</pre>
+    </div>
+  </section>
+
+  <!-- ============ 09 DIAGNOSIS ============ -->
+  <section id="diagnosis">
+    <span class="snum">09 / IMPLEMENTATION</span>
+    <h2>Performance diagnosis <span class="newtag">expanded</span></h2>
+    <p class="sintro">หัวใจของ stage 4 ที่ blueprint เดิมพูดหลวมไป — ห้ามดูแค่ค่าเฉลี่ย ต้องเห็นการกระจายราย fold และราย regime เพราะ "สถิติเหมือนกัน แต่การใช้งานจริงต่างกัน": ค่าเฉลี่ย +15%/ปี อาจซ่อน fold ที่ขาดทุนหนักไว้</p>
+
+    <div class="foldviz">
+      <div style="font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;margin-bottom:14px">ตัวอย่าง: กลยุทธ์เดียวกัน — มุมมองค่าเฉลี่ย vs มุมมองราย fold</div>
+      <div class="fbar-row"><span class="fbar-lbl">2017 · low-vol</span><div class="fbar-track"><div class="fbar-mid"></div><div class="fbar-fill fbar-pos" style="width:9%"></div></div><span class="fbar-val pos">+18%</span></div>
+      <div class="fbar-row"><span class="fbar-lbl">2018 · trade-war</span><div class="fbar-track"><div class="fbar-mid"></div><div class="fbar-fill fbar-pos" style="width:20%"></div></div><span class="fbar-val pos">+40%</span></div>
+      <div class="fbar-row"><span class="fbar-lbl">2019 · recovery</span><div class="fbar-track"><div class="fbar-mid"></div><div class="fbar-fill fbar-pos" style="width:11%"></div></div><span class="fbar-val pos">+22%</span></div>
+      <div class="fbar-row"><span class="fbar-lbl">2020 · COVID</span><div class="fbar-track"><div class="fbar-mid"></div><div class="fbar-fill fbar-neg" style="width:12.5%;right:50%"></div></div><span class="fbar-val neg">−25%</span></div>
+      <div class="fbar-row"><span class="fbar-lbl">2021 · tech-boom</span><div class="fbar-track"><div class="fbar-mid"></div><div class="fbar-fill fbar-pos" style="width:15%"></div></div><span class="fbar-val pos">+30%</span></div>
+      <div class="fnote bad"><span class="fnk">ถ้าดูแต่ค่าเฉลี่ย</span><span>เห็น <b>+15%/ปี</b> ดูดีมาก ตัดสินใจ deploy ทันที — แต่ไม่รู้เลยว่ามี fold ที่พังหนัก</span></div>
+      <div class="fnote good"><span class="fnk">ถ้าดูราย fold</span><span>เห็นว่า 2020 ขาดทุน <b>−25%</b> ในวิกฤต = กลยุทธ์เปราะใน regime วิกฤต ต้องมี circuit breaker หรือ regime filter ก่อน deploy จริง</span></div>
+    </div>
+
+    <p>ดังนั้น <code>per_fold_breakdown()</code> และ <code>per_regime_breakdown()</code> ไม่ใช่ optional — มันคือ output หลักของ stage 4 ที่ต้องแสดงทุก fold พร้อม regime ที่ครอบงำ ช่วงวันที่ และ worst-case ไม่ใช่แค่ค่าเฉลี่ยรวม</p>
+
+    <div class="code">
+      <div class="codehd"><span class="fn">core/metrics.py</span><span class="tag">per-fold / per-regime</span></div>
+<pre><span class="kw">def</span> <span class="fn2">per_fold_breakdown</span>(fold_returns: <span class="ty">dict</span>, regime_labels: pd.Series) -> pd.DataFrame:
+    <span class="st">"""หนึ่งแถวต่อ fold — เห็นการกระจายจริง ไม่ใช่ค่าเฉลี่ยรวม"""</span>
+    rows = []
+    <span class="kw">for</span> fid, r <span class="kw">in</span> fold_returns.items():
+        rows.append({
+            <span class="st">"fold"</span>: fid,
+            <span class="st">"date_range"</span>:   (r.index[<span class="nm">0</span>], r.index[-<span class="nm">1</span>]),
+            <span class="st">"dominant_regime"</span>: regime_labels.loc[r.index].mode()[<span class="nm">0</span>],
+            <span class="st">"total_return"</span>: (<span class="nm">1</span>+r).prod() - <span class="nm">1</span>,
+            <span class="st">"sharpe"</span>:       _sharpe(r),
+            <span class="st">"sortino"</span>:      _sortino(r),
+            <span class="st">"max_dd"</span>:       _max_drawdown(r),
+            <span class="st">"cvar_95"</span>:      _cvar(r, <span class="nm">0.95</span>),
+            <span class="st">"hit_rate"</span>:     (r &gt; <span class="nm">0</span>).mean(),
+            <span class="st">"worst_day"</span>:    r.min(),
+        })
+    <span class="kw">return</span> pd.DataFrame(rows)
+
+<span class="kw">def</span> <span class="fn2">stability_score</span>(per_fold: pd.DataFrame) -> <span class="ty">dict</span>:
+    <span class="st">"""วัดความสม่ำเสมอข้าม fold — ค่าเฉลี่ยสูงแต่ผันผวนมาก = เปราะ"""</span>
+    s = per_fold[<span class="st">"sharpe"</span>]
+    <span class="kw">return</span> {<span class="st">"sharpe_mean"</span>: s.mean(), <span class="st">"sharpe_std"</span>: s.std(),
+            <span class="st">"sharpe_min"</span>: s.min(), <span class="st">"pct_profitable_folds"</span>: (per_fold[<span class="st">"total_return"</span>]&gt;<span class="nm">0</span>).mean(),
+            <span class="st">"worst_fold_return"</span>: per_fold[<span class="st">"total_return"</span>].min()}</pre>
+    </div>
+
+    <h3><span class="hdot"></span>Full metric set — มาตรฐานที่ต้องวัด</h3>
+    <p>blueprint เดิมมีแค่ Sharpe/CVaR ซึ่งไม่พอ ของจริงต้องครอบคลุม 6 หมวด ทุกตัววัดทั้งระดับรวม, ราย fold และราย regime</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th>หมวด</th><th>เมตริก</th><th>จับอะไรที่ค่าเฉลี่ยไม่เห็น</th></tr></thead>
+        <tbody>
+          <tr><td><b>Return</b></td><td>Total, CAGR, ann. return</td><td>ฐานของทุกอย่าง</td></tr>
+          <tr><td><b>Risk-adjusted</b></td><td>Sharpe, Sortino, Calmar, Information Ratio</td><td>Sortino แยก downside; Calmar เทียบกับ max DD</td></tr>
+          <tr><td><b>Drawdown</b></td><td>Max DD, avg DD, DD duration, recovery time, Ulcer index</td><td>ความเจ็บที่แท้จริง — Sharpe ไม่บอกว่าจมนานแค่ไหน</td></tr>
+          <tr><td><b>Distribution</b></td><td>min, max, mean, median, std, <b>skew, kurtosis</b></td><td>fat tail / asymmetry ที่ Sharpe สมมติว่าไม่มี</td></tr>
+          <tr><td><b>Tail</b></td><td>VaR, CVaR, worst day, worst week</td><td>ขนาดความเสียหายในหางซ้าย</td></tr>
+          <tr><td><b>Hit / consistency</b></td><td>win rate, profit factor, payoff ratio, longest losing streak</td><td>กำไรมาจากไม้ใหญ่ไม่กี่ไม้หรือสม่ำเสมอ</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="fnote good" style="margin-top:16px"><span class="fnk">overfitting gate</span><span>หลังวัดครบแล้ว ส่งผ่าน <code>deflated_sharpe_ratio()</code> เพื่อปรับ Sharpe ตามจำนวนกลยุทธ์ที่ทดสอบ และ <code>prob_backtest_overfitting()</code> — Sharpe สูงจากการลองเยอะๆ ไม่ใช่ edge จริง</span></div>
+  </section>
+  <!-- ============ 10 REUSE MATRIX ============ -->
+  <section id="reuse">
+    <span class="snum">10 / IMPLEMENTATION</span>
+    <h2>Reuse matrix — equity options vs futures options</h2>
+    <p class="sintro">บอกชัดว่า function ใด shared/partial/separate ใช้เป็นแผนที่ตัดสินใจว่าวางโค้ดที่ไหน อย่า duplicate สิ่งที่ <span class="chip s100">shared</span> และอย่ายัด <span class="chip ssep">separate</span> ลง base</p>
+    <div class="legend">
+      <span class="li"><span class="sw s100"></span>ใช้ร่วม 100% — core หรือ OptionsBase</span>
+      <span class="li"><span class="sw spar"></span>ใช้ร่วมบางส่วน — base + cfg override</span>
+      <span class="li"><span class="sw ssep"></span>แยกขาด — subclass เท่านั้น</span>
+    </div>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Function / concern</th><th>Stage</th><th>Status</th><th>หมายเหตุ</th></tr></thead>
+        <tbody>
+          <tr><td><span class="mn">logical_bounds_check</span></td><td>1</td><td><span class="chip s100">shared</span></td><td>bid&gt;0, IV&gt;0, PCP ± tol — เหมือนกันทุก asset</td></tr>
+          <tr><td><span class="mn">build_iv_surface</span></td><td>1</td><td><span class="chip s100">shared</span></td><td>arbitrage-free interpolation เป็น math เดียว</td></tr>
+          <tr><td><span class="mn">missing_completeness</span></td><td>1</td><td><span class="chip spar">partial</span></td><td>logic เดียว ต่างแค่ threshold ใน cfg (OI floor)</td></tr>
+          <tr><td><span class="mn">time alignment</span></td><td>1</td><td><span class="chip ssep">separate</span></td><td>NYSE close vs CME 23hr + scheduled events</td></tr>
+          <tr><td><span class="mn">corp action / roll</span></td><td>1</td><td><span class="chip ssep">separate</span></td><td>strike-adjust (equity) vs futures roll</td></tr>
+          <tr><td><span class="mn">adf/kpss/arch/jarque-bera</span></td><td>2</td><td><span class="chip s100">shared</span></td><td>test ทางสถิติ ไม่ขึ้นกับ asset</td></tr>
+          <tr><td><span class="mn">distribution_shift / IC / VIF</span></td><td>2</td><td><span class="chip s100">shared</span></td><td>function เดียวทุก asset</td></tr>
+          <tr><td><span class="mn">compute_vrp_sign / skew_25d</span></td><td>2</td><td><span class="chip s100">shared</span></td><td>formula เดียว (futures แค่ allow call-skew)</td></tr>
+          <tr><td><span class="mn">term structure feature</span></td><td>2</td><td><span class="chip ssep">separate</span></td><td>VIX term vs OVX + futures basis</td></tr>
+          <tr><td><span class="mn">walk_forward / diversity_gate</span></td><td>3</td><td><span class="chip s100">shared</span></td><td>cfg['regime_axes'] กำหนดแกน</td></tr>
+          <tr><td><span class="mn">purge_embargo</span></td><td>3</td><td><span class="chip spar">partial</span></td><td>purge=max_dte ทั้งคู่ futures เพิ่ม event gap ผ่าน cfg</td></tr>
+          <tr><td><span class="mn">all metrics + overfitting</span></td><td>4</td><td><span class="chip s100">shared</span></td><td>Sharpe/Sortino/DD/DSR/PBO เหมือนกันทุก asset</td></tr>
+          <tr><td><span class="mn">OOS P&amp;L net cost</span></td><td>4</td><td><span class="chip spar">partial</span></td><td>net vega bleed ทั้งคู่ futures เพิ่ม roll cost</td></tr>
+          <tr><td><span class="mn">stress event set</span></td><td>4</td><td><span class="chip ssep">separate</span></td><td>vix/earnings vs scheduled-event/roll-squeeze</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 11 CONFIG ============ -->
+  <section id="config">
+    <span class="snum">11 / IMPLEMENTATION</span>
+    <h2>Config schema</h2>
+    <p class="sintro">ความต่างระหว่าง instrument อยู่ที่นี่ ไม่ใช่ในโค้ด ชื่อจริง (B, North Sea, EIA) ปรากฏเฉพาะใน config — ตัวอย่างเป็น Brent ตาม data จริง</p>
+    <div class="code">
+      <div class="codehd"><span class="fn">configs/instruments/bz.yaml</span><span class="tag">Brent · instrument spec</span></div>
+<pre><span class="nm">family</span>: futures_options          <span class="cm"># เลือก adapter จากตรงนี้</span>
+<span class="nm">provider</span>: settlement             <span class="cm"># pipe-delimited EOD loader</span>
+<span class="nm">symbol</span>:                          <span class="cm"># resolve จาก field จริงในไฟล์</span>
+  product_id: 254                 <span class="cm"># stable key — join ใช้ตัวนี้ ไม่ใช่ชื่อ</span>
+  contract_root: B
+  hub: North Sea
+
+<span class="nm">columns</span>:
+  vol_col: brent_iv_index         <span class="cm"># ⚠ OVX = WTI เท่านั้น! Brent ใช้ index อื่น</span>
+                                  <span class="cm">#   หรือ proxy = rolling RV ถ้าไม่มี index</span>
+  price_col: front_month_cont
+
+<span class="nm">price_field</span>: settlement          <span class="cm"># ไม่ใช่ last-trade</span>
+<span class="nm">iv_source</span>: provided              <span class="cm"># ใช้ OPTION_VOLATILITY จาก exchange (validate ก่อน)</span>
+<span class="nm">date_grain</span>: eod                  <span class="cm"># date-only; ไม่มี intraday timestamp</span>
+
+<span class="nm">pricing</span>:                        <span class="cm"># NEW v1.3: model + IV solver settings</span>
+  model: black76                  <span class="cm"># futures options → Black-76 (ห้ามใช้ bs)</span>
+  iv_validate_threshold: 0.005    <span class="cm"># 0.5 vol-point — เกินนี้ flag</span>
+  iv_solver_bounds: [0.0001, 5.0] <span class="cm"># σ search range (annualized)</span>
+  vega_bucket_cutoff: 60          <span class="cm"># DTE &lt; 60 = short-term bucket (สำหรับ net vega ของ calendar)</span>
+  vega_beta: 0.7                  <span class="cm"># short-end vol ขยับแรงกว่า long-end (calibrate รายเดือน)</span>
+
+<span class="nm">dte</span>:                            <span class="cm"># NEW v1.3: calendar convention (single source of truth)</span>
+  basis: calendar                 <span class="cm"># calendar | trading — adapter ต้องใช้อันเดียวกัน</span>
+  day_count: act_365              <span class="cm"># act_365 | act_360 | bus_252</span>
+  expiry_cutoff: settlement       <span class="cm"># settlement (EOD) | open_next_day</span>
+  exclude_expiry_date: true       <span class="cm"># T-day = expiry นับเป็น DTE 0 หรือไม่</span>
+
+<span class="nm">event_calendars</span>: [events/eia.csv, events/opec.csv]  <span class="cm"># ไม่มีคำว่า EIA ในโค้ด</span>
+<span class="nm">event_regimes</span>: [eia_week]
+
+<span class="nm">validation</span>: { min_oi: 100, iv_cap: 5.0, futures_oi_floor: 1000, roll_days: 5 }
+<span class="nm">stability</span>: { psi_threshold: 0.25, use_iv_change: true }
+<span class="nm">cv</span>:
+  n_folds: 8
+  purge_bars: max_dte
+  event_embargo_bars: 2
+  regime_axes: [vol_regime, term_structure, vrp_sign, skew_direction, eia_week]
+  max_concentration: 0.80
+  kl_threshold: 0.5
+  js_threshold: 0.3              <span class="cm"># symmetric bounded companion</span>
+<span class="nm">performance</span>:
+  rf_rate_source: sofr
+  net_greek_pnl: true
+  include_roll_cost: true
+  n_trials: 40                   <span class="cm"># สำหรับ deflated sharpe</span>
+  stress_events: [eia_miss, opec_shock, roll_squeeze, vix_spike]
+<span class="nm">audit</span>:                          <span class="cm"># NEW v1.3: lightweight snapshot per stage</span>
+  enabled: true
+  snapshot_cols: [as_of_date, product_id, strike, expiry, price, iv_provided]
+  hash_algo: xxh64                <span class="cm"># เร็ว, deterministic</span>
+  retain_days: 30</pre>
+    </div>
+    <div class="ironrule">
+      <div class="irk">Brent ≠<br>WTI</div>
+      <p>data จริงเป็น Brent ไม่ใช่ WTI — ยืนยันว่าการตั้งชื่อ generic ถูกต้อง <code>futures_options_adapter</code> ใช้ได้ทันทีโดยไม่แก้โค้ด แต่ระวัง 2 จุด: <b>(1)</b> <code>OVX</code> เป็น vol index ของ WTI เท่านั้น Brent ต้องชี้ <code>vol_col</code> ไป index อื่นหรือใช้ realized vol เป็น proxy <b>(2)</b> EIA inventory เป็น US data — กระทบ WTI โดยตรงกว่า Brent ดังนั้น event weight ของ Brent อาจต่างจาก WTI (พิจารณาเพิ่ม API/EIA global หรือ OPEC เป็นหลัก)</p>
+    </div>
+  </section>
+
+  <!-- ============ 12 TESTS &amp; DATA AUDIT (NEW v1.3) ============ -->
+  <!-- ============ 12 DATA VERSIONING + AVAILABLE_AT ============ -->
+  <section id="versioning">
+    <span class="snum">12 / ADDITIONS v1.4</span>
+    <h2>Data versioning + available_at <span class="newtag">new v1.4</span></h2>
+    <p class="sintro">สองปัญหาต่างกันแต่แก้พร้อมกันได้ — <b>versioning</b> ป้องกัน invisible data change (provider แก้ย้อนหลังโดยไม่แจ้ง) และ <b>available_at</b> ป้องกัน look-ahead bias จากการ join ด้วยวันที่แทนที่จะเป็นเวลาที่ข้อมูลพร้อมจริงๆ ทั้งสองเป็น silent bug — ไม่มี error แต่ backtest result ปลอม</p>
+
+    <h3><span class="hdot"></span>ทำไม overwrite ถึงอันตราย</h3>
+    <div class="vtimeline">
+      <div class="vtl-row" style="background:var(--gray-50);font-weight:600">
+        <span class="vtl-ts">เวลา</span>
+        <span class="vtl-ev">เหตุการณ์</span>
+        <span class="vtl-tag info">สถานะ</span>
+      </div>
+      <div class="vtl-row">
+        <span class="vtl-ts">2024-09-25 18:00</span>
+        <span class="vtl-ev"><b>Provider publish settlement</b> — price = 63.46, OI = 12,450 เขียนลง <code>raw/bz/2024-09-25.parquet</code></span>
+        <span class="vtl-tag ok">OK</span>
+      </div>
+      <div class="vtl-row">
+        <span class="vtl-ts">2024-09-26 09:00</span>
+        <span class="vtl-ev"><b>Provider แก้ OI ย้อนหลัง</b> — OI จริงคือ 11,820 (รายงานผิด) <b>ถ้า overwrite</b>: ไฟล์เดิมหายไป ไม่รู้ว่าตัวเลขเดิมคืออะไร backtest ที่รันเมื่อวานใช้ตัวเลขอื่นกับวันนี้</span>
+        <span class="vtl-tag bad">DANGER</span>
+      </div>
+      <div class="vtl-row">
+        <span class="vtl-ts">2024-09-26 09:00</span>
+        <span class="vtl-ev"><b>ถ้าใช้ versioning</b> — เขียน <code>raw/bz/ingested_at=2024-09-26/2024-09-25.parquet</code> แยก pipeline เลือก partition ผ่าน <code>cfg["data_version"]</code> ของเดิมยังอยู่ครบ</span>
+        <span class="vtl-tag ok">SAFE</span>
+      </div>
+      <div class="vtl-row">
+        <span class="vtl-ts">backtest time</span>
+        <span class="vtl-ev"><b>reproducibility check</b> — re-run ด้วย <code>data_version: "2024-09-25"</code> ได้ผลเดิมเสมอ เปลี่ยนเป็น <code>"2024-09-26"</code> เห็นว่า OI revision กระทบ VRP signal ไหม</span>
+        <span class="vtl-tag info">INSIGHT</span>
+      </div>
+    </div>
+
+    <h3><span class="hdot"></span>โครงสร้าง immutable partitioned storage</h3>
+    <div class="code">
+      <div class="codehd"><span class="fn">raw/ partition layout</span><span class="tag">hive-style · immutable</span></div>
+<pre><span class="cm"># ── partition by instrument + ingestion date ──</span>
+raw/
+├── bz/                              <span class="cm"># Brent futures+options</span>
+│   ├── ingested_at=2024-09-25/
+│   │   └── settlement.parquet       <span class="cm"># as_of_date ≤ 2024-09-25</span>
+│   ├── ingested_at=2024-09-26/      <span class="cm"># revision — partition ใหม่ ไม่แก้เดิม</span>
+│   │   └── settlement.parquet
+│   └── ingested_at=2024-09-27/
+│       └── settlement.parquet
+└── eq_a/                            <span class="cm"># equity provider A</span>
+    ├── ingested_at=2024-09-25/
+    │   └── prices.parquet
+
+<span class="cm"># ── version manifest ──</span>
+raw/_versions.jsonl                  <span class="cm"># log ทุก ingestion: {ingested_at, rows, schema_hash, run_id}</span></pre>
+    </div>
+
+    <div class="code">
+      <div class="codehd"><span class="fn">ingestion/versioned_cache.py</span><span class="tag">read/write contract</span></div>
+<pre><span class="kw">def</span> <span class="fn2">write</span>(symbol, df, ingested_at=<span class="kw">None</span>):
+    <span class="st">"""ห้าม overwrite — เสมอเขียน partition ใหม่"""</span>
+    ts = ingested_at <span class="kw">or</span> datetime.<span class="fn2">utcnow</span>().<span class="fn2">date</span>().<span class="fn2">isoformat</span>()
+    path = <span class="fn2">f</span><span class="st">"raw/{symbol}/ingested_at={ts}/data.parquet"</span>
+    <span class="kw">if</span> Path(path).<span class="fn2">exists</span>():
+        <span class="kw">raise</span> FileExistsError(<span class="fn2">f</span><span class="st">"partition {ts} exists — versioning violated"</span>)
+    df.<span class="fn2">to_parquet</span>(path, index=<span class="kw">False</span>)
+    <span class="fn2">_append_manifest</span>(symbol, ts, df)   <span class="cm"># log rows + schema_hash</span>
+
+<span class="kw">def</span> <span class="fn2">read</span>(symbol, cfg) -> pd.DataFrame:
+    <span class="st">"""data_version: 'latest' | 'YYYY-MM-DD' | 'as_of_backtest_start'"""</span>
+    version = cfg.<span class="fn2">get</span>(<span class="st">"data_version"</span>, <span class="st">"latest"</span>)
+    <span class="kw">if</span> version == <span class="st">"latest"</span>:
+        partition = <span class="fn2">_latest_partition</span>(symbol)
+    <span class="kw">elif</span> version == <span class="st">"as_of_backtest_start"</span>:
+        partition = <span class="fn2">_partition_at</span>(symbol, cfg[<span class="st">"backtest_start"</span>])
+    <span class="kw">else</span>:
+        partition = version                          <span class="cm"># explicit YYYY-MM-DD</span>
+    <span class="kw">return</span> pd.<span class="fn2">read_parquet</span>(<span class="fn2">f</span><span class="st">"raw/{symbol}/ingested_at={partition}/data.parquet"</span>)</pre>
+    </div>
+
+    <h3><span class="hdot"></span>available_at — ทำไมถึงต่างจาก as_of_date</h3>
+    <p>ปัญหาคือข้อมูลวันที่ T มักไม่พร้อมในทันที มี release lag ตามประเภทข้อมูล ถ้า join ด้วย <code>as_of_date</code> อย่างเดียว pipeline จะ "รู้" ข้อมูลก่อนที่ตลาดจริงจะรู้</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Data type</th><th>as_of_date</th><th>available_at จริง</th><th>Lag</th><th>Impact ถ้าใช้ as_of_date</th></tr></thead>
+        <tbody>
+          <tr><td><b>EOD settlement</b></td><td>trade date</td><td>trade date + ~2–3 ชม. (18:00 UTC)</td><td>ชั่วโมง</td><td>เล็กน้อย — ถ้า strategy เทรด open วันถัดไป</td></tr>
+          <tr><td><b>EIA inventory</b></td><td>week ending</td><td>วันพุธถัดไป 14:30 ET</td><td>~5 วัน</td><td><b>รุนแรง</b> — เหมือนรู้ผล report ก่อนออก</td></tr>
+          <tr><td><b>CFTC COT report</b></td><td>วันอังคาร</td><td>วันศุกร์ 15:30 ET</td><td>~3.5 วัน</td><td>รุนแรง</td></tr>
+          <tr><td><b>Earnings (equity)</b></td><td>quarter end</td><td>วันที่ announce (ไม่ตายตัว)</td><td>2–8 สัปดาห์</td><td><b>รุนแรงมาก</b></td></tr>
+          <tr><td><b>Realized vol</b></td><td>period end</td><td>คำนวณได้ทันที (EOD)</td><td>ชั่วโมง</td><td>เล็กน้อย</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="code">
+      <div class="codehd"><span class="fn">RAW_SCHEMA — v1.4 update</span><span class="tag">เพิ่ม available_at</span></div>
+<pre>RAW_SCHEMA = {
+    <span class="st">"as_of_date"</span>:    <span class="st">"datetime64[ns]"</span>,     <span class="cm"># วันที่ข้อมูล "อ้างถึง" (period end)</span>
+    <span class="st">"available_at"</span>:  <span class="st">"datetime64[ns, UTC]"</span>, <span class="cm"># NEW: วันที่ข้อมูลพร้อมจริง (release time)</span>
+    <span class="st">"ingested_at"</span>:   <span class="st">"datetime64[ns, UTC]"</span>, <span class="cm"># NEW: วันที่ pipeline ดึงมา (≥ available_at)</span>
+    ...                                        <span class="cm"># fields อื่นไม่เปลี่ยน</span>
+}
+
+<span class="cm"># ── PIT-correct join ──</span>
+<span class="kw">def</span> <span class="fn2">pit_join</span>(signals, events, decision_time):
+    <span class="st">"""join เฉพาะ event ที่ available_at &lt;= decision_time (ไม่ใช่ as_of_date)"""</span>
+    eligible = events[events[<span class="st">"available_at"</span>] &lt;= decision_time]
+    <span class="kw">return</span> pd.<span class="fn2">merge_asof</span>(signals, eligible,
+                         left_on=<span class="st">"decision_time"</span>, right_on=<span class="st">"available_at"</span>,
+                         direction=<span class="st">"backward"</span>)   <span class="cm"># ห้าม forward!</span>
+
+<span class="cm"># ── fallback เมื่อ provider ไม่ให้ available_at ──</span>
+<span class="kw">def</span> <span class="fn2">infer_available_at</span>(as_of_date, data_type, cfg):
+    lag_map = cfg[<span class="st">"available_at_lag"</span>]  <span class="cm"># อยู่ใน yaml ไม่ hardcode</span>
+    <span class="kw">return</span> as_of_date + pd.<span class="fn2">Timedelta</span>(lag_map[data_type])</pre>
+    </div>
+
+    <div class="code">
+      <div class="codehd"><span class="fn">configs/instruments/bz.yaml — available_at block</span><span class="tag">conservative lag defaults</span></div>
+<pre><span class="nm">available_at_lag</span>:                  <span class="cm"># fallback เมื่อ provider ไม่ให้ timestamp</span>
+  settlement: <span class="st">"3h"</span>                 <span class="cm"># EOD + 3 ชั่วโมง (conservative)</span>
+  eia_inventory: <span class="st">"P5D"</span>             <span class="cm"># week-ending → วันพุธถัดไป + 14:30 ET</span>
+  opec_report: <span class="st">"P2D"</span>
+  realized_vol: <span class="st">"2h"</span>               <span class="cm"># คำนวณ EOD เองได้เร็ว</span></pre>
+    </div>
+
+    <div class="ironrule">
+      <div class="irk">join rule<br>เด็ดขาด</div>
+      <p>ทุก join ระหว่าง signal กับ external data ต้องใช้ <code>available_at ≤ decision_time</code> เสมอ ห้ามใช้ <code>as_of_date</code> เป็น join key โดยตรง เพราะ <code>as_of_date</code> คือ "ข้อมูลนี้พูดถึงวันไหน" ไม่ใช่ "วันไหนที่เรารู้" — สองอย่างนี้ต่างกันได้มากถึง 5 วัน สำหรับ EIA/COT</p>
+    </div>
+  </section>
+
+  <!-- ============ 13 TRANSACTION COST MODEL ============ -->
+  <section id="txcost">
+    <span class="snum">13 / ADDITIONS v1.4</span>
+    <h2>Transaction cost / liquidity model <span class="newtag">new v1.4</span></h2>
+    <p class="sintro">สำคัญเป็นพิเศษสำหรับ options spread — calendar spread มีต้นทุนสองขาซึ่งบวกกัน และ bid-ask ของ options ที่ DTE ต่างกันกว้างไม่เท่ากัน ออกแบบเป็น 3 ระดับ ทำตามลำดับ อย่าข้ามไประดับ 3 ก่อนที่ระดับ 1 จะ validate</p>
+
+    <div class="txlevels">
+      <div class="txcard">
+        <div class="txcard-hd">
+          <div class="txcard-lvl l1">Level 1 · ทำก่อน</div>
+          <div class="txcard-ttl">Fixed cost per leg</div>
+          <div class="txcard-when">จับ ~80% ของ cost จริง</div>
+        </div>
+        <div class="txcard-body">
+          <b>Commission + half-spread คงที่</b> per contract ระบุใน cfg<br><br>
+          เหมาะกับ: validate ว่า strategy มี edge หลัง cost หรือไม่ ก่อนลงทุนเวลา model ที่ซับซ้อนกว่า<br><br>
+          ข้อจำกัด: bid-ask จริงกว้างกว่าใน near-expiry และ far OTM — cost ที่ประมาณจะต่ำกว่าจริง
+        </div>
+      </div>
+      <div class="txcard">
+        <div class="txcard-hd">
+          <div class="txcard-lvl l2">Level 2 · ทำเมื่อ L1 validate</div>
+          <div class="txcard-ttl">Bid-ask scaling</div>
+          <div class="txcard-when">DTE-aware + moneyness-aware</div>
+        </div>
+        <div class="txcard-body">
+          <b>spread_cost = f(DTE, moneyness, VIX_regime)</b><br><br>
+          ATM near-expiry กว้างกว่า ATM far-expiry มาก เพราะ liquidity ลด calibrate จาก historical bid-ask data<br><br>
+          ข้อจำกัด: ยังไม่จับ market impact — ถ้า size ใหญ่ fill จะได้ราคาแย่กว่า mid
+        </div>
+      </div>
+      <div class="txcard">
+        <div class="txcard-hd">
+          <div class="txcard-lvl l3">Level 3 · ทำเมื่อ size ใหญ่</div>
+          <div class="txcard-ttl">Market impact</div>
+          <div class="txcard-when">เมื่อ order กระทบ price จริง</div>
+        </div>
+        <div class="txcard-body">
+          <b>Almgren-Chriss / sqrt(participation rate)</b><br><br>
+          สำคัญเมื่อ order size เริ่มเป็น % ที่มีนัยของ daily volume เช่น &gt;1% ADV<br><br>
+          ต้องการ: volume data + spread data ต่อ strike/DTE ซึ่งต้องการ tick data หรือ L2 order book
+        </div>
+      </div>
+    </div>
+
+    <h3><span class="hdot"></span>โครงสร้าง core/txcost.py</h3>
+    <div class="code">
+      <div class="codehd"><span class="fn">core/txcost.py</span><span class="tag">3-level unified API</span></div>
+<pre><span class="kw">def</span> <span class="fn2">cost_per_trade</span>(legs: <span class="ty">list[Leg]</span>, mkt_data, cfg) -> <span class="ty">CostBreakdown</span>:
+    <span class="st">"""entry point — เรียก level ที่ระบุใน cfg['txcost_level']
+       คืน CostBreakdown เสมอ (structure เดียว ต่างแค่ความละเอียด)"""</span>
+    level = cfg.<span class="fn2">get</span>(<span class="st">"txcost_level"</span>, <span class="nm">1</span>)
+    total_cost = <span class="nm">0.0</span>
+    breakdown = []
+    <span class="kw">for</span> L <span class="kw">in</span> legs:
+        <span class="kw">if</span> level == <span class="nm">1</span>:
+            c = <span class="fn2">_fixed_cost</span>(L, cfg)          <span class="cm"># commission + half_spread_fixed</span>
+        <span class="kw">elif</span> level == <span class="nm">2</span>:
+            c = <span class="fn2">_scaled_cost</span>(L, mkt_data, cfg)  <span class="cm"># f(DTE, moneyness, regime)</span>
+        <span class="kw">else</span>:
+            c = <span class="fn2">_impact_cost</span>(L, mkt_data, cfg)   <span class="cm"># Almgren-Chriss</span>
+        breakdown.<span class="fn2">append</span>({<span class="st">"leg"</span>: L, <span class="st">"cost"</span>: c, <span class="st">"level"</span>: level})
+        total_cost += <span class="fn2">abs</span>(L.qty) * c
+    <span class="kw">return</span> CostBreakdown(total=total_cost, legs=breakdown, level=level)
+
+<span class="kw">def</span> <span class="fn2">_scaled_cost</span>(leg, mkt, cfg) -> <span class="ty">float</span>:
+    <span class="st">"""Level 2: bid-ask ขึ้นกับ DTE + moneyness + vol regime"""</span>
+    base = cfg[<span class="st">"commission_per_contract"</span>]
+    dte_factor = <span class="fn2">_dte_spread_factor</span>(leg.T, cfg[<span class="st">"dte_spread_curve"</span>])
+    <span class="cm"># DTE กว้างขึ้น: near-expiry (T&lt;14d) factor ~2-3x ATM ATM far</span>
+    mono_factor = <span class="fn2">_moneyness_factor</span>(leg.strike / leg.F, cfg)
+    <span class="cm"># OTM 20%+ factor ~1.5-4x เพราะ liquidity บาง</span>
+    regime_adj = cfg[<span class="st">"spread_regime_mult"</span>].<span class="fn2">get</span>(mkt.vol_regime, <span class="nm">1.0</span>)
+    <span class="cm"># high-vol regime: spread กว้างขึ้นอีก 1.5-2x</span>
+    <span class="kw">return</span> base + (mkt.bid_ask_mid * dte_factor * mono_factor * regime_adj / <span class="nm">2</span>)</pre>
+    </div>
+
+    <h3><span class="hdot"></span>Calendar spread — ทำไม cost สำคัญกว่า strategy อื่น</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>รายการ</th><th>Single leg</th><th>Calendar spread (2 legs)</th><th>หมายเหตุ</th></tr></thead>
+        <tbody>
+          <tr><td><b>Commission</b></td><td>1× rate</td><td>2× rate</td><td>ทุกครั้งที่ roll ก็เสียอีก 2×</td></tr>
+          <tr><td><b>Bid-ask (enter)</b></td><td>½ spread × 1</td><td>½ spread × 2 (แต่ต่างกัน)</td><td>short-leg near-expiry กว้างกว่า long-leg</td></tr>
+          <tr><td><b>Bid-ask (exit/roll)</b></td><td>½ spread × 1</td><td>½ spread × 2 อีกรอบ</td><td>total round-trip = 4× half-spread</td></tr>
+          <tr><td><b>Theta capture</b></td><td>ขึ้นกับ DTE</td><td>net theta = short − long</td><td>ถ้า cost &gt; expected theta ไม่ควรเทรด</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="fnote bad">
+      <span class="fnk">cost check</span>
+      <span>ก่อน deploy ให้ตรวจ: <code>expected_net_theta_per_day × holding_days &gt; total_round_trip_cost</code> ถ้าไม่ผ่าน theta ที่ capture ได้ไม่คุ้มต้นทุน แม้ Sharpe gross จะดูดีก็ตาม</span>
+    </div>
+
+    <h3><span class="hdot"></span>Config สำหรับ txcost</h3>
+    <div class="code">
+      <div class="codehd"><span class="fn">configs/instruments/bz.yaml — txcost block</span><span class="tag">ตัวอย่าง</span></div>
+<pre><span class="nm">txcost</span>:
+  level: 2                             <span class="cm"># เริ่มที่ 1 แล้ว upgrade เมื่อ validate</span>
+  commission_per_contract: 2.50        <span class="cm"># USD — ใส่ค่าจริงของ broker</span>
+  half_spread_fixed: 0.05              <span class="cm"># USD/contract (level 1 fallback)</span>
+  dte_spread_curve:                    <span class="cm"># level 2: multiplier ตาม DTE bucket</span>
+    "&gt;60":  1.0
+    "30-60": 1.4
+    "14-30": 1.8
+    "&lt;14":   2.8                        <span class="cm"># near-expiry กว้างมาก</span>
+  moneyness_otm_threshold: 0.15        <span class="cm"># &gt;15% OTM เริ่ม factor เพิ่ม</span>
+  spread_regime_mult:
+    low_vol:  0.85
+    mid_vol:  1.00
+    high_vol: 1.60                     <span class="cm"># spread กว้างขึ้นตาม vol</span>
+  financing_rate_col: sofr             <span class="cm"># overnight margin cost</span>
+  margin_requirement: 0.10             <span class="cm"># 10% ของ notional (ตรวจกับ broker จริง)</span></pre>
+    </div>
+  </section>
+
+  <!-- ============ 14 ATTRIBUTION WATERFALL ============ -->
+  <section id="waterfall">
+    <span class="snum">14 / ADDITIONS v1.4</span>
+    <h2>Performance attribution waterfall <span class="newtag">new v1.4</span></h2>
+    <p class="sintro">ตอบคำถามว่า "กำไรมาจากอะไรจริงๆ" — Gross P&amp;L เป็นแค่ผลลัพธ์ waterfall แยกออกว่าแต่ละ control ขั้นกินหรือให้ผลเท่าไร โครงสร้างต่างกันระหว่าง <b>options</b> (Greek decomposition) และ <b>equity</b> (factor decomposition) แต่ชั้นล่าง (cost + financing) ใช้ร่วมกัน</p>
+
+    <h3><span class="hdot"></span>Options waterfall — Calendar spread</h3>
+    <p>ใช้ข้อมูลจาก <code>core/greeks.py</code> และ <code>core/txcost.py</code> ที่มีอยู่แล้ว ไม่ต้องสร้าง model ใหม่</p>
+
+    <div class="wf-wrap">
+      <div class="wf-hd">
+        <span>Layer</span><span>คืออะไร / จับอะไร</span><span>ตัวอย่าง</span><span>Asset</span>
+      </div>
+      <div class="wf-row wf-gross">
+        <div class="wf-label"><span class="wf-name">Gross P&amp;L</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill pos" style="width:100%"></div></div></div>
+        <div class="wf-val pos">+$1,240</div>
+        <div class="wf-asset"><span class="badge both">ALL</span></div>
+      </div>
+      <div class="wf-row wf-sub">
+        <div class="wf-label"><span class="wf-sign">−</span><span class="wf-name">Delta P&amp;L</span><span class="wf-desc">underlying เคลื่อน × net delta</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill neg" style="width:28%"></div></div></div>
+        <div class="wf-val neg">−$347</div>
+        <div class="wf-asset"><span class="badge opt">OPTIONS</span></div>
+      </div>
+      <div class="wf-row wf-sub">
+        <div class="wf-label"><span class="wf-sign">−</span><span class="wf-name">Gamma P&amp;L</span><span class="wf-desc">½ × gamma × (ΔS)²</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill pos" style="width:12%"></div></div></div>
+        <div class="wf-val pos">+$155</div>
+        <div class="wf-asset"><span class="badge opt">OPTIONS</span></div>
+      </div>
+      <div class="wf-row wf-sub">
+        <div class="wf-label"><span class="wf-sign">−</span><span class="wf-name">Theta P&amp;L</span><span class="wf-desc">net theta × days held (แยกแต่ละขา)</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill pos" style="width:55%"></div></div></div>
+        <div class="wf-val pos">+$680</div>
+        <div class="wf-asset"><span class="badge opt">OPTIONS</span></div>
+      </div>
+      <div class="wf-row wf-sub">
+        <div class="wf-label"><span class="wf-sign">−</span><span class="wf-name">Vega (parallel) P&amp;L</span><span class="wf-desc">vega_total × ΔIV (parallel shift)</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill pos" style="width:8%"></div></div></div>
+        <div class="wf-val pos">+$95</div>
+        <div class="wf-asset"><span class="badge opt">OPTIONS</span></div>
+      </div>
+      <div class="wf-row wf-sub" style="background:var(--amber-50)">
+        <div class="wf-label"><span class="wf-sign">−</span><span class="wf-name">Vega term risk P&amp;L</span><span class="wf-desc">vega_term_risk × (ΔIV_short − β·ΔIV_long)</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill neg" style="width:38%"></div></div></div>
+        <div class="wf-val warn">−$470</div>
+        <div class="wf-asset"><span class="badge opt">OPTIONS</span></div>
+      </div>
+      <div class="wf-row wf-residual">
+        <div class="wf-label"><span class="wf-sign">=</span><span class="wf-name">Unexplained residual</span><span class="wf-desc">jump risk, model error, rounding</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill warn" style="width:11%"></div></div></div>
+        <div class="wf-val warn">+$127</div>
+        <div class="wf-asset"><span class="badge both">ALL</span></div>
+      </div>
+      <div class="wf-row wf-divider">
+        <div class="wf-label" style="color:var(--ink-faint);font-size:11.5px;font-family:var(--mono)">— cost layers —</div>
+        <div class="wf-bar-cell"></div><div class="wf-val"></div><div class="wf-asset"></div>
+      </div>
+      <div class="wf-row wf-sub">
+        <div class="wf-label"><span class="wf-sign">−</span><span class="wf-name">Commission + bid-ask</span><span class="wf-desc">txcost.cost_per_trade() ทุก leg</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill neg" style="width:16%"></div></div></div>
+        <div class="wf-val neg">−$195</div>
+        <div class="wf-asset"><span class="badge both">ALL</span></div>
+      </div>
+      <div class="wf-row wf-sub">
+        <div class="wf-label"><span class="wf-sign">−</span><span class="wf-name">Financing cost</span><span class="wf-desc">margin × SOFR × days / 365</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill neg" style="width:7%"></div></div></div>
+        <div class="wf-val neg">−$85</div>
+        <div class="wf-asset"><span class="badge both">ALL</span></div>
+      </div>
+      <div class="wf-row wf-net">
+        <div class="wf-label"><span class="wf-sign">=</span><span class="wf-name" style="font-size:14px;color:var(--teal-800)">Net P&amp;L (OOS จริง)</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track" style="background:var(--teal-100)"><div class="wf-bar-fill pos" style="width:83%"></div></div></div>
+        <div class="wf-val pos" style="font-size:14px">+$1,000</div>
+        <div class="wf-asset"><span class="badge both">ALL</span></div>
+      </div>
+    </div>
+
+    <div class="fnote warn" style="background:var(--amber-50);border:1px solid var(--amber-100);color:var(--amber-800)">
+      <span class="fnk">อ่านตัวอย่าง</span>
+      <span>จากตัวเลขข้างบน: Theta ให้ +$680 แต่ <b>Vega term risk กิน −$470</b> นี่คือ root cause ของ calendar spread ขาดทุนที่เคยพบ ถ้าดูแค่ gross P&amp;L จะไม่รู้เลยว่าปัญหาอยู่ที่ term structure shift ไม่ขนาน</span>
+    </div>
+
+    <h3><span class="hdot"></span>Equity waterfall — Factor decomposition</h3>
+    <p>แทน Greek ด้วย factor exposure ชั้นกลางเปลี่ยน แต่ชั้นบน (Gross) และชั้นล่าง (cost) เหมือนกันทุกอย่าง</p>
+
+    <div class="wf-wrap">
+      <div class="wf-hd">
+        <span>Layer</span><span>คืออะไร / จับอะไร</span><span>ตัวอย่าง</span><span>Asset</span>
+      </div>
+      <div class="wf-row wf-gross">
+        <div class="wf-label"><span class="wf-name">Gross P&amp;L</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill pos" style="width:100%"></div></div></div>
+        <div class="wf-val pos">+$2,100</div>
+        <div class="wf-asset"><span class="badge eq">EQUITY</span></div>
+      </div>
+      <div class="wf-row wf-sub">
+        <div class="wf-label"><span class="wf-sign">−</span><span class="wf-name">Market beta P&amp;L</span><span class="wf-desc">β × market_return × portfolio_value</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill pos" style="width:60%"></div></div></div>
+        <div class="wf-val pos">+$1,260</div>
+        <div class="wf-asset"><span class="badge eq">EQUITY</span></div>
+      </div>
+      <div class="wf-row wf-sub">
+        <div class="wf-label"><span class="wf-sign">−</span><span class="wf-name">Sector / style factor P&amp;L</span><span class="wf-desc">momentum, size, quality, value exposure</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill pos" style="width:20%"></div></div></div>
+        <div class="wf-val pos">+$415</div>
+        <div class="wf-asset"><span class="badge eq">EQUITY</span></div>
+      </div>
+      <div class="wf-row wf-residual">
+        <div class="wf-label"><span class="wf-sign">=</span><span class="wf-name">Alpha (unexplained)</span><span class="wf-desc">signal จริงที่ไม่ใช่ factor — ถ้าเล็กมากแสดงว่า strategy = ETF</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill warn" style="width:20%"></div></div></div>
+        <div class="wf-val warn">+$425</div>
+        <div class="wf-asset"><span class="badge eq">EQUITY</span></div>
+      </div>
+      <div class="wf-row wf-divider">
+        <div class="wf-label" style="color:var(--ink-faint);font-size:11.5px;font-family:var(--mono)">— cost layers —</div>
+        <div class="wf-bar-cell"></div><div class="wf-val"></div><div class="wf-asset"></div>
+      </div>
+      <div class="wf-row wf-sub">
+        <div class="wf-label"><span class="wf-sign">−</span><span class="wf-name">Commission + slippage</span><span class="wf-desc">txcost.cost_per_trade()</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill neg" style="width:10%"></div></div></div>
+        <div class="wf-val neg">−$210</div>
+        <div class="wf-asset"><span class="badge both">ALL</span></div>
+      </div>
+      <div class="wf-row wf-sub">
+        <div class="wf-label"><span class="wf-sign">−</span><span class="wf-name">Financing cost</span><span class="wf-desc">short rebate / margin / borrow cost</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track"><div class="wf-bar-fill neg" style="width:5%"></div></div></div>
+        <div class="wf-val neg">−$110</div>
+        <div class="wf-asset"><span class="badge both">ALL</span></div>
+      </div>
+      <div class="wf-row wf-net">
+        <div class="wf-label"><span class="wf-sign">=</span><span class="wf-name" style="font-size:14px;color:var(--teal-800)">Net P&amp;L (OOS จริง)</span></div>
+        <div class="wf-bar-cell"><div class="wf-bar-track" style="background:var(--teal-100)"><div class="wf-bar-fill pos" style="width:85%"></div></div></div>
+        <div class="wf-val pos" style="font-size:14px">+$1,780</div>
+        <div class="wf-asset"><span class="badge eq">EQUITY</span></div>
+      </div>
+    </div>
+
+    <div class="fnote good">
+      <span class="fnk">อ่านตัวอย่าง</span>
+      <span>Alpha หลัง factor attribution = +$425 จาก Gross $2,100 (~20%) แปลว่า 80% ของกำไรมาจาก market beta และ factor — ซื้อ ETF ถูกกว่า ถ้า Alpha เป็นลบหลัง factor strip แสดงว่า strategy แพ้ passive อย่างชัดเจน</span>
+    </div>
+
+    <h3><span class="hdot"></span>การ implement — ขึ้นอยู่กับอะไรต้องมีก่อน</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Dependency</th><th>ต้องพร้อมก่อน</th><th>ถ้าไม่มี waterfall จะผิดอย่างไร</th></tr></thead>
+        <tbody>
+          <tr><td><code>available_at</code> (section 12)</td><td>✓ ต้องมีก่อน</td><td>factor/Greek คำนวณจากข้อมูลที่รู้ "ก่อนเวลา" → attribution ปลอม</td></tr>
+          <tr><td><code>core/greeks.py</code> (section 08)</td><td>✓ ต้องมีก่อน (options)</td><td>ไม่มี Greek decomposition → options waterfall ทำไม่ได้</td></tr>
+          <tr><td><code>core/txcost.py</code> (section 13)</td><td>✓ ต้องมีก่อน</td><td>Net P&amp;L ยังเป็น Gross — ตัวเลขเกินจริง</td></tr>
+          <tr><td>Factor returns (equity)</td><td>ต้องการ factor data (Fama-French / Barra)</td><td>alpha ที่คำนวณได้จะ overstate ถ้า factor ไม่ครบ</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="code">
+      <div class="codehd"><span class="fn">core/attribution.py</span><span class="tag">waterfall unified API</span></div>
+<pre><span class="kw">def</span> <span class="fn2">waterfall</span>(trades_df, cfg) -> <span class="ty">WaterfallResult</span>:
+    <span class="st">"""entry point — detect asset_type จาก cfg แล้ว route ถูก decomposer"""</span>
+    gross = trades_df[<span class="st">"pnl_gross"</span>].<span class="fn2">sum</span>()
+    asset = cfg[<span class="st">"family"</span>]                      <span class="cm"># options | equity | futures</span>
+
+    <span class="kw">if</span> asset <span class="kw">in</span> (<span class="st">"equity_options"</span>, <span class="st">"futures_options"</span>):
+        layers = <span class="fn2">_greek_decompose</span>(trades_df, cfg)  <span class="cm"># delta, gamma, theta, vega, vega_term</span>
+    <span class="kw">elif</span> asset == <span class="st">"equity"</span>:
+        layers = <span class="fn2">_factor_decompose</span>(trades_df, cfg)  <span class="cm"># market beta, sector/style, alpha</span>
+    <span class="kw">else</span>:                                          <span class="cm"># futures (no options)</span>
+        layers = <span class="fn2">_basis_decompose</span>(trades_df, cfg)   <span class="cm"># roll carry, spot change, basis</span>
+
+    residual  = gross - <span class="fn2">sum</span>(l.pnl <span class="kw">for</span> l <span class="kw">in</span> layers)
+    cost      = txcost.<span class="fn2">total</span>(trades_df, cfg)
+    financing = <span class="fn2">_financing_cost</span>(trades_df, cfg)
+    net       = gross - cost - financing
+    <span class="kw">return</span> WaterfallResult(gross=gross, layers=layers, residual=residual,
+                           cost=cost, financing=financing, net=net)
+
+<span class="kw">def</span> <span class="fn2">_greek_decompose</span>(df, cfg) -> <span class="ty">list[Layer]</span>:
+    <span class="st">"""แต่ละ layer = greek × realized_move; ใช้ greeks ณ entry time (PIT)"""</span>
+    <span class="kw">return</span> [
+        Layer(<span class="st">"delta"</span>,      (df.delta_entry * df.d_underlying).<span class="fn2">sum</span>()),
+        Layer(<span class="st">"gamma"</span>,      (<span class="nm">0.5</span> * df.gamma_entry * df.d_underlying**<span class="nm">2</span>).<span class="fn2">sum</span>()),
+        Layer(<span class="st">"theta"</span>,      (df.theta_entry * df.days_held).<span class="fn2">sum</span>()),
+        Layer(<span class="st">"vega_par"</span>,   (df.vega_total_entry * df.d_iv_parallel).<span class="fn2">sum</span>()),
+        Layer(<span class="st">"vega_term"</span>,  (df.vega_term_risk * df.d_iv_term_slope).<span class="fn2">sum</span>()),
+    ]</pre>
+    </div>
+
+    <div class="ironrule">
+      <div class="irk">PIT<br>Greeks</div>
+      <p>Greek ที่ใช้ใน <code>_greek_decompose</code> ต้องเป็น Greek ณ <b>เวลา entry</b> ไม่ใช่ Greek เฉลี่ยตลอด period และไม่ใช่ Greek ณ exit — เพราะ waterfall วัดว่า "ถ้ารู้ Greek ณ ตอนเข้า ควรจะได้ P&amp;L เท่าไร" ถ้าใช้ Greek ณ exit จะเป็น look-back attribution ซึ่งเป็น circular reasoning</p>
+    </div>
+  </section>
+
+  <!-- ============ 15 TESTS & DATA AUDIT ============ -->
+  <section id="tests">
+    <span class="snum">15 / EXECUTION</span>
+    <h2>Tests &amp; data audit <span class="newtag">v1.3</span></h2>
+    <p class="sintro">v1.2 มี gate criteria แต่ไม่มี <i>test ระบุชัดเป็นข้อๆ</i> — ปัญหา DTE และ symbology เป็น <b>silent killer</b> (ผิดแล้วไม่ throw error แต่ผลลัพธ์ปลอม) จึงต้องมี test เป็น hard requirement ไม่ใช่ optional ส่วน data audit เป็น lightweight (snapshot ไม่ใช่ observability stack) — ใช้เพื่อ debug ว่าค่าเพี้ยนเกิด stage ไหน</p>
+
+    <h3><span class="hdot"></span>ทำไม Symbology + DTE ต้องมี test เป็น hard requirement</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>ปัญหา</th><th>อาการ (ทำไมเป็น silent killer)</th><th>ผลกระทบ</th></tr></thead>
+        <tbody>
+          <tr><td><b>Symbology map ผิด</b><br><span class="mn">PRODUCT_ID/HUB/CONTRACT</span></td><td>core ได้ row ที่ join ผิด contract มา — ไม่มี error เพราะ schema ถูกต้อง ค่าตัวเลขก็อยู่ในช่วง normal</td><td>backtest ผสมราคาของ contract คนละชนิด → P&amp;L ดูดีปลอมๆ; เมื่อ deploy จริงเจอ live data ที่ map ถูก ผลพัง</td></tr>
+          <tr><td><b>DTE convention ผิด</b><br><span class="mn">calendar vs trading day</span></td><td>T ใน Black-76 เพี้ยน ~1.4x (252 vs 365) → IV solved ผิด ~20%; แต่ output ยังเป็นตัวเลขที่ดูปกติ</td><td>theta/vega bleed ของ calendar spread ผิดทิศ; circuit breaker trigger ที่ผิดเวลา</td></tr>
+          <tr><td><b>Expiry inclusive/exclusive</b></td><td>DTE 0 vs DTE 1 ที่ expiry → purge window พลาด 1 วัน</td><td>look-ahead bias เล็กๆ ที่สะสมข้าม fold; deflated Sharpe ไม่จับ</td></tr>
+          <tr><td><b>Schema drift</b><br><span class="mn">column rename, type change</span></td><td>provider เปลี่ยน format → loader อาจ silent-cast (str → float แล้วได้ NaN)</td><td>row หายไปจาก fold โดยไม่มีคำเตือน; survivorship bias ใหม่</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3><span class="hdot"></span>Test suite — แบ่งตาม layer</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Layer</th><th>Test category</th><th>ตัวอย่างเคส</th><th>Tool</th></tr></thead>
+        <tbody>
+          <tr><td rowspan="3"><b>ingestion/</b></td><td>Schema/contract</td><td>parse row จริง → match RAW_SCHEMA ครบ; column missing ต้อง raise ไม่ใช่ silent NaN</td><td>pytest + pandera/great_expectations</td></tr>
+          <tr><td>Symbology join</td><td>round-trip: PRODUCT_ID → resolve → reverse-resolve = ค่าเดิม; uniqueness: ไม่มี PRODUCT_ID เดียว map ไปสอง contract_root</td><td>pytest property test</td></tr>
+          <tr><td>PIT / survivorship</td><td>fetch ช่วงที่มี expired option → ต้องคืน row นั้นกลับมา; cache hit ไม่ทำให้ data หาย</td><td>fixture data + pytest</td></tr>
+          <tr><td rowspan="3"><b>core/dte.py</b></td><td>Calendar convention</td><td>expiry วันศุกร์, T = วันจันทร์ → DTE = ? (depends on basis); expiry วันหยุด exchange</td><td>parametrize + golden values</td></tr>
+          <tr><td>Day count consistency</td><td>act_365 vs act_360 vs bus_252 — เทียบกับค่าที่คำนวณมือ ≤ 1 minute precision</td><td>parametrize</td></tr>
+          <tr><td>Edge case</td><td>T = 0 (วัน expiry), T &lt; 0 (post-expiry, ต้องเป็น NaN), T ข้ามปี leap year</td><td>parametrize</td></tr>
+          <tr><td rowspan="3"><b>core/pricing.py</b></td><td>Closed-form vs QuantLib</td><td>Black-76 price/Greeks ของ 50 ATM/OTM/ITM cases → diff &lt; 1e-6 vs QuantLib</td><td>golden fixture</td></tr>
+          <tr><td>Put-Call Parity</td><td>C − P = e^(-rT)(F − K) ± tol ในทุก strike/expiry</td><td>property test</td></tr>
+          <tr><td>IV solver round-trip</td><td>price(σ=0.3) → solve_iv → ได้ 0.3 ± 1e-5; deep OTM ต้องคืน NaN ไม่ใช่ค่ามั่ว</td><td>parametrize</td></tr>
+          <tr><td rowspan="2"><b>core/greeks.py</b></td><td>Bump-vs-analytic</td><td>finite-diff (ε=1e-4) ของ price = analytic delta/gamma/vega ± 1e-4</td><td>parametrize</td></tr>
+          <tr><td>Net greeks (spread)</td><td>long-call + short-call ที่ K เดียวกัน, T เดียวกัน → net = 0; calendar spread vega_term_risk ≠ 0 แม้ vega_total = 0</td><td>fixture spread</td></tr>
+          <tr><td rowspan="2"><b>adapters/</b></td><td>prepare() contract</td><td>output คืน <code>(df, cfg)</code> ตรง shape; cfg มี key ที่ core ต้องการครบ</td><td>schema test</td></tr>
+          <tr><td>Golden snapshot</td><td>input fixture เดิม → output ต้องไม่เปลี่ยน (catch unintended logic change)</td><td>syrupy/pytest-regressions</td></tr>
+          <tr><td rowspan="2"><b>core/splitter.py</b></td><td>No look-ahead</td><td>val fold index ทั้งหมด &gt; train fold max + purge_bars</td><td>property test</td></tr>
+          <tr><td>Embargo</td><td>event date ใน train ต้องไม่ leak เข้า val (gap ≥ embargo)</td><td>property test</td></tr>
+          <tr><td><b>core/metrics.py</b></td><td>Numeric stability</td><td>Sharpe ของ constant return = NaN ไม่ใช่ inf; max DD ของ monotonic up = 0</td><td>parametrize</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3><span class="hdot"></span>Symbology test — เคสที่ต้อง cover</h3>
+    <div class="code">
+      <div class="codehd"><span class="fn">tests/test_ingestion/test_symbology.py</span><span class="tag">silent-killer cases</span></div>
+<pre><span class="kw">def</span> <span class="fn2">test_product_id_unique_per_contract</span>(product_map):
+    <span class="st">"""PRODUCT_ID 254 ต้องไม่ map ไปทั้ง B (Brent) และ CL (WTI) — ตรวจ uniqueness"""</span>
+    <span class="kw">for</span> pid, rows <span class="kw">in</span> product_map.<span class="fn2">groupby</span>(<span class="st">"product_id"</span>):
+        <span class="kw">assert</span> rows[<span class="st">"contract_root"</span>].<span class="fn2">nunique</span>() == <span class="nm">1</span>, <span class="fn2">f"</span>{pid}<span class="fn2"> ambiguous"</span>
+
+<span class="kw">def</span> <span class="fn2">test_round_trip</span>(sample_rows, symbology):
+    <span class="st">"""resolve(row) → internal_symbol; reverse(internal_symbol) → ต้องได้ key เดิม"""</span>
+    <span class="kw">for</span> r <span class="kw">in</span> sample_rows:
+        sym = symbology.<span class="fn2">resolve</span>(r.product_id, r.hub, r.contract)
+        back = symbology.<span class="fn2">reverse</span>(sym)
+        <span class="kw">assert</span> (back.product_id, back.hub, back.contract) == (r.product_id, r.hub, r.contract)
+
+<span class="kw">def</span> <span class="fn2">test_no_orphan_after_join</span>(raw_df, product_map):
+    <span class="st">"""ทุก row ใน raw ต้อง join ได้ (ถ้ามี orphan = symbology map ไม่ครบ)"""</span>
+    joined = raw_df.<span class="fn2">merge</span>(product_map, on=<span class="st">"product_id"</span>, how=<span class="st">"left"</span>, indicator=<span class="kw">True</span>)
+    orphan = joined[joined[<span class="st">"_merge"</span>] == <span class="st">"left_only"</span>]
+    <span class="kw">assert</span> orphan.<span class="fn2">empty</span>, <span class="fn2">f"</span>{<span class="fn2">len</span>(orphan)}<span class="fn2"> rows unmapped: </span>{orphan[<span class="st">'product_id'</span>].<span class="fn2">unique</span>()}<span class="fn2">"</span>
+
+<span class="kw">def</span> <span class="fn2">test_real_row_brent_settlement</span>():
+    <span class="st">"""row จริง: 9/25/2024|North Sea|Brent Crude Futures|11/1/2024|B|C|10|63.46|...
+       → instrument_type='option', contract_root='B', strike=10, right='C'"""</span>
+    row = <span class="fn2">parse_pipe_row</span>(REAL_BRENT_ROW)
+    <span class="kw">assert</span> row.instrument_type == <span class="st">"option"</span>
+    <span class="kw">assert</span> row.contract_root == <span class="st">"B"</span>
+    <span class="kw">assert</span> row.strike == <span class="nm">10.0</span> <span class="kw">and</span> row.right == <span class="st">"C"</span></pre>
+    </div>
+
+    <h3><span class="hdot"></span>DTE test — calendar convention</h3>
+    <div class="code">
+      <div class="codehd"><span class="fn">tests/test_dte/test_calendar.py</span><span class="tag">single source of truth</span></div>
+<pre><span class="nm">@pytest.mark.parametrize</span>(<span class="st">"asof,expiry,basis,expected"</span>, [
+    <span class="cm"># calendar day (act_365) — ตรงไปตรงมา</span>
+    (<span class="st">"2024-09-25"</span>, <span class="st">"2024-11-01"</span>, <span class="st">"calendar"</span>, <span class="nm">37</span>),
+    <span class="cm"># trading day (bus_252) — ข้ามเสาร์-อาทิตย์ + holiday</span>
+    (<span class="st">"2024-09-25"</span>, <span class="st">"2024-11-01"</span>, <span class="st">"trading"</span>, <span class="nm">26</span>),  <span class="cm"># สมมติ 0 holiday ในช่วงนั้น</span>
+    <span class="cm"># expiry-day edge case (T = 0 ต้องเป็น 0 ไม่ใช่ NaN; T &lt; 0 = NaN)</span>
+    (<span class="st">"2024-11-01"</span>, <span class="st">"2024-11-01"</span>, <span class="st">"calendar"</span>, <span class="nm">0</span>),
+    (<span class="st">"2024-11-02"</span>, <span class="st">"2024-11-01"</span>, <span class="st">"calendar"</span>, np.nan),
+])
+<span class="kw">def</span> <span class="fn2">test_dte_convention</span>(asof, expiry, basis, expected):
+    cfg = {<span class="st">"basis"</span>: basis, <span class="st">"day_count"</span>: <span class="st">"act_365"</span>, <span class="st">"exclude_expiry_date"</span>: <span class="kw">False</span>}
+    <span class="kw">if</span> np.<span class="fn2">isnan</span>(expected):
+        <span class="kw">assert</span> np.<span class="fn2">isnan</span>(<span class="fn2">compute_dte</span>(asof, expiry, cfg))
+    <span class="kw">else</span>:
+        <span class="kw">assert</span> <span class="fn2">compute_dte</span>(asof, expiry, cfg) == expected
+
+<span class="kw">def</span> <span class="fn2">test_consistency_across_adapter</span>(equity_options_adapter, futures_options_adapter, raw_df):
+    <span class="st">"""ทั้ง 2 adapter ต้องเรียก core/dte.py เท่านั้น — ถ้าใครคำนวณเอง จะ fail"""</span>
+    df_eq, _ = equity_options_adapter.<span class="fn2">prepare</span>(raw_df)
+    df_fut, _ = futures_options_adapter.<span class="fn2">prepare</span>(raw_df)
+    <span class="cm"># row เดียวกัน DTE ต้องเท่ากัน (ถ้า adapter หนึ่งใช้ trading day อีกตัวใช้ calendar = bug)</span>
+    pd.testing.<span class="fn2">assert_series_equal</span>(df_eq[<span class="st">"dte"</span>], df_fut[<span class="st">"dte"</span>])</pre>
+    </div>
+
+    <h3><span class="hdot"></span>Data audit — lightweight (ไม่ใช่ full observability)</h3>
+    <p>เป้าหมาย: เก็บ snapshot สั้นๆ ต่อ stage ใส่ <code>outputs/audit/</code> เพื่อ debug ว่าค่าเพี้ยนเกิดที่ไหน — <b>ไม่ใช่</b>การทำ MLOps monitoring stack ขนาดใหญ่ (ไม่จำเป็นสำหรับ pipeline ขนาดนี้) เก็บแค่:</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Field</th><th>เก็บอะไร</th><th>ใช้ทำอะไร</th></tr></thead>
+        <tbody>
+          <tr><td><b>stage</b></td><td>ingestion / adapter / validators / splitter / metrics</td><td>ระบุจุด</td></tr>
+          <tr><td><b>row_count</b></td><td>จำนวน row ก่อน/หลัง stage</td><td>จับ row หายระหว่างทาง (filter ผิด, join ผิด)</td></tr>
+          <tr><td><b>schema_hash</b></td><td>hash ของ list (col_name, dtype)</td><td>จับ schema drift ทันที</td></tr>
+          <tr><td><b>data_hash</b></td><td>xxh64 ของ snapshot_cols (ไม่ใช่ทุก col)</td><td>re-run แล้วได้ค่าเดิมไหม (determinism check)</td></tr>
+          <tr><td><b>key_stats</b></td><td>min/max/mean/null_count ของ key column ที่ระบุใน cfg</td><td>เห็นความเพี้ยนเชิงสถิติ</td></tr>
+          <tr><td><b>na_pattern</b></td><td>per-column null count</td><td>NaN ที่งอกใหม่ใน stage นี้ = ตัวบอกตำแหน่ง bug</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="code">
+      <div class="codehd"><span class="fn">core/audit.py</span><span class="tag">snapshot + diff</span></div>
+<pre><span class="kw">def</span> <span class="fn2">snapshot</span>(df, stage: <span class="ty">str</span>, cfg) -> <span class="ty">dict</span>:
+    <span class="st">"""เรียกที่ input และ output ของแต่ละ stage — เขียนเป็น JSON line"""</span>
+    cols = cfg[<span class="st">"audit"</span>][<span class="st">"snapshot_cols"</span>]
+    snap = {
+        <span class="st">"stage"</span>: stage,
+        <span class="st">"timestamp"</span>: datetime.<span class="fn2">utcnow</span>().<span class="fn2">isoformat</span>(),
+        <span class="st">"row_count"</span>: <span class="fn2">len</span>(df),
+        <span class="st">"schema_hash"</span>: <span class="fn2">hash_schema</span>(df),
+        <span class="st">"data_hash"</span>: <span class="fn2">hash_subset</span>(df[cols]),
+        <span class="st">"key_stats"</span>: {c: <span class="fn2">_stats</span>(df[c]) <span class="kw">for</span> c <span class="kw">in</span> cols <span class="kw">if</span> c <span class="kw">in</span> df},
+        <span class="st">"na_pattern"</span>: df.<span class="fn2">isna</span>().<span class="fn2">sum</span>().<span class="fn2">to_dict</span>(),
+    }
+    <span class="fn2">_append_jsonl</span>(<span class="st">f"outputs/audit/</span>{cfg[<span class="st">'run_id'</span>]}<span class="st">.jsonl"</span>, snap)
+    <span class="kw">return</span> snap
+
+<span class="kw">def</span> <span class="fn2">diff_stages</span>(before, after) -> <span class="ty">dict</span>:
+    <span class="st">"""ใช้ใน CLI: quant_audit diff --before ingestion --after adapter
+       output: row delta, schema diff, NaN ใหม่ที่งอก, key_stats ที่เปลี่ยน"""</span>
+    <span class="kw">return</span> {
+        <span class="st">"row_delta"</span>: after[<span class="st">"row_count"</span>] - before[<span class="st">"row_count"</span>],
+        <span class="st">"schema_changed"</span>: after[<span class="st">"schema_hash"</span>] != before[<span class="st">"schema_hash"</span>],
+        <span class="st">"new_nans"</span>: {c: after[<span class="st">"na_pattern"</span>][c] - before[<span class="st">"na_pattern"</span>].<span class="fn2">get</span>(c, <span class="nm">0</span>)
+                     <span class="kw">for</span> c <span class="kw">in</span> after[<span class="st">"na_pattern"</span>] <span class="kw">if</span> after[<span class="st">"na_pattern"</span>][c] &gt; before[<span class="st">"na_pattern"</span>].<span class="fn2">get</span>(c, <span class="nm">0</span>)},
+        ...
+    }</pre>
+    </div>
+    <div class="ironrule">
+      <div class="irk">scope<br>guard</div>
+      <p>audit นี้ <b>เก็บแค่ที่จำเป็น</b> — ไม่ใช่ feature store, ไม่ใช่ data lineage tool ถ้าวันหนึ่งต้องการ observability เต็มรูปแบบ (Monte Carlo Data, Soda, ฯลฯ) ค่อย swap ผ่าน <code>audit.py</code> interface เดียวกัน หลักการ: cost ของ audit ต้อง &lt; 5% ของ pipeline runtime ถ้าเกินแสดงว่าเก็บมากไป</p>
+    </div>
+
+    <h3><span class="hdot"></span>CI gate — test ที่ต้อง pass ก่อน merge</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Gate</th><th>Hard requirement</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Symbology</td><td>uniqueness + round-trip + no-orphan ผ่านทั้งหมด</td><td>ผิด = backtest ปลอม</td></tr>
+          <tr><td>DTE</td><td>parametrize 12+ เคส (edge: T=0, T&lt;0, leap year, holiday) ผ่านทั้งหมด</td><td>ผิด = Greek เพี้ยน</td></tr>
+          <tr><td>Pricing</td><td>diff vs QuantLib &lt; 1e-6 ใน golden set; PCP ผ่านทุก row</td><td>foundation ของทุกอย่างที่ตามมา</td></tr>
+          <tr><td>Adapter contract</td><td>schema + golden snapshot ไม่เปลี่ยน (หรือเปลี่ยนแล้ว update โดยตั้งใจ)</td><td>catch unintended regression</td></tr>
+          <tr><td>Audit determinism</td><td>re-run pipeline 2 ครั้ง → audit hash ตรงกัน</td><td>ถ้าไม่ตรง = มี non-deterministic logic ซ่อนอยู่</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 13 BUILD ORDER ============ -->
+  <section id="build">
+    <span class="snum">16 / EXECUTION</span>
+    <h2>Build order &amp; gates</h2>
+    <p class="sintro">เพิ่ม Phase 1 (ingestion) นำหน้า — ต้องมี data ก่อนถึงจะ validate ได้ gate สีเขียวเป็น hard stop ทุก phase มี test ที่ต้อง pass (อ้างจาก section 12)</p>
+
+    <div class="phase">
+      <div class="phasehd p0"><span class="phaseno">Phase 0</span><span class="phasettl">Scaffold</span><span class="phasedur">~2 ชม.</span></div>
+      <div class="phasebody"><ul class="tasklist">
+        <li>สร้างโครงสร้างโฟลเดอร์ทั้งหมดตาม section 02 (รวม <code>tests/</code>, <code>configs/symbology/</code>, <code>outputs/audit/</code>)</li>
+        <li>ตกลง <b>RAW_SCHEMA</b> และ <b>prepare(df)→(df,cfg)</b> contract ให้ทั้งทีมเห็นตรงกัน</li>
+        <li>เขียน <b>configs/instruments/spx.yaml</b> (equity) เป็นตัวตั้งต้น พร้อม <code>pricing</code>, <code>dte</code>, <code>audit</code> block</li>
+        <li>ตั้ง CI ให้รัน <code>pytest tests/</code> ก่อน merge (เริ่มจาก stub test ที่ pass ได้)</li>
+      </ul></div>
+    </div>
+
+    <div class="phase">
+      <div class="phasehd p2"><span class="phaseno">Phase 1</span><span class="phasettl">Ingestion layer + symbology test</span><span class="phasedur">~1 สัปดาห์</span></div>
+      <div class="phasebody"><ul class="tasklist">
+        <li><b>1A ProviderBase + settlement_loader</b> — pipe parser, US-date, future/option split, RAW_SCHEMA validation</li>
+        <li><b>1B cache.py</b> — parquet cache + incremental missing-range fetch</li>
+        <li><b>1C equity_loader_a</b> (provider แรก เช่น Yahoo สำหรับ POC) — เก็บ raw_close + adj_factor แยก, delisting list</li>
+        <li><b>1D equity_loader_b</b> (provider ที่สอง) — cross-check adjustment convention กับ A</li>
+        <li><b>1E symbology.py + product_map.yaml</b> — กฎ mapping อยู่ใน yaml; loader validate ทุกครั้ง</li>
+        <li><b>1F tests/test_ingestion/</b> — symbology (uniqueness + round-trip + no-orphan) + schema + real-row fixture <span class="newtag">v1.3</span></li>
+        <li><b>1G core/audit.py + snapshot</b> ที่ input/output ของ ingestion <span class="newtag">v1.3</span></li>
+      </ul>
+      <div class="gate"><span class="gk">Gate 1</span><span class="gt"><b>parse row จริงได้ตรง RAW_SCHEMA</b> (future/option แยกถูก, net_change ผ่าน validate) + <b>symbology test ทั้งหมด pass</b> (uniqueness, round-trip, no-orphan) + <b>audit snapshot</b> ของ ingestion เขียนได้ + cache hit ทำงาน</span></div></div>
+    </div>
+
+    <div class="phase">
+      <div class="phasehd p1"><span class="phaseno">Phase 2</span><span class="phasettl">Core + DTE + equity adapter (end-to-end)</span><span class="phasedur">~1–2 สัปดาห์</span></div>
+      <div class="phasebody"><ul class="tasklist">
+        <li><b>2A core/dte.py</b> + test_dte (calendar convention, edge cases) <span class="newtag">v1.3</span> — ต้องเสร็จก่อน adapter ใดๆ</li>
+        <li><b>2B validators + stability</b> — รวม math ชุดใหม่ (VR, Ljung-Box, JB, Hurst, IC, VIF)</li>
+        <li><b>2C regime.py</b> — assign_regime_labels แบบ rolling, ยืนยันไม่มี look-ahead</li>
+        <li><b>2D splitter</b> — walk_forward, purge/embargo (purge_bars อ่านจาก dte cfg), diversity_gate (KL + JS)</li>
+        <li><b>2E metrics + overfitting</b> — full metric set, per-fold/per-regime, DSR, PBO</li>
+        <li><b>2F equity_adapter</b> — เชื่อม ingestion → adapter → core ครบ 4 stage; ทุก stage มี audit snapshot</li>
+      </ul>
+      <div class="gate"><span class="gk">Gate 2</span><span class="gt"><b>pipeline วิ่ง end-to-end บน equity</b> + DTE test ผ่านทั้งหมด + perf_report แสดง per-fold breakdown + <b>audit re-run ได้ deterministic hash</b></span></div></div>
+    </div>
+
+    <div class="phase">
+      <div class="phasehd p2"><span class="phaseno">Phase 3</span><span class="phasettl">Futures adapter + Greeks/Pricing</span><span class="phasedur">~1–2 สัปดาห์</span></div>
+      <div class="phasebody"><ul class="tasklist">
+        <li><b>3A core/pricing.py</b> — Black-76 + BS-Merton + solve_iv (Brent root-find) <span class="newtag">v1.3</span></li>
+        <li><b>3B core/greeks.py</b> — closed-form delta/gamma/theta/vega + net_greeks สำหรับ spread <span class="newtag">v1.3</span></li>
+        <li><b>3C tests/test_core/</b> — pricing vs QuantLib golden + PCP + bump-vs-analytic + net greeks for calendar <span class="newtag">v1.3</span></li>
+        <li><b>3D build_continuous_futures</b> — roll convention, backward-adjust</li>
+        <li><b>3E flag_scheduled_events</b> — generic event calendar (bz.yaml ชี้ EIA/OPEC)</li>
+        <li><b>3F compute_term_structure</b> + extend regime axes</li>
+      </ul>
+      <div class="gate"><span class="gk">Gate 3</span><span class="gt"><b>futures fold มีทั้ง contango และ backwardation</b> + <b>pricing diff vs QuantLib &lt; 1e-6</b> ใน golden set + <b>net greeks ของ calendar spread แสดง vega_term_risk แม้ vega_total = 0</b></span></div></div>
+    </div>
+
+    <div class="phase">
+      <div class="phasehd p3"><span class="phaseno">Phase 4</span><span class="phasettl">Options adapter (ซับซ้อนสุด)</span><span class="phasedur">~1–2 สัปดาห์</span></div>
+      <div class="phasebody"><ul class="tasklist">
+        <li><b>4A options_base: IV surface</b> — clean chain, PCP, calendar/butterfly arb (ใช้ pricing.py จาก Phase 3)</li>
+        <li><b>4B options_base: validate_provided_iv</b> — เทียบ <code>iv_provided</code> กับ <code>iv_solved</code> ของเรา flag ถ้าต่าง &gt; threshold <span class="newtag">v1.3</span></li>
+        <li><b>4C DTE-aware purge</b> (ผ่าน core/dte.py) + timestamp audit (mid px)</li>
+        <li><b>4D equity_options (BS-Merton) + futures_options (Black-76)</b> — override เฉพาะส่วนต่าง pricing model ระบุใน yaml</li>
+        <li><b>4E HMM/GMM offline validator</b> — concordance ≥ 0.7 กับ rule-based label (ไม่ใช่ replace)</li>
+      </ul>
+      <div class="ironrule" style="margin-top:14px"><div class="irk">ML model<br>ห้ามทำ</div><p>ห้ามใช้ full-sample HMM/GMM assign <code>regime_label</code> แล้วนำไปแบ่ง fold — label ที่ใช้แบ่ง fold ต้องมาจาก <code>assign_regime_labels()</code> เท่านั้น ML เป็น offline sanity check หลัง fold สร้างเสร็จ</p></div>
+      <div class="gate"><span class="gk">Gate 4</span><span class="gt"><b>options fold มี VRP+/VRP−/put-heavy/call-heavy ครบ</b> + DSR เป็นบวกหลังปรับ n_trials + <b>iv_provided vs iv_solved diff distribution</b> สมเหตุสมผล (ส่วนใหญ่ &lt; threshold)</span></div></div>
+    </div>
+  </section>
+
+  <!-- ============ 14 RULES ============ -->
+  <section id="rules">
+    <span class="snum">17 / EXECUTION</span>
+    <h2>กฎเหล็กสำหรับทีม</h2>
+    <p class="sintro">ติดไว้ใน PR checklist</p>
+    <div class="rules">
+      <div class="rulecol do">
+        <h4>ทำเสมอ</h4>
+        <ul>
+          <li>core อ่าน column ผ่าน <code>cfg[...]</code> เท่านั้น</li>
+          <li>ชื่อ instrument จริง (cl, eia, ovx) อยู่ใน <code>configs/</code> เท่านั้น</li>
+          <li>ทุก threshold อยู่ใน yaml รวม kl/js threshold, n_trials, vega_beta</li>
+          <li>เก็บ expired series ตั้งแต่ ingestion (survivorship)</li>
+          <li>stage 4 แสดง per-fold + per-regime เสมอ ไม่ใช่แค่ค่าเฉลี่ย</li>
+          <li>ปรับ Sharpe ด้วย DSR ตาม n_trials ก่อนสรุปว่ามี edge</li>
+          <li>HMM/GMM ใช้หลัง fold สร้างแล้ว เพื่อ validate</li>
+          <li><b>v1.3</b> · futures options ใช้ Black-76 เสมอ (ไม่ใช่ BS)</li>
+          <li><b>v1.3</b> · ทุก adapter เรียก <code>core/dte.py</code> เป็น single source of truth สำหรับ DTE</li>
+          <li><b>v1.3</b> · validate <code>iv_provided</code> เทียบกับ <code>iv_solved</code> ของเราเองก่อนใช้</li>
+          <li><b>v1.3</b> · symbology test (uniqueness + round-trip + no-orphan) ต้อง pass ก่อน merge</li>
+          <li><b>v1.3</b> · snapshot ก่อน/หลังทุก stage ใส่ <code>outputs/audit/</code></li>
+        </ul>
+      </div>
+      <div class="rulecol dont">
+        <h4>ห้ามทำเด็ดขาด</h4>
+        <ul>
+          <li>ชื่อ <code>wti/eia/ovx</code> ใน <code>core/</code> หรือ <code>adapters/</code></li>
+          <li>hardcode magic number ในโค้ด</li>
+          <li>สรุปผลจากค่าเฉลี่ยรวมโดยไม่ดู worst fold</li>
+          <li>ทิ้ง expired option series ตอนดึงข้อมูล</li>
+          <li>ใช้ <code>.rolling(center=True)</code> / full-sample fit ใน regime</li>
+          <li>cap scheduled-event spike (EIA) — มันคือ real signal</li>
+          <li>วัด OOS โดยไม่ net Greek P&amp;L ออกก่อน</li>
+          <li>full-sample HMM/GMM → assign label → แบ่ง fold</li>
+          <li><b>v1.3</b> · ใช้ Black-Scholes กับ futures options (จะได้ delta ผิด ~e^rT)</li>
+          <li><b>v1.3</b> · ให้ adapter คำนวณ DTE เอง — ต้องผ่าน <code>core/dte.py</code> เท่านั้น</li>
+          <li><b>v1.3</b> · ใช้ numerical bump เป็น primary Greek calculation (closed-form เท่านั้น)</li>
+          <li><b>v1.3</b> · สรุปจาก <code>vega_total</code> ใน calendar spread — ต้องดู <code>vega_term_risk</code></li>
+          <li><b>v1.3</b> · trust <code>iv_provided</code> โดยไม่ validate</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 15 GLOSSARY ============ -->
+  <section id="gloss">
+    <span class="snum">18 / REFERENCE</span>
+    <h2>Glossary</h2>
+    <div class="gloss">
+      <div class="glel"><dt>VRP</dt><dd>Variance Risk Premium = ATM IV − Realized Vol บวก = options แพง</dd></div>
+      <div class="glel"><dt>OVX</dt><dd>CBOE Crude Oil Volatility Index — VIX สำหรับ crude options</dd></div>
+      <div class="glel"><dt>PCP</dt><dd>Put-Call Parity — bound ที่ใช้ validate ราคา option</dd></div>
+      <div class="glel"><dt>Contango / Backwardation</dt><dd>M2&gt;M1 (glut) / M2&lt;M1 (tight) — กระทบ roll carry</dd></div>
+      <div class="glel"><dt>Survivorship</dt><dd>เก็บ series ที่หมดอายุ/delisted ไว้ ไม่งั้น backtest มองโลกสวยเกินจริง</dd></div>
+      <div class="glel"><dt>PIT</dt><dd>Point-In-Time — ข้อมูล ณ เวลานั้นจริง ไม่ปนข้อมูลที่รู้ทีหลัง</dd></div>
+      <div class="glel"><dt>Sortino</dt><dd>เหมือน Sharpe แต่ลงโทษเฉพาะ downside volatility</dd></div>
+      <div class="glel"><dt>Calmar</dt><dd>ann. return ÷ max drawdown — return ต่อความเจ็บ</dd></div>
+      <div class="glel"><dt>Ulcer index</dt><dd>วัดความลึกและความนานของ drawdown รวมกัน</dd></div>
+      <div class="glel"><dt>Skew / Kurtosis</dt><dd>ความเบ้/ความหนาหาง ของ return — Sharpe สมมติว่าเป็น 0/3</dd></div>
+      <div class="glel"><dt>IC (Information Coefficient)</dt><dd>correlation ระหว่าง prediction กับ forward return — วัดว่า feature ทำนายได้จริงไหม</dd></div>
+      <div class="glel"><dt>VIF</dt><dd>Variance Inflation Factor — วัด multicollinearity ของ feature</dd></div>
+      <div class="glel"><dt>KL / JS divergence</dt><dd>วัดความต่างของ distribution; KL asymmetric (จับ shift รุนแรง), JS symmetric bounded (เทียบข้าม fold)</dd></div>
+      <div class="glel"><dt>Deflated Sharpe (DSR)</dt><dd>ปรับ Sharpe ตามจำนวนกลยุทธ์ที่ทดสอบ — กัน false discovery จากการลองเยอะ</dd></div>
+      <div class="glel"><dt>PBO</dt><dd>Probability of Backtest Overfitting — โอกาสที่ in-sample winner จะแพ้ out-of-sample</dd></div>
+      <div class="glel"><dt>HMM/GMM (validator)</dt><dd>ใช้ offline หลัง fold สร้างแล้ว เทียบกับ rule-based label ห้าม label fold โดยตรง</dd></div>
+      <div class="glel"><dt>Greek P&amp;L attribution</dt><dd>แยก P&amp;L เป็น delta/gamma/theta/vega ก่อนวัด OOS</dd></div>
+      <div class="glel"><dt>Settlement price</dt><dd>ราคาปิดอย่างเป็นทางการของ exchange (≠ last-trade) — ใช้เป็น price ใน EOD data</dd></div>
+      <div class="glel"><dt>STRIP / delivery month</dt><dd>เดือนส่งมอบของสัญญา futures — แกนหลักของ term structure และ roll</dd></div>
+      <div class="glel"><dt>as_of_date vs period_end</dt><dd>วันที่รู้ข้อมูลจริง vs วันที่ข้อมูลอ้างถึง — join ด้วย merge_asof บน as_of_date เสมอ</dd></div>
+      <div class="glel"><dt>Adjusted vs raw close</dt><dd>provider ฟรีบางตัว (เช่น Yahoo) คำนวณ Adj Close ย้อนหลังใหม่ทุก split/div = ข้อมูลอนาคต; backtest ใช้ raw + adj_factor ถึง t</dd></div>
+      <div class="glel"><dt>Provided IV/greeks</dt><dd>OPTION_VOLATILITY/DELTA_FACTOR ที่ exchange คำนวณให้ — validate ก่อนใช้ ไม่ต้อง re-solve เสมอ</dd></div>
+      <div class="glel"><dt>Black-76</dt><dd>option pricing model สำหรับ futures options — underlying คือ futures (no carry) ไม่ใช่ spot ผิดจาก BS ตรง delta = e^(-rT)·N(d₁) แทน N(d₁); ใช้ BS แทน Black-76 = delta ผิด ~e^rT</dd></div>
+      <div class="glel"><dt>BS-Merton</dt><dd>Black-Scholes ที่บวก continuous dividend yield q — สำหรับ equity ที่จ่ายปันผล / index option</dd></div>
+      <div class="glel"><dt>Net Greeks (spread)</dt><dd>ผลรวมเชิงเส้น ±qty × leg_greek; สำหรับ calendar spread ต้องแยก vega_short_term/long_term + vega_term_risk (vega_total เพียงอย่างเดียวจับ term-structure shift ไม่ได้)</dd></div>
+      <div class="glel"><dt>Vega term risk</dt><dd>vega_long_term − vega_beta × vega_short_term — จับความเสี่ยงที่ short/long-end IV เคลื่อนไม่ขนานกัน root cause ของ vega bleed ใน calendar</dd></div>
+      <div class="glel"><dt>DTE convention</dt><dd>basis (calendar/trading) + day_count (act_365/act_360/bus_252) + expiry inclusive/exclusive — ทุก adapter ต้องอ้าง core/dte.py เดียวกัน ไม่งั้น Greek ของแต่ละขาในสองหน่วยที่ต่าง</dd></div>
+      <div class="glel"><dt>Symbology silent killer</dt><dd>PRODUCT_ID/HUB/CONTRACT map ผิดไม่ throw error — schema ถูก, ค่า normal — แต่ join ผสม contract กัน ตรวจด้วย uniqueness + round-trip + no-orphan</dd></div>
+      <div class="glel"><dt>Data audit (lightweight)</dt><dd>snapshot ของ stage ที่เก็บ row_count + schema_hash + data_hash + key_stats + na_pattern ใน <code>outputs/audit/</code> สำหรับ debug ไม่ใช่ MLOps observability</dd></div>
+      <div class="glel"><dt>Raw data versioning</dt><dd>เก็บ raw data เป็น immutable partitioned parquet (partition by ingested_at) ห้าม overwrite — ป้องกัน invisible data change จาก provider + ทำ reproducibility ได้</dd></div>
+      <div class="glel"><dt>available_at</dt><dd>เวลาที่ข้อมูลพร้อมจริงๆ (≥ as_of_date + release lag) ใช้เป็น join key แทน as_of_date — ป้องกัน look-ahead bias จาก EIA/COT/earnings ที่ publish ช้ากว่าวันที่อ้างถึง</dd></div>
+      <div class="glel"><dt>Release lag</dt><dd>เวลาระหว่าง as_of_date กับ available_at — EIA ~5 วัน, COT ~3.5 วัน, earnings 2–8 สัปดาห์; ระบุใน cfg["available_at_lag"] ไม่ hardcode</dd></div>
+      <div class="glel"><dt>Transaction cost (3 levels)</dt><dd>L1: fixed cost per leg; L2: bid-ask scaling (DTE + moneyness + vol regime); L3: market impact (Almgren-Chriss). เริ่ม L1 แล้วขยับเมื่อ validate แล้วเท่านั้น</dd></div>
+      <div class="glel"><dt>Attribution waterfall</dt><dd>แยก Gross P&amp;L → layers (Greek/factor) → residual → cost → financing → Net P&amp;L; options ใช้ Greek decompose, equity ใช้ factor decompose, cost/financing ชั้นสุดท้ายเหมือนกัน</dd></div>
+      <div class="glel"><dt>Vega term risk (waterfall)</dt><dd>layer ใน options waterfall ที่จับ P&amp;L จาก term structure shift ไม่ขนาน — root cause ของ calendar spread ขาดทุนใน IV compression; vega_total = 0 แต่ layer นี้ ≠ 0</dd></div>
+      <div class="glel"><dt>Alpha (equity waterfall)</dt><dd>Gross P&amp;L − factor P&amp;L; ถ้าเล็กมากแปลว่า strategy = beta disguised ซื้อ ETF ถูกกว่า; ต้องใช้ PIT factor loading ไม่ใช่ full-sample</dd></div>
+    </div>
+    <div class="endnote">
+      Quant Pipeline Framework · Implementation Blueprint v1.4<br>
+      v1.4: data versioning (immutable partition, ห้าม overwrite) · available_at timestamp (release lag per data type) · transaction cost model 3 ระดับ (fixed / bid-ask scaling / market impact) · performance attribution waterfall (Greek decompose สำหรับ options, factor decompose สำหรับ equity) · core/txcost.py · core/attribution.py · ingestion/versioned_cache.py · raw/ directory<br>
+      v1.3: tests &amp; data audit เป็น hard requirement · Greeks &amp; spread math (Black-76, IV solver, net greeks for calendar) · provider language genericized<br>
+      v1.2: RAW_SCHEMA ตาม data จริง · field mapping + parser · future/option split · provider PIT caveats<br>
+      v1.1: ingestion layer · generic naming · per-fold/per-regime diagnosis · full metric set + overfitting · KL+JS gate<br>
+      Iron rule: core/ และ adapters/ ห้ามมีชื่อ instrument จริง · futures options ใช้ Black-76 เสมอ · join ด้วย available_at ไม่ใช่ as_of_date · waterfall ต้องใช้ Greek PIT entry-time เท่านั้น
+    </div>
+  </section>
+
+</main>
+</div>
+<script>
+const links=[...document.querySelectorAll('#toc a')];
+const secs=links.map(a=>document.querySelector(a.getAttribute('href')));
+const obs=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){const id='#'+e.target.id;links.forEach(l=>l.classList.toggle('active',l.getAttribute('href')===id));}});},{rootMargin:'-20% 0px -70% 0px'});
+secs.forEach(s=>s&&obs.observe(s));
+</script>
+</body>
+</html>

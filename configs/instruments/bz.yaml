@@ -1,0 +1,89 @@
+# Brent Crude Futures Options — instrument spec
+# Iron rule: this is the ONLY place "B", "North Sea", "EIA" appear.
+family: futures_options
+provider: settlement           # pipe-delimited EOD loader
+
+symbol:
+  product_id: 254               # stable key — join uses this, not name
+  contract_root: B
+  hub: North Sea
+
+columns:
+  vol_col: brent_iv_index       # ⚠ OVX = WTI only! Brent uses different index
+  price_col: front_month_cont
+
+price_field: settlement         # NOT last-trade
+iv_source: provided             # use OPTION_VOLATILITY from exchange (validate first)
+date_grain: eod                 # date-only; no intraday timestamp
+data_version: latest            # v1.4: latest | YYYY-MM-DD | as_of_backtest_start
+
+pricing:                        # v1.3: model + IV solver settings
+  model: black76                # futures options → Black-76 (NEVER use bs)
+  iv_validate_threshold: 0.005  # 0.5 vol-point — flag if diff exceeds
+  iv_solver_bounds: [0.0001, 5.0]  # σ search range (annualized)
+  vega_bucket_cutoff: 60         # DTE < 60 = short-term bucket (for net vega of calendar)
+  vega_beta: 0.7                 # short-end vol moves more than long-end (calibrate monthly)
+
+dte:                             # v1.3: calendar convention (single source of truth)
+  basis: calendar                # calendar | trading — all adapters use same
+  day_count: act_365             # act_365 | act_360 | bus_252
+  expiry_cutoff: settlement      # settlement (EOD) | open_next_day
+  exclude_expiry_date: true      # T-day = expiry counts as DTE 0
+
+event_calendars: [configs/events/eia.csv, configs/events/opec.csv]  # No "EIA" in code
+event_regimes: [eia_week]
+
+available_at_lag:                # v1.4: fallback if provider lacks release timestamp
+  settlement: "3h"
+  eia_inventory: "P5D"
+  opec_report: "P2D"
+  realized_vol: "2h"
+
+validation:
+  min_oi: 100
+  iv_cap: 5.0
+  futures_oi_floor: 1000
+  roll_days: 5
+
+stability:
+  psi_threshold: 0.25
+  use_iv_change: true
+
+cv:
+  n_folds: 8
+  purge_bars: max_dte
+  event_embargo_bars: 2
+  regime_axes: [vol_regime, term_structure, vrp_sign, skew_direction, eia_week]
+  max_concentration: 0.80
+  kl_threshold: 0.5
+  js_threshold: 0.3               # symmetric bounded companion
+
+performance:
+  rf_rate_source: sofr
+  net_greek_pnl: true
+  include_roll_cost: true
+  n_trials: 40                     # for deflated sharpe
+  stress_events: [eia_miss, opec_shock, roll_squeeze, vix_spike]
+
+txcost:                           # v1.4: transaction cost / liquidity model
+  level: 2
+  commission_per_contract: 2.50
+  half_spread_fixed: 0.05
+  dte_spread_curve:
+    ">60": 1.0
+    "30-60": 1.4
+    "14-30": 1.8
+    "<14": 2.8
+  moneyness_otm_threshold: 0.15
+  spread_regime_mult:
+    low_vol: 0.85
+    mid_vol: 1.00
+    high_vol: 1.60
+  financing_rate: 0.05
+  margin_requirement: 0.10
+
+audit:                             # v1.3: lightweight snapshot per stage
+  enabled: true
+  snapshot_cols: [as_of_date, product_id, strike, expiry, price, iv_provided]
+  hash_algo: xxh64                 # fast, deterministic
+  retain_days: 30

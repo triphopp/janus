@@ -1,0 +1,48 @@
+# Equity family-level defaults
+family: equity
+provider: yfinance  # POC; swap for production
+
+columns:
+  price_col: raw_close
+  vol_col: volume
+
+price_field: close
+date_grain: eod
+
+pricing:
+  model: bsm           # Black-Scholes-Merton (with dividend yield)
+  div_yield: 0.0
+
+dte:
+  basis: trading        # NYSE trading days
+  day_count: bus_252
+  expiry_cutoff: settlement
+  exclude_expiry_date: false
+
+validation:
+  min_volume: 10000
+  outlier_k: 5.0
+
+stability:
+  psi_threshold: 0.25
+  use_iv_change: true
+
+cv:
+  n_folds: 8
+  purge_bars: 5
+  event_embargo_bars: 2
+  regime_axes: [vol_regime]
+  max_concentration: 0.80
+  kl_threshold: 0.5
+  js_threshold: 0.3
+
+performance:
+  rf_rate_source: sofr
+  n_trials: 40
+  stress_events: [vix_spike, earnings_miss]
+
+audit:
+  enabled: true
+  snapshot_cols: [as_of_date, symbol, price_std, return_std, vol_std]
+  hash_algo: xxh64
+  retain_days: 30

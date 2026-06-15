@@ -1,0 +1,62 @@
+# AAPL Equity — instrument spec
+family: equity
+provider: yfinance                # POC only
+
+symbol:
+  ticker: AAPL
+
+columns:
+  vol_col: volume
+  price_col: raw_close
+
+price_field: close
+date_grain: eod
+data_version: latest
+
+pricing:
+  model: bsm
+  div_yield: 0.005
+
+dte:
+  basis: trading
+  day_count: bus_252
+  expiry_cutoff: settlement
+  exclude_expiry_date: false
+
+validation:
+  min_volume: 50000
+  outlier_k: 5.0
+
+stability:
+  psi_threshold: 0.25
+
+available_at_lag:
+  equity_price: "3h"
+  earnings: "P1D"
+  realized_vol: "2h"
+
+cv:
+  n_folds: 8
+  purge_bars: 5
+  regime_axes: [vol_regime]
+  max_concentration: 0.80
+  kl_threshold: 0.5
+  js_threshold: 0.3
+
+performance:
+  rf_rate_source: sofr
+  n_trials: 40
+  stress_events: [earnings_miss, vix_spike]
+
+txcost:
+  level: 1
+  commission_per_contract: 0.00
+  half_spread_fixed: 0.01
+  financing_rate: 0.05
+  margin_requirement: 0.50
+
+audit:
+  enabled: true
+  snapshot_cols: [as_of_date, symbol, price_std, return_std, vol_std]
+  hash_algo: xxh64
+  retain_days: 30

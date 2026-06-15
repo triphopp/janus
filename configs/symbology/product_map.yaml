@@ -1,0 +1,17 @@
+# Symbology mapping: product_id → contract_root + hub
+# Validated on every load — uniqueness + round-trip + no-orphan tests required.
+products:
+  - product_id: 254
+    contract_root: B
+    hub: North Sea
+    product_name: Brent Crude Futures
+
+  - product_id: 425
+    contract_root: CL
+    hub: Cushing
+    product_name: WTI Crude Futures
+
+  - product_id: 500
+    contract_root: SPX
+    hub: ""
+    product_name: S&P 500 Index

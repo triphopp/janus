@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual envs / dep caches
+.venv/
+venv/
+env/
+.codex_pydeps/
+
+# Test caches
+.pytest_cache/
+.pytest_tmp/
+.coverage
+htmlcov/
+
+# Codex / editor
+.codex/
+
+# Environment
+.env
+*.env
+
+# Generated pipeline artifacts
+outputs/
+
+# OS
+.DS_Store
+Thumbs.db

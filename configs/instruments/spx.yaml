@@ -1,0 +1,84 @@
+# SPX Index Options — instrument spec
+family: equity_options
+provider: yfinance                # POC; swap for institutional feed
+
+symbol:
+  ticker: ^SPX
+  product_id: 500
+
+columns:
+  vol_col: vix                    # CBOE VIX for SPX
+  price_col: close
+
+price_field: close
+date_grain: eod
+data_version: latest
+
+pricing:
+  model: bsm                      # BS-Merton (index with div yield)
+  div_yield: 0.015                # ~1.5% SPX dividend yield
+  iv_validate_threshold: 0.005
+  iv_solver_bounds: [0.0001, 5.0]
+  vega_bucket_cutoff: 30          # DTE < 30 = short-term
+  vega_beta: 0.75
+
+dte:
+  basis: trading                  # NYSE trading days
+  day_count: bus_252
+  expiry_cutoff: settlement
+  exclude_expiry_date: false
+
+event_calendars: [configs/events/fomc.csv, configs/events/earnings.csv]
+event_regimes: [fomc_week]
+
+available_at_lag:
+  equity_price: "3h"
+  earnings: "P1D"
+  realized_vol: "2h"
+
+validation:
+  min_oi: 100
+  iv_cap: 5.0
+  min_volume: 10000
+
+stability:
+  psi_threshold: 0.25
+  use_iv_change: true
+
+cv:
+  n_folds: 8
+  purge_bars: 5
+  event_embargo_bars: 2
+  regime_axes: [vol_regime, vrp_sign, skew_direction, fomc_week]
+  max_concentration: 0.80
+  kl_threshold: 0.5
+  js_threshold: 0.3
+
+performance:
+  rf_rate_source: sofr
+  net_greek_pnl: true
+  n_trials: 40
+  stress_events: [vix_spike, fomc_shock, earnings_miss]
+
+txcost:
+  level: 1
+  commission_per_contract: 0.65
+  half_spread_fixed: 0.05
+  dte_spread_curve:
+    ">60": 1.0
+    "30-60": 1.3
+    "14-30": 1.7
+    "<14": 2.5
+  moneyness_otm_threshold: 0.15
+  spread_regime_mult:
+    low_vol: 0.90
+    mid_vol: 1.00
+    high_vol: 1.50
+  financing_rate: 0.05
+  margin_requirement: 0.15
+
+audit:
+  enabled: true
+  snapshot_cols: [as_of_date, symbol, strike, expiry, price, iv_provided]
+  hash_algo: xxh64
+  retain_days: 30

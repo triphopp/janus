@@ -1,0 +1,46 @@
+# Futures family-level defaults
+family: futures
+provider: settlement
+
+columns:
+  price_col: front_month_cont
+  vol_col: term_spread
+
+price_field: settlement    # NOT last-trade
+date_grain: eod
+
+dte:
+  basis: calendar
+  day_count: act_365
+  expiry_cutoff: settlement
+  exclude_expiry_date: false
+
+validation:
+  min_oi: 1000
+  roll_days: 5
+  outlier_k: 5.0
+
+stability:
+  psi_threshold: 0.25
+  use_iv_change: false
+
+cv:
+  n_folds: 8
+  purge_bars: max_dte
+  event_embargo_bars: 2
+  regime_axes: [vol_regime, term_structure]
+  max_concentration: 0.80
+  kl_threshold: 0.5
+  js_threshold: 0.3
+
+performance:
+  rf_rate_source: sofr
+  include_roll_cost: true
+  n_trials: 40
+  stress_events: [roll_squeeze]
+
+audit:
+  enabled: true
+  snapshot_cols: [as_of_date, product_id, delivery_month, price_std, return_std]
+  hash_algo: xxh64
+  retain_days: 30
