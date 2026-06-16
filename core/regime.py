@@ -10,6 +10,8 @@ from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 
+from core.causal import broadcast_by_date, causal_rank, causal_vol, to_causal_series
+
 
 def assign_regime_labels(df: pd.DataFrame, cfg: dict) -> pd.Series:
     """Primary regime labeler — rolling rule-based only.
@@ -34,51 +36,98 @@ def assign_regime_labels(df: pd.DataFrame, cfg: dict) -> pd.Series:
     vol_window = cfg.get("vol_window", 21)
     return_col = cfg.get("return_col", "return_std")
     vol_col = cfg.get("vol_col", "vol_std")
+    date_col = cfg.get("date_col", "as_of_date")
 
     labels = pd.Series("neutral", index=df.index)
 
-    # ── Vol regime (expanding percentile — PIT safe) ──
+    # ── Vol regime (date-grain expanding percentile — PIT safe) ──
     if "vol_regime" in axes and return_col in df.columns:
-        realized_vol = df[return_col].rolling(vol_window).std()
-        # Expanding percentile (no future data)
-        expanding_rank = realized_vol.expanding().rank(pct=True)
+        if date_col in df.columns:
+            returns = to_causal_series(
+                df,
+                return_col,
+                date_col=date_col,
+                agg=cfg.get("return_agg", "mean"),
+            )
+            realized_vol = causal_vol(
+                returns,
+                vol_window,
+                min_periods=cfg.get("vol_min_periods", 5),
+            )
+            expanding_rank = causal_rank(
+                realized_vol,
+                min_periods=cfg.get("vol_rank_min_periods", max(5, min(20, vol_window))),
+            )
+            vol_labels = broadcast_by_date(df, expanding_rank.apply(_vol_label), date_col=date_col)
+        else:
+            realized_vol = causal_vol(
+                df[return_col],
+                vol_window,
+                min_periods=cfg.get("vol_min_periods", 5),
+            )
+            expanding_rank = causal_rank(
+                realized_vol,
+                min_periods=cfg.get("vol_rank_min_periods", max(5, min(20, vol_window))),
+            )
+            vol_labels = expanding_rank.apply(_vol_label)
 
-        def _vol_label(pct):
-            if pd.isna(pct):
-                return "unknown"
-            if pct > 0.8:
-                return "high_vol"
-            elif pct < 0.2:
-                return "low_vol"
-            return "med_vol"
-
-        vol_labels = expanding_rank.apply(_vol_label)
         labels = _combine_labels(labels, vol_labels)
 
     # ── VRP sign ──
     if "vrp_sign" in axes and "vrp" in df.columns:
-        vrp_labels = df["vrp"].apply(lambda x: "vrp_positive" if x > 0 else "vrp_negative")
+        if date_col in df.columns:
+            vrp = to_causal_series(
+                df,
+                "vrp",
+                date_col=date_col,
+                agg=cfg.get("vrp_agg", "median"),
+            )
+            vrp_values = broadcast_by_date(df, vrp, date_col=date_col)
+        else:
+            vrp_values = df["vrp"]
+        vrp_labels = vrp_values.apply(_vrp_label)
         labels = _combine_labels(labels, vrp_labels)
 
     # ── Term structure ──
     if "term_structure" in axes and "term_structure_slope" in df.columns:
-        ts_labels = df["term_structure_slope"].apply(
-            lambda x: "contango" if x > 0 else "backwardation"
-        )
+        if date_col in df.columns:
+            ts = to_causal_series(
+                df,
+                "term_structure_slope",
+                date_col=date_col,
+                agg=cfg.get("term_structure_agg", "mean"),
+            )
+            ts_values = broadcast_by_date(df, ts, date_col=date_col)
+        else:
+            ts_values = df["term_structure_slope"]
+        ts_labels = ts_values.apply(_term_structure_label)
         labels = _combine_labels(labels, ts_labels)
 
     # ── Skew direction ──
     if "skew_direction" in axes and "skew_25d" in df.columns:
-        skew_labels = df["skew_25d"].apply(
-            lambda x: "put_skew" if x < -0.05 else ("call_skew" if x > 0.05 else "neutral_skew")
-        )
+        if date_col in df.columns:
+            skew = to_causal_series(
+                df,
+                "skew_25d",
+                date_col=date_col,
+                agg=cfg.get("skew_agg", "median"),
+            )
+            skew_values = broadcast_by_date(df, skew, date_col=date_col)
+        else:
+            skew_values = df["skew_25d"]
+        skew_labels = skew_values.apply(_skew_label)
         labels = _combine_labels(labels, skew_labels)
 
     # ── Event regimes (from cfg event_regimes) ──
     event_regimes = cfg.get("event_regimes", [])
     for er in event_regimes:
         if er in df.columns:
-            event_labels = df[er].apply(lambda x: er if x else f"non_{er}")
+            if date_col in df.columns:
+                event = to_causal_series(df, er, date_col=date_col, agg="any")
+                event_values = broadcast_by_date(df, event, date_col=date_col)
+            else:
+                event_values = df[er]
+            event_labels = event_values.apply(lambda x: er if pd.notna(x) and bool(x) else f"non_{er}")
             labels = _combine_labels(labels, event_labels)
 
     return labels
@@ -220,3 +269,35 @@ def _combine_labels(current: pd.Series, new: pd.Series) -> pd.Series:
     # Clean up: remove leading/trailing underscores from "neutral" or "unknown"
     combined = combined.str.replace("^neutral_", "", regex=True)
     return combined
+
+
+def _vol_label(pct):
+    if pd.isna(pct):
+        return "unknown"
+    if pct > 0.8:
+        return "high_vol"
+    if pct < 0.2:
+        return "low_vol"
+    return "med_vol"
+
+
+def _vrp_label(x):
+    if pd.isna(x):
+        return "vrp_unknown"
+    return "vrp_positive" if x > 0 else "vrp_negative"
+
+
+def _term_structure_label(x):
+    if pd.isna(x):
+        return "term_structure_unknown"
+    return "contango" if x > 0 else "backwardation"
+
+
+def _skew_label(x):
+    if pd.isna(x):
+        return "unknown_skew"
+    if x < -0.05:
+        return "put_skew"
+    if x > 0.05:
+        return "call_skew"
+    return "neutral_skew"

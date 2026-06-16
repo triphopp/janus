@@ -4,12 +4,14 @@ Generic for all futures instrument families.
 Instrument specifics in config only.
 """
 
+from pathlib import Path
 from typing import Tuple
 
 import numpy as np
 import pandas as pd
 
 from .base import AdapterBase
+from ingestion.versioned_cache import infer_available_at
 
 
 class FuturesAdapter(AdapterBase):
@@ -96,16 +98,43 @@ class FuturesAdapter(AdapterBase):
 
         df = df.copy()
         df["scheduled_event"] = False
+        if "decision_time" not in df.columns:
+            if "available_at" in df.columns:
+                df["decision_time"] = pd.to_datetime(df["available_at"], utc=True)
+            else:
+                df["decision_time"] = pd.to_datetime(df["as_of_date"], utc=True)
+        decision_time = pd.to_datetime(df["decision_time"], utc=True)
+        row_dates = pd.to_datetime(df["as_of_date"]).dt.date
 
         for event_file in event_files:
             try:
-                events = pd.read_csv(event_file, parse_dates=["date"])
-                event_dates = set(events["date"].dt.date)
-                df["scheduled_event"] = df["scheduled_event"] | (
-                    pd.to_datetime(df["as_of_date"]).dt.date.isin(event_dates)
-                )
+                events = pd.read_csv(event_file, parse_dates=["date"], comment="#")
             except (FileNotFoundError, KeyError):
                 continue  # Event file may not exist for this instrument
+            if events.empty or "date" not in events.columns:
+                continue
+
+            events = events.dropna(subset=["date"]).copy()
+            if events.empty:
+                continue
+            if "available_at" in events.columns:
+                events["available_at"] = pd.to_datetime(events["available_at"], utc=True)
+            else:
+                data_type = self._event_data_type(event_file)
+                events["available_at"] = infer_available_at(
+                    events["date"],
+                    data_type,
+                    self.cfg,
+                )
+
+            available_by_date = (
+                events.assign(_event_date=events["date"].dt.date)
+                .groupby("_event_date")["available_at"]
+                .min()
+            )
+            row_event_available = row_dates.map(available_by_date)
+            known_same_day_event = row_event_available.notna() & (row_event_available <= decision_time)
+            df["scheduled_event"] = df["scheduled_event"] | known_same_day_event.fillna(False)
 
         # Per event type (for regime axes)
         event_regimes = self.cfg.get("event_regimes", [])
@@ -113,6 +142,15 @@ class FuturesAdapter(AdapterBase):
             df[er] = df["scheduled_event"]  # Simplified; real impl per-event
 
         return df
+
+    def _event_data_type(self, event_file: str) -> str:
+        """Infer the release-lag key for an event calendar file."""
+        stem = Path(event_file).stem.lower()
+        lag_map = self.cfg.get("available_at_lag", {}) or {}
+        for candidate in (stem, f"{stem}_inventory", f"{stem}_report", "event"):
+            if candidate in lag_map:
+                return candidate
+        return "event"
 
     def compute_term_structure(self, df: pd.DataFrame) -> pd.DataFrame:
         """Compute term structure features.

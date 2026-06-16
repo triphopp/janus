@@ -8,8 +8,11 @@ v1.4 additions:
 
 from __future__ import annotations
 
+import getpass
 import hashlib
 import json
+import os
+import socket
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -17,6 +20,15 @@ from typing import Optional
 import pandas as pd
 
 DEFAULT_RAW_DIR = Path("raw")
+
+
+def _writer_identity() -> dict:
+    """Who/where wrote this partition — needed for tamper-evidence (§13.3)."""
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = None
+    return {"host": socket.gethostname(), "pid": os.getpid(), "user": user}
 
 
 def _safe_symbol(symbol: str) -> str:
@@ -44,7 +56,14 @@ def _schema_hash(df: pd.DataFrame) -> str:
 
 
 def _data_hash(df: pd.DataFrame) -> str:
-    return _hash_text(df.to_csv(index=False))
+    """Canonical, value-based content hash (not to_csv text — fixes float-repr drift).
+
+    Delegates to ``core.audit.canonical_frame_hash``: columns sorted, floats rounded to
+    8 dp, hashed via ``hash_pandas_object``. Required for I1 hash-chain + I6 replay.
+    """
+    from core.audit import canonical_frame_hash
+
+    return canonical_frame_hash(df)
 
 
 def _parse_lag(value) -> pd.Timedelta:
@@ -199,36 +218,74 @@ class VersionedCache:
             raise FileNotFoundError(f"no raw version for {symbol} at or before {target}")
         return candidates[-1]
 
+    def _last_chain_hash(self, symbol: str) -> Optional[str]:
+        """Last chain_hash recorded for this symbol — links the tamper-evident chain."""
+        if not self.manifest_path.exists():
+            return None
+        target = _safe_symbol(symbol)
+        last = None
+        with open(self.manifest_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if rec.get("symbol") == target:
+                    last = rec.get("chain_hash")
+        return last
+
     def _append_manifest(self, symbol: str, version: str, df: pd.DataFrame, path: Path, run_id=None):
+        data_hash = _data_hash(df)
+        schema_hash = _schema_hash(df)
+        prev_hash = self._last_chain_hash(symbol)
+        # chain_hash links prev → this, making history rewrites detectable (§13.3).
+        chain_hash = _hash_text(f"{prev_hash or ''}|{schema_hash}|{data_hash}")
         record = {
             "symbol": _safe_symbol(symbol),
             "ingested_at": version,
             "written_at": _utc_now().isoformat(),
             "rows": int(len(df)),
-            "schema_hash": _schema_hash(df),
-            "data_hash": _data_hash(df),
+            "schema_hash": schema_hash,
+            "data_hash": data_hash,
+            "prev_hash": prev_hash,
+            "chain_hash": chain_hash,
             "path": str(path).replace("\\", "/"),
             "run_id": run_id,
+            "writer": _writer_identity(),
         }
         with open(self.manifest_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, sort_keys=True) + "\n")
         return record
 
     def _write_frame(self, df: pd.DataFrame, path: Path, storage_format: str):
-        if storage_format == "parquet":
-            try:
-                df.to_parquet(path, index=False)
-            except ImportError as exc:
-                raise RuntimeError(
-                    "Parquet output requires pyarrow or fastparquet. Install one, "
-                    "or set storage_format='csv'/'pickle' for local tests."
-                ) from exc
-        elif storage_format == "csv":
-            df.to_csv(path, index=False)
-        elif storage_format == "pickle":
-            df.to_pickle(path)
-        else:
-            raise ValueError(f"unknown storage format: {storage_format}")
+        """ACID write: serialize to a temp file, then atomic-rename into place (§13.4).
+
+        Guarantees a reader never sees a half-written partition; a crash mid-write
+        leaves only an orphan ``.tmp`` (ignored by readers), never a partial ``path``.
+        """
+        tmp = path.with_name(path.name + ".tmp")
+        try:
+            if storage_format == "parquet":
+                try:
+                    df.to_parquet(tmp, index=False)
+                except ImportError as exc:
+                    raise RuntimeError(
+                        "Parquet output requires pyarrow or fastparquet. Install one, "
+                        "or set storage_format='csv'/'pickle' for local tests."
+                    ) from exc
+            elif storage_format == "csv":
+                df.to_csv(tmp, index=False)
+            elif storage_format == "pickle":
+                df.to_pickle(tmp)
+            else:
+                raise ValueError(f"unknown storage format: {storage_format}")
+            os.replace(tmp, path)  # atomic on the same filesystem
+        finally:
+            if tmp.exists():
+                tmp.unlink()
 
     def _read_frame(self, path: Path, storage_format: str) -> pd.DataFrame:
         if storage_format == "parquet":
@@ -265,19 +322,65 @@ class VersionedCache:
         self._write_frame(df, path, storage_format)
         return self._append_manifest(symbol, version, df, path, run_id)
 
+    def manifest_record(self, symbol: str, version: str) -> Optional[dict]:
+        """Latest manifest record for (symbol, ingested_at=version), or None."""
+        if not self.manifest_path.exists():
+            return None
+        target = _safe_symbol(symbol)
+        found = None
+        with open(self.manifest_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if rec.get("symbol") == target and rec.get("ingested_at") == version:
+                    found = rec
+        return found
+
+    def verify_partition(self, symbol: str, version: str, storage_format: str = "parquet",
+                         filename: Optional[str] = None) -> bool:
+        """Recompute the partition's data hash and compare to its manifest record.
+
+        Returns True only when a manifest entry exists AND the recomputed canonical
+        hash matches (§13.4: readers ignore absent/invalid partitions). Reliable for
+        dtype-preserving formats (parquet/pickle); CSV round-trips dtypes so skip it.
+        """
+        rec = self.manifest_record(symbol, version)
+        if rec is None:
+            return False
+        if storage_format == "csv":
+            return True  # csv loses dtypes; manifest write-time hash stays authoritative
+        suffix = {"parquet": "parquet", "csv": "csv", "pickle": "pkl"}[storage_format]
+        name = filename or f"data.{suffix}"
+        path = self._data_path(symbol, version, name)
+        if not path.exists():
+            return False
+        return _data_hash(self._read_frame(path, storage_format)) == rec.get("data_hash")
+
     def read(self, symbol: str, cfg: dict) -> pd.DataFrame:
-        """Read a specific raw data version.
+        """Read a specific raw data version (bitemporal).
 
         cfg['data_version'] supports:
         - 'latest'
-        - explicit 'YYYY-MM-DD'
-        - 'as_of_backtest_start'
+        - explicit 'YYYY-MM-DD' (exact knowledge partition)
+        - 'as_of_backtest_start' (latest partition with knowledge_time <= backtest_start)
+        - 'as_of_knowledge' (latest partition with knowledge_time <= cfg['knowledge_time'])
+
+        Time-travel: 'as_of_*' answers "what did we KNOW as of T" — immune to later
+        vendor restatements (an original value, not the corrected future one).
+        Set cfg['verify_on_read']=True to assert the partition hash matches its manifest.
         """
         version = cfg.get("data_version", "latest")
         if version == "latest":
             partition = self.latest_partition(symbol)
         elif version == "as_of_backtest_start":
             partition = self.partition_at(symbol, cfg["backtest_start"])
+        elif version == "as_of_knowledge":
+            partition = self.partition_at(symbol, cfg["knowledge_time"])
         else:
             partition = str(version)
 
@@ -287,6 +390,13 @@ class VersionedCache:
         path = self._data_path(symbol, partition, filename)
         if not path.exists():
             raise FileNotFoundError(f"raw version file not found: {path}")
+        if cfg.get("verify_on_read") and not self.verify_partition(
+            symbol, partition, storage_format, filename
+        ):
+            raise RuntimeError(
+                f"partition integrity check failed for {symbol} @ {partition} "
+                "(missing manifest entry or hash mismatch)"
+            )
         return self._read_frame(path, storage_format)
 
 

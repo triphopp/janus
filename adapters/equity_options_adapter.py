@@ -25,18 +25,49 @@ class EquityOptionsAdapter(OptionsBase):
         df = self._normalize_option_columns(raw_df)
         option_mask = self._require_option_chain_schema(df, "equity options")
 
-        # ── Strike adjustment (corp actions) ──
-        if "strike" in df.columns and "adj_factor" in df.columns:
-            df["strike_raw"] = df["strike"]
-            df["strike"] = df["strike"] * df["adj_factor"]
-
-        # ── Build underlying price ──
+        # ── Build PIT-safe strike / underlying price ──
+        # Yahoo-style adjustment factors are retroactive unless the provider marks them
+        # PIT. Preserve provider-adjusted values for audit, but do not feed them into
+        # pricing by default.
         if "raw_close" in df.columns and "adj_factor" in df.columns:
-            df["underlying_price"] = df["raw_close"] * df["adj_factor"]
+            adj_is_pit = df.get("adj_factor_is_pit", False)
+            if not isinstance(adj_is_pit, pd.Series):
+                adj_is_pit = pd.Series(bool(adj_is_pit), index=df.index)
+            if not pd.api.types.is_bool_dtype(adj_is_pit):
+                adj_is_pit = adj_is_pit.map(
+                    lambda v: str(v).strip().lower() in {"1", "true", "t", "yes", "y"}
+                )
+            adj_is_pit = adj_is_pit.fillna(False).astype(bool)
+            use_retro = bool(self.cfg.get("allow_retro_adjusted_prices", False))
+            use_adjustment = adj_is_pit | use_retro
+            factor_changed = df["adj_factor"].fillna(1.0) != 1.0
+
+            df["adjusted_price_provider"] = df["raw_close"] * df["adj_factor"]
+            df["underlying_price"] = np.where(
+                use_adjustment,
+                df["adjusted_price_provider"],
+                df["raw_close"],
+            )
+            df["price_adjustment_warning"] = (~use_adjustment) & factor_changed
+
+            if "strike" in df.columns:
+                df["strike_raw"] = df["strike"]
+                df["strike_adjusted_provider"] = df["strike"] * df["adj_factor"]
+                df["strike"] = np.where(
+                    use_adjustment,
+                    df["strike_adjusted_provider"],
+                    df["strike"],
+                )
+                df["strike_adjustment_warning"] = (~use_adjustment) & factor_changed
         elif "underlying_price" in df.columns:
             df["underlying_price"] = df["underlying_price"]
+            df["price_adjustment_warning"] = False
+        elif "raw_close" in df.columns:
+            df["underlying_price"] = df["raw_close"]
+            df["price_adjustment_warning"] = False
         elif "S" in df.columns:
             df["underlying_price"] = df["S"]
+            df["price_adjustment_warning"] = False
         else:
             raise ValueError("equity options require an underlying price column such as raw_close or S")
 

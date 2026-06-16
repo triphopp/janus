@@ -29,6 +29,9 @@ def logical_bounds_check(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     price_col = cfg.get("price_col", "price")
     vol_col = cfg.get("vol_col", "volume")
     volume_col = cfg.get("volume_col")
+    option_price_col = cfg.get("option_price_col", "option_price")
+    bid_col = cfg.get("bid_col", "bid")
+    ask_col = cfg.get("ask_col", "ask")
 
     flags = pd.Series(False, index=df.index)
     reasons = pd.Series("", index=df.index)
@@ -38,6 +41,27 @@ def logical_bounds_check(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         bad = df[price_col] <= 0
         flags |= bad
         reasons = reasons.where(~bad, reasons + "price<=0;")
+
+    option_mask = _option_mask(df)
+    premium = None
+    if option_mask.any():
+        if option_price_col in df.columns:
+            premium = pd.to_numeric(df[option_price_col], errors="coerce")
+        elif "price" in df.columns:
+            premium = pd.to_numeric(df["price"], errors="coerce")
+
+    if premium is not None:
+        bad = option_mask & (premium <= 0)
+        flags |= bad
+        reasons = reasons.where(~bad, reasons + "option_price<=0;")
+
+        if cfg.get("validate_intrinsic_bounds", True):
+            intrinsic = _option_intrinsic(df)
+            if intrinsic is not None:
+                tol = float(cfg.get("premium_intrinsic_tolerance", 1e-8))
+                bad = option_mask & premium.notna() & intrinsic.notna() & (premium + tol < intrinsic)
+                flags |= bad
+                reasons = reasons.where(~bad, reasons + "option_price<intrinsic;")
 
     # Volume non-negative
     if vol_col in df.columns:
@@ -49,6 +73,13 @@ def logical_bounds_check(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         bad = df[volume_col] < 0
         flags |= bad
         reasons = reasons.where(~bad, reasons + "volume<0;")
+
+    if bid_col in df.columns and ask_col in df.columns:
+        bid = pd.to_numeric(df[bid_col], errors="coerce")
+        ask = pd.to_numeric(df[ask_col], errors="coerce")
+        bad = bid.notna() & ask.notna() & (bid > ask)
+        flags |= bad
+        reasons = reasons.where(~bad, reasons + "bid>ask;")
 
     # IV positive
     iv_col = "iv_provided"
@@ -149,16 +180,19 @@ def outlier_cap(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     # When instrument_type is present, restrict MAD detection to non-option rows.
     # Option rows carry broadcast underlying prices (one value per date repeated
     # across all strikes), which distort the expanding MAD time-series.
-    if "instrument_type" in df.columns:
-        cap_mask = ~df["instrument_type"].astype("string").str.lower().eq("option").fillna(False)
-    else:
+    cap_mask = ~_option_mask(df)
+    if not cap_mask.any() and "instrument_type" not in df.columns:
         cap_mask = pd.Series(True, index=df.index)
 
     # Per-product rolling MAD outlier detection (PIT: expanding window)
     work = df[cap_mask]
     if "product_id" in work.columns:
         for pid, grp_idx in work.groupby("product_id").groups.items():
-            idx = sorted(grp_idx)
+            idx = list(grp_idx)
+            if "as_of_date" in df.columns:
+                idx = df.loc[idx].sort_values("as_of_date").index.tolist()
+            else:
+                idx = sorted(idx)
             series = df.loc[idx, price_col]
             # Expanding window median + MAD
             rolling_median = series.expanding(min_periods=20).median()
@@ -174,3 +208,46 @@ def outlier_cap(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
             ].apply(lambda r: np.clip(r[price_col], lower[r.name], upper[r.name]), axis=1)
 
     return df
+
+
+def _option_mask(df: pd.DataFrame) -> pd.Series:
+    if "instrument_type" in df.columns:
+        typed = df["instrument_type"].astype("string").str.lower().eq("option").fillna(False)
+    else:
+        typed = pd.Series(False, index=df.index)
+
+    if "right" in df.columns and "strike" in df.columns:
+        right = df["right"].astype("string").str.upper()
+        inferred = right.isin(["C", "P"]).fillna(False) & df["strike"].notna()
+    else:
+        inferred = pd.Series(False, index=df.index)
+    return typed | inferred
+
+
+def _option_intrinsic(df: pd.DataFrame) -> pd.Series | None:
+    right_col = df.get("right")
+    strike_col = df.get("strike")
+    if right_col is None or strike_col is None:
+        return None
+
+    underlying = None
+    for col in ("underlying_price", "F", "S", "price_std"):
+        if col in df.columns:
+            underlying = pd.to_numeric(df[col], errors="coerce")
+            break
+    if underlying is None:
+        return None
+
+    strike = pd.to_numeric(strike_col, errors="coerce")
+    right = right_col.astype("string").str.upper()
+    call_intrinsic = (underlying - strike).clip(lower=0)
+    put_intrinsic = (strike - underlying).clip(lower=0)
+    intrinsic = pd.Series(np.nan, index=df.index)
+    intrinsic = intrinsic.where(right != "C", call_intrinsic)
+    intrinsic = intrinsic.where(right != "P", put_intrinsic)
+
+    if "T" in df.columns and "r" in df.columns:
+        t = pd.to_numeric(df["T"], errors="coerce").clip(lower=0)
+        r = pd.to_numeric(df["r"], errors="coerce").fillna(0)
+        intrinsic = intrinsic * np.exp(-r * t)
+    return intrinsic

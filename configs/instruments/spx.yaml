@@ -1,5 +1,7 @@
-# SPX Index Options — instrument spec
-family: equity_options
+# SPX Index — instrument spec (index price bars via yfinance ^SPX)
+# NOTE: for SPX *options* you need an option-chain provider (yfinance ^SPX has no
+# usable chain history); see configs/instruments/aapl_options.yaml for the options path.
+family: equity
 provider: yfinance                # POC; swap for institutional feed
 
 symbol:

@@ -26,7 +26,7 @@ RAW_SCHEMA = {
     "delivery_month":   "datetime64[ns]",        # STRIP — for term structure + roll
     "expiry":           "datetime64[ns]",        # EXPIRATION DATE — DTE/purge
     "price":            "float",                 # SETTLEMENT (not last-trade!)
-    "net_change":       "float",
+    "net_change":       "float|None",           # null on a contract's first obs (no prior settle)
     "iv_provided":      "float|None",            # OPTION_VOLATILITY (exchange-calc) — validate
     "delta_provided":   "float|None",            # DELTA_FACTOR
     "provider":         "str",                   # settlement | yfinance | massive
@@ -64,9 +64,39 @@ class ProviderBase(ABC):
 
 
 def validate_schema(df: pd.DataFrame, schema: dict) -> pd.DataFrame:
-    """Validate DataFrame against schema. Raise on missing columns, warn on type mismatch."""
+    """Validate and coerce a provider DataFrame against the declared schema."""
+    df = df.copy()
     required = {k for k, v in schema.items() if "|None" not in v}
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"RAW_SCHEMA violation: missing columns {missing}")
+
+    for col, dtype in schema.items():
+        if col not in df.columns:
+            continue
+
+        optional = "|None" in dtype
+        base_dtype = dtype.replace("|None", "")
+        before_bad = df[col].isna()
+
+        if base_dtype.startswith("datetime64"):
+            df[col] = pd.to_datetime(df[col], errors="coerce", utc="UTC" in base_dtype)
+            df[col] = df[col].astype(base_dtype)
+        elif base_dtype == "int":
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+            if not optional and df[col].isna().any():
+                bad = df.index[df[col].isna() & ~before_bad].tolist()[:5]
+                raise ValueError(f"RAW_SCHEMA violation: invalid int values in {col}; rows={bad}")
+            df[col] = df[col].astype("Int64" if optional or df[col].isna().any() else "int64")
+        elif base_dtype == "float":
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        elif base_dtype == "bool":
+            if df[col].dtype != bool:
+                df[col] = df[col].astype("boolean")
+        elif base_dtype == "str":
+            df[col] = df[col].astype("string")
+
+        if not optional and df[col].isna().any():
+            bad = df.index[df[col].isna()].tolist()[:5]
+            raise ValueError(f"RAW_SCHEMA violation: null required values in {col}; rows={bad}")
     return df

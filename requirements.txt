@@ -6,4 +6,7 @@ PyYAML
 xxhash
 pytest
 pyarrow
-yfinance
+# pinned: loader depends on yfinance >= 1.x split-adjusted-Close semantics
+# (auto_adjust=False keeps splits baked into Close, dividends in Adj Close).
+# Re-test ingestion/equity_loader_a.py before bumping.
+yfinance==1.3.0

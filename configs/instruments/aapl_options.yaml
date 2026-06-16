@@ -1,0 +1,66 @@
+# AAPL Equity Options — instrument spec
+# Provider yfinance returns a CURRENT chain snapshot only (no history). The coverage SLA
+# + min-sample gates will flag the single as_of_date as not backtestable — that is correct
+# behavior. Swap provider for a vendor feed (ORATS/OptionMetrics) for historical chains.
+family: equity_options
+provider: yfinance
+
+symbol:
+  ticker: AAPL
+
+max_expiries: 8                    # cap yfinance round-trips (1 HTTP call per expiry)
+
+columns:
+  vol_col: iv_provided
+  price_col: price
+
+price_field: price
+date_grain: eod
+data_version: latest
+
+pricing:
+  model: bsm
+  div_yield: 0.005
+  iv_validate_threshold: 0.005
+  iv_solver_bounds: [0.0001, 5.0]
+
+dte:
+  basis: trading
+  day_count: bus_252
+  expiry_cutoff: settlement
+  exclude_expiry_date: false
+
+validation:
+  min_oi: 1
+  iv_cap: 5.0
+
+stability:
+  psi_threshold: 0.25
+
+available_at_lag:
+  equity_price: "0h"
+
+cv:
+  n_folds: 8
+  purge_bars: 5
+  regime_axes: [vol_regime]
+  max_concentration: 0.80
+  kl_threshold: 0.5
+  js_threshold: 0.3
+
+performance:
+  rf_rate_source: sofr
+  n_trials: 40
+
+txcost:
+  level: 1
+  commission_per_contract: 0.65
+  half_spread_fixed: 0.05
+  financing_rate: 0.05
+  margin_requirement: 0.15
+
+audit:
+  enabled: true
+  snapshot_cols: [as_of_date, symbol, strike, expiry, price, iv_provided]
+  hash_algo: xxh64
+  retain_days: 30

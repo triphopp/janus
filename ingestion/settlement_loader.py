@@ -83,6 +83,27 @@ class SettlementLoader(ProviderBase):
         if "iv_provided" in df.columns:
             df["iv_provided"] = df["iv_provided"] / 100.0
 
+        # ── Enforce symbology before any downstream adapter logic ──
+        violations = self.symbology.validate_uniqueness()
+        if violations:
+            raise ValueError(f"Symbology uniqueness violations: {violations}")
+
+        orphans = self.symbology.validate_no_orphans(df)
+        if orphans:
+            raise ValueError(f"Unmapped product_id values in settlement data: {orphans}")
+
+        key_cols = ["product_id", "hub", "contract_root"]
+        if all(col in df.columns for col in key_cols):
+            for row in df[key_cols].drop_duplicates().itertuples(index=False):
+                try:
+                    self.symbology.resolve(
+                        int(row.product_id),
+                        str(row.hub),
+                        str(row.contract_root),
+                    )
+                except KeyError as exc:
+                    raise ValueError(f"Unresolved symbology tuple: {row}") from exc
+
         # ── Add metadata ──
         df["provider"] = "settlement"
         df["timestamp"] = None  # EOD = no intraday timestamp
@@ -91,8 +112,12 @@ class SettlementLoader(ProviderBase):
             data_type="settlement",
             cfg={"available_at_lag": {"settlement": "3h"}},
         )
+        # Earliest actionable moment for an EOD settlement row. Strategies that
+        # decide later can overwrite this downstream.
+        df["decision_time"] = df["available_at"]
 
         # ── Validate net_change ──
+        df["net_change_flag"] = False
         if "net_change" in df.columns and "price" in df.columns:
             df = df.sort_values(["product_id", "as_of_date"])
             for pid, grp in df.groupby("product_id"):
@@ -150,6 +175,7 @@ def parse_pipe_row(row: str) -> dict:
     result["instrument_type"] = "option" if (right and strike is not None) else "future"
     result["right"] = right
     result["available_at"] = pd.to_datetime(result["as_of_date"] + pd.Timedelta(hours=3), utc=True)
+    result["decision_time"] = result["available_at"]
     result["ingested_at"] = pd.Timestamp.now("UTC")
     result["provider"] = "settlement"
     result["timestamp"] = None
