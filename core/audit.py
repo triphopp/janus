@@ -32,11 +32,32 @@ def hash_schema(df: pd.DataFrame) -> str:
     return _digest(json.dumps(cols, sort_keys=True))
 
 
+def canonical_frame_hash(df: pd.DataFrame) -> str:
+    """Stable content hash, immune to float text-repr drift (§9 / §13.10).
+
+    - columns sorted to a canonical order
+    - float columns rounded to 8 dp before hashing (kills cross-platform
+      float-repr noise that ``to_csv`` text hashing suffered from)
+    - hashed via ``pd.util.hash_pandas_object`` (typed, value-based), NOT text
+
+    Uses sha256 (not xxh64) so the digest is stable even where the optional
+    ``xxhash`` dependency is absent — required for manifest / hash-chain integrity.
+    """
+    work = df.reindex(sorted(df.columns), axis=1).copy()
+    for c in work.columns:
+        if pd.api.types.is_float_dtype(work[c]):
+            work[c] = work[c].round(8)
+    row_hashes = pd.util.hash_pandas_object(work, index=False).to_numpy()
+    return hashlib.sha256(row_hashes.tobytes()).hexdigest()
+
+
 def hash_subset(df: pd.DataFrame) -> str:
-    """xxh64 of snapshot columns — deterministic content check."""
-    # Hash row-wise concatenation of stringified values
-    data_str = df.to_csv(index=False, header=True)
-    return _digest(data_str)
+    """Deterministic content check over snapshot columns.
+
+    Canonical, value-based hash (replaces the old ``to_csv`` text hash, which drifted
+    across platforms on float repr — see audit precision finding).
+    """
+    return canonical_frame_hash(df)
 
 
 def _stats(series: pd.Series) -> dict:
