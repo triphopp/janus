@@ -5,6 +5,7 @@ Information Coefficient, VIF condition number.
 All tests are asset-agnostic — pure statistical functions.
 """
 
+import warnings
 from typing import Optional, Tuple
 
 import numpy as np
@@ -22,17 +23,51 @@ def adf_kpss_check(series: pd.Series, alpha: float = 0.05) -> dict:
     Returns:
         dict with adf_stat, adf_pval, kpss_stat, kpss_pval, is_stationary, consensus
     """
-    clean = series.dropna()
+    clean = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
     if len(clean) < 20:
-        return {"is_stationary": None, "error": "insufficient data"}
+        return {
+            "adf_stat": None,
+            "adf_pval": None,
+            "kpss_stat": None,
+            "kpss_pval": None,
+            "is_stationary": None,
+            "consensus": "unknown",
+            "status": "insufficient_data",
+            "error": "insufficient data",
+        }
+    if clean.nunique() <= 1 or clean.var() == 0:
+        return {
+            "adf_stat": None,
+            "adf_pval": None,
+            "kpss_stat": None,
+            "kpss_pval": None,
+            "is_stationary": None,
+            "consensus": "unknown",
+            "status": "constant_series",
+            "error": "constant series",
+        }
 
-    # ADF — H0: non-stationary
-    adf_result = adfuller(clean, autolag="AIC")
-    adf_stat, adf_pval = adf_result[0], adf_result[1]
+    try:
+        # ADF — H0: non-stationary
+        adf_result = adfuller(clean, autolag="AIC")
+        adf_stat, adf_pval = adf_result[0], adf_result[1]
 
-    # KPSS — H0: stationary
-    kpss_result = kpss(clean, regression="c", nlags="auto")
-    kpss_stat, kpss_pval = kpss_result[0], kpss_result[1]
+        # KPSS — H0: stationary
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            kpss_result = kpss(clean, regression="c", nlags="auto")
+        kpss_stat, kpss_pval = kpss_result[0], kpss_result[1]
+    except Exception as exc:
+        return {
+            "adf_stat": None,
+            "adf_pval": None,
+            "kpss_stat": None,
+            "kpss_pval": None,
+            "is_stationary": None,
+            "consensus": "unknown",
+            "status": "error",
+            "error": str(exc),
+        }
 
     adf_stationary = adf_pval < alpha  # reject unit root → stationary
     kpss_stationary = kpss_pval > alpha  # fail to reject stationarity → stationary
@@ -47,6 +82,7 @@ def adf_kpss_check(series: pd.Series, alpha: float = 0.05) -> dict:
         "kpss_pval": kpss_pval,
         "is_stationary": adf_stationary,
         "consensus": consensus,
+        "status": "ok",
     }
 
 
@@ -60,14 +96,19 @@ def arch_lm_test(series: pd.Series, lags: int = 10) -> dict:
         dict with lm_stat, lm_pval, has_arch_effects
     """
     from statsmodels.stats.diagnostic import het_arch
-    clean = series.dropna()
+    clean = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
     if len(clean) < lags + 5:
         return {"has_arch_effects": None, "error": "insufficient data"}
-    lm_stat, lm_pval, _, _ = het_arch(clean, nlags=lags)
+    if clean.nunique() <= 1 or clean.var() == 0:
+        return {"lm_stat": None, "lm_pval": None, "has_arch_effects": None, "error": "constant series"}
+    try:
+        lm_stat, lm_pval, _, _ = het_arch(clean, nlags=lags)
+    except Exception as exc:
+        return {"lm_stat": None, "lm_pval": None, "has_arch_effects": None, "error": str(exc)}
     return {"lm_stat": lm_stat, "lm_pval": lm_pval, "has_arch_effects": lm_pval < 0.05}
 
 
-def variance_ratio_test(series: pd.Series, q: int = 2) -> dict:
+def variance_ratio_test(series: pd.Series, q: int = 2, input_kind: str = "price_level") -> dict:
     """Variance Ratio test for random walk.
 
     VR(q) = Var(q-period return) / (q * Var(1-period return)).
@@ -77,18 +118,23 @@ def variance_ratio_test(series: pd.Series, q: int = 2) -> dict:
     Returns:
         dict with vr_stat, interpretation
     """
-    clean = series.dropna()
+    clean = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
     if len(clean) < q * 10:
-        return {"vr_stat": None, "error": "insufficient data"}
+        return {"vr_stat": None, "input_kind": input_kind, "error": "insufficient data"}
 
-    rets_1 = clean.diff().dropna()
-    rets_q = clean.diff(q).dropna()
+    if input_kind == "return_series":
+        rets_1 = clean
+        rets_q = clean.rolling(q).sum().dropna()
+    else:
+        input_kind = "price_level"
+        rets_1 = clean.diff().dropna()
+        rets_q = clean.diff(q).dropna()
 
     var_1 = rets_1.var()
     var_q = rets_q.var()
 
     if var_1 == 0:
-        return {"vr_stat": None, "error": "zero variance"}
+        return {"vr_stat": None, "input_kind": input_kind, "error": "zero variance"}
 
     vr = (var_q / q) / var_1
     se = np.sqrt(2 * (2 * q - 1) * (q - 1) / (3 * q * len(rets_q)))
@@ -97,7 +143,7 @@ def variance_ratio_test(series: pd.Series, q: int = 2) -> dict:
     interpretation = "mean_reverting" if vr < 0.9 else \
                      "trending" if vr > 1.1 else "random_walk"
 
-    return {"vr_stat": vr, "z_stat": z_stat, "interpretation": interpretation}
+    return {"vr_stat": vr, "z_stat": z_stat, "interpretation": interpretation, "input_kind": input_kind}
 
 
 def ljung_box(series: pd.Series, lags: int = 10) -> dict:
@@ -110,10 +156,15 @@ def ljung_box(series: pd.Series, lags: int = 10) -> dict:
         dict with lb_stat, lb_pval, has_autocorr
     """
     from statsmodels.stats.diagnostic import acorr_ljungbox
-    clean = series.dropna()
+    clean = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
     if len(clean) < lags + 5:
         return {"has_autocorr": None, "error": "insufficient data"}
-    lb_result = acorr_ljungbox(clean, lags=[lags], return_df=True)
+    if clean.nunique() <= 1 or clean.var() == 0:
+        return {"lb_stat": None, "lb_pval": None, "has_autocorr": None, "error": "constant series"}
+    try:
+        lb_result = acorr_ljungbox(clean, lags=[lags], return_df=True)
+    except Exception as exc:
+        return {"lb_stat": None, "lb_pval": None, "has_autocorr": None, "error": str(exc)}
     lb_stat = lb_result["lb_stat"].iloc[0]
     lb_pval = lb_result["lb_pvalue"].iloc[0]
     return {"lb_stat": lb_stat, "lb_pval": lb_pval, "has_autocorr": lb_pval < 0.05}
@@ -128,7 +179,7 @@ def jarque_bera(series: pd.Series) -> dict:
     Returns:
         dict with jb_stat, jb_pval, skew, kurtosis, is_normal
     """
-    clean = series.dropna()
+    clean = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
     if len(clean) < 8:
         return {"is_normal": None, "error": "insufficient data"}
     jb_stat, jb_pval = stats.jarque_bera(clean)
@@ -141,7 +192,7 @@ def jarque_bera(series: pd.Series) -> dict:
     }
 
 
-def hurst_exponent(series: pd.Series, max_lag: int = 100) -> float:
+def hurst_exponent(series: pd.Series, max_lag: int = 100) -> dict:
     """Hurst exponent via R/S analysis.
 
     H ≈ 0.5: random walk
@@ -149,10 +200,15 @@ def hurst_exponent(series: pd.Series, max_lag: int = 100) -> float:
     H < 0.5: mean-reverting / anti-persistent
 
     Returns:
-        Hurst exponent in [0, 1]
+        dict with hurst/status metadata. hurst is None when not estimable.
     """
-    clean = series.dropna().values
+    clean = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna().values
     n = len(clean)
+    if n < 20:
+        return {"hurst": None, "status": "insufficient_data", "n": n, "max_lag": max_lag}
+    if np.nanstd(clean) == 0:
+        return {"hurst": None, "status": "constant_series", "n": n, "max_lag": max_lag}
+
     if n < max_lag * 2:
         max_lag = max(10, n // 4)
 
@@ -175,13 +231,18 @@ def hurst_exponent(series: pd.Series, max_lag: int = 100) -> float:
             rs_values.append((lag, np.mean(rs)))
 
     if len(rs_values) < 5:
-        return 0.5
+        return {"hurst": None, "status": "insufficient_data", "n": n, "max_lag": max_lag}
 
     lags_arr = np.log([r[0] for r in rs_values])
     rs_arr = np.log([r[1] for r in rs_values])
     slope, _ = np.polyfit(lags_arr, rs_arr, 1)
 
-    return min(max(slope, 0.0), 1.0)
+    return {
+        "hurst": min(max(float(slope), 0.0), 1.0),
+        "status": "ok",
+        "n": n,
+        "max_lag": max_lag,
+    }
 
 
 def distribution_shift(
@@ -199,6 +260,7 @@ def distribution_shift(
     from scipy.stats import ks_2samp, wasserstein_distance
 
     psi_threshold = cfg.get("psi_threshold", 0.25)
+    bins = cfg.get("psi_bins", 10)
 
     t = train.dropna()
     v = val.dropna()
@@ -207,7 +269,7 @@ def distribution_shift(
         return {"has_shift": None, "error": "insufficient data"}
 
     # PSI
-    psi_val = _compute_psi(t, v)
+    psi_val = _compute_psi(t, v, bins=bins)
 
     # KS
     ks_stat, ks_pval = ks_2samp(t, v)
@@ -223,6 +285,24 @@ def distribution_shift(
         "ks_pval": ks_pval,
         "wasserstein": w_dist,
         "has_shift": has_shift,
+        "psi_threshold": psi_threshold,
+    }
+
+
+def fold_distribution_shift(series: pd.Series, folds: list[tuple[np.ndarray, np.ndarray]], cfg: dict) -> dict:
+    """Run distribution shift checks for the actual CV folds."""
+    rows = []
+    for i, (train_idx, val_idx) in enumerate(folds):
+        result = distribution_shift(series.iloc[train_idx], series.iloc[val_idx], cfg)
+        result["fold"] = i
+        rows.append(result)
+
+    valid = [row for row in rows if row.get("psi") is not None]
+    worst = max(valid, key=lambda row: row["psi"]) if valid else None
+    return {
+        "folds": rows,
+        "worst": worst,
+        "psi_threshold": cfg.get("psi_threshold", 0.25),
     }
 
 
@@ -310,11 +390,12 @@ def sign_consistency(df: pd.DataFrame, cfg: dict) -> dict:
 
 def _compute_psi(train: pd.Series, val: pd.Series, bins: int = 10) -> float:
     """Population Stability Index."""
-    combined = pd.concat([train, val])
-    breaks = np.percentile(combined, np.linspace(0, 100, bins + 1))
+    breaks = np.percentile(train, np.linspace(0, 100, bins + 1))
     breaks = np.unique(breaks)
     if len(breaks) < 2:
         return 0.0
+    breaks[0] = -np.inf
+    breaks[-1] = np.inf
 
     t_dist = np.histogram(train, bins=breaks)[0] / len(train)
     v_dist = np.histogram(val, bins=breaks)[0] / len(val)

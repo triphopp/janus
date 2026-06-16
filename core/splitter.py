@@ -34,16 +34,27 @@ def walk_forward_split(
             folds.append((np.arange(split), np.arange(split, min(split + fold_size, n))))
         return folds
 
-    dates = pd.to_datetime(df[date_col]).sort_values()
-    n = len(dates)
-    fold_size = n // (n_folds + 1)
+    dates = pd.to_datetime(df[date_col])
+    unique_dates = pd.Index(dates.dropna().sort_values().unique())
+    n = len(unique_dates)
+    if n < 2:
+        return []
+
+    n_folds = min(n_folds, n - 1)
+    fold_size = max(1, n // (n_folds + 1))
 
     folds = []
     for i in range(n_folds):
         split_idx = fold_size * (i + 1)
-        train_idx = np.arange(split_idx)
+        if split_idx >= n:
+            break
+
         val_end = min(split_idx + fold_size, n)
-        val_idx = np.arange(split_idx, val_end)
+        train_dates = set(unique_dates[:split_idx])
+        val_dates = set(unique_dates[split_idx:val_end])
+
+        train_idx = np.flatnonzero(dates.isin(train_dates))
+        val_idx = np.flatnonzero(dates.isin(val_dates))
         if len(val_idx) > 0:
             folds.append((train_idx, val_idx))
 
@@ -74,16 +85,46 @@ def purge_embargo(
     purge_bars = cfg.get("purge_bars", 5)
     embargo_bars = cfg.get("event_embargo_bars", 2)
 
+    # "max_dte" sentinel: resolve to the max DTE found in the data (options context)
+    if purge_bars == "max_dte":
+        purge_bars = int(cfg.get("_max_dte", 90))
+
+    date_col = cfg.get("date_col", "as_of_date")
+    label_end_col = cfg.get("label_end_col")
+    if label_end_col is None:
+        for candidate in ("label_end_time", "label_end_date"):
+            if candidate in df.columns:
+                label_end_col = candidate
+                break
+
+    dates = pd.to_datetime(df[date_col]) if date_col in df.columns else None
+    unique_dates = pd.Index(dates.dropna().sort_values().unique()) if dates is not None else None
+
     result = []
     for train_idx, val_idx in folds:
-        val_start = val_idx[0]
-        # Purge: remove training bars that are < purge_bars before val start
-        purge_cutoff = val_start - purge_bars
-        new_train = train_idx[train_idx <= purge_cutoff]
+        if len(train_idx) == 0 or len(val_idx) == 0:
+            continue
 
-        # Embargo: additional gap for event dates
-        embargo_cutoff = val_start - embargo_bars - purge_bars
-        new_train = new_train[new_train <= embargo_cutoff]
+        if dates is not None and unique_dates is not None and len(unique_dates) > 0:
+            val_start_time = dates.iloc[val_idx].min()
+            if label_end_col is not None:
+                label_end = pd.to_datetime(df[label_end_col])
+                new_train = train_idx[label_end.iloc[train_idx] < val_start_time]
+            else:
+                val_pos = unique_dates.searchsorted(val_start_time)
+                gap = int(purge_bars) + int(embargo_bars)
+                cutoff_pos = val_pos - gap
+                if cutoff_pos < 0:
+                    new_train = np.array([], dtype=int)
+                else:
+                    allowed_dates = set(unique_dates[:cutoff_pos + 1])
+                    new_train = train_idx[dates.iloc[train_idx].isin(allowed_dates)]
+        else:
+            val_start = val_idx[0]
+            purge_cutoff = val_start - int(purge_bars)
+            new_train = train_idx[train_idx <= purge_cutoff]
+            embargo_cutoff = val_start - int(embargo_bars) - int(purge_bars)
+            new_train = new_train[new_train <= embargo_cutoff]
 
         if len(new_train) > 0 and len(val_idx) > 0:
             result.append((new_train, val_idx))
@@ -112,6 +153,10 @@ def regime_diversity_gate(
     max_conc = cfg.get("max_concentration", 0.80)
     kl_thresh = cfg.get("kl_threshold", 0.5)
     js_thresh = cfg.get("js_threshold", 0.3)
+
+    _EMPTY_COLS = ["fold", "pass", "unseen", "conc", "kl", "js"]
+    if not folds:
+        return pd.DataFrame(columns=_EMPTY_COLS)
 
     rows = []
     for i, (tr, va) in enumerate(folds):
@@ -170,6 +215,8 @@ def combinatorial_purged_cv(
     n = len(df)
     test_n = max(1, int(n * test_size))
     purge_bars = cfg.get("purge_bars", 5)
+    if purge_bars == "max_dte":
+        purge_bars = int(cfg.get("_max_dte", 90))
 
     folds = []
     # Generate all possible splits separated by purge

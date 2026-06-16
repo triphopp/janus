@@ -417,6 +417,503 @@ def load_run_outputs(run_id: str, outputs_dir: str | Path = "outputs") -> tuple[
     return summary, per_fold, per_regime, diversity
 
 
+def write_html_report(
+    summary: dict[str, Any],
+    stability_results: dict[str, Any],
+    per_fold: "pd.DataFrame | None" = None,
+    per_regime: "pd.DataFrame | None" = None,
+    diversity: "pd.DataFrame | None" = None,
+    outputs_dir: str | Path = "outputs",
+) -> str:
+    """Render a self-contained HTML report and return its path.
+
+    Args:
+        summary: pipeline run summary dict (from run_pipeline)
+        stability_results: dict with keys adf, kpss, arch, vr, ljung_box,
+            jarque_bera, hurst, psi_returns, psi_iv, iv_stats, stage_stats
+        per_fold, per_regime, diversity: optional pipeline outputs
+        outputs_dir: base output directory
+
+    Returns:
+        Absolute path to the written HTML file
+    """
+    outputs_dir = Path(outputs_dir)
+    report_dir = outputs_dir / "summary_report"
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    run_id = str(summary.get("run_id", "unknown"))
+    tables = build_summary_report(summary, per_fold, per_regime, diversity)
+    stage_rows = _records(tables["stage_comparison"])
+    flag_rows = _records(tables["calibration_flags"])
+    regime_rows = _records(per_regime) if per_regime is not None and not per_regime.empty else []
+    diversity_rows = _records(diversity) if diversity is not None and not diversity.empty else []
+
+    _LIST_KEYS = {"date_range"}
+    data_json = json.dumps({
+        "run_id": run_id,
+        "summary": {
+            k: v if isinstance(v, (int, float, bool, list, type(None))) or k in _LIST_KEYS
+               else str(v)
+            for k, v in summary.items() if k != "audit_snapshots"
+        },
+        "stability": stability_results,
+        "stages": stage_rows,
+        "flags": flag_rows,
+        "per_regime": regime_rows,
+        "diversity": diversity_rows,
+    }, default=str)
+
+    html = _HTML_TEMPLATE.replace("__DATA_JSON__", data_json).replace("__RUN_ID__", run_id)
+    out_path = report_dir / f"{run_id}_report.html"
+    out_path.write_text(html, encoding="utf-8")
+    return str(out_path)
+
+
+_HTML_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline Report — __RUN_ID__</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #fff; --bg2: #f7f7f5; --bg3: #f0eeea;
+    --text: #1a1a18; --text2: #6b6b67; --text3: #9b9b97;
+    --border: rgba(0,0,0,0.10); --border2: rgba(0,0,0,0.18);
+    --green: #1D9E75; --green-bg: #E1F5EE; --green-text: #085041;
+    --amber: #BA7517; --amber-bg: #FAEEDA; --amber-text: #633806;
+    --red: #A32D2D; --red-bg: #FCEBEB; --red-text: #501313;
+    --blue: #185FA5; --blue-bg: #E6F1FB; --blue-text: #042C53;
+    --radius: 10px; --radius-sm: 6px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a; --bg2: #252523; --bg3: #2e2e2b;
+      --text: #e8e8e4; --text2: #a0a09c; --text3: #6b6b67;
+      --border: rgba(255,255,255,0.10); --border2: rgba(255,255,255,0.20);
+      --green: #5DCAA5; --green-bg: #04342C; --green-text: #9FE1CB;
+      --amber: #EF9F27; --amber-bg: #412402; --amber-text: #FAC775;
+      --red: #F09595; --red-bg: #501313; --red-text: #F7C1C1;
+      --blue: #85B7EB; --blue-bg: #042C53; --blue-text: #B5D4F4;
+    }
+  }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6; }
+  .page { max-width: 1060px; margin: 0 auto; padding: 32px 24px; }
+  h1 { font-size: 22px; font-weight: 600; }
+  h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+  .meta { font-size: 12px; color: var(--text2); margin-top: 4px; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 10px; margin: 20px 0; }
+  .kpi { background: var(--bg2); border-radius: var(--radius-sm); padding: 12px; text-align: center; }
+  .kpi-label { font-size: 11px; color: var(--text2); margin-bottom: 5px; }
+  .kpi-value { font-size: 22px; font-weight: 600; }
+  .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 20px; gap: 0; }
+  .tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 9px 18px; font-size: 13px; cursor: pointer; color: var(--text2); font-family: var(--font); }
+  .tab.on { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+  .panel { display: none; } .panel.on { display: block; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .row:last-child { border-bottom: none; }
+  .label { color: var(--text2); }
+  .val { font-family: var(--mono); font-size: 12px; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+  .ok   { background: var(--green-bg); color: var(--green-text); }
+  .warn { background: var(--amber-bg); color: var(--amber-text); }
+  .fail { background: var(--red-bg);   color: var(--red-text);   }
+  .info { background: var(--blue-bg);  color: var(--blue-text);  }
+  .note { font-size: 11px; padding: 6px 10px; border-radius: var(--radius-sm); margin-top: 10px; }
+  .bar-wrap { background: var(--bg3); border-radius: 3px; height: 6px; overflow: hidden; margin-top: 8px; }
+  .bar-fill { height: 6px; border-radius: 3px; }
+  .bar-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--text3); margin-top: 3px; }
+  .stage-flow { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stage-box { background: var(--bg2); border-radius: var(--radius-sm); padding: 10px 14px; text-align: center; min-width: 110px; }
+  .stage-name { font-size: 11px; color: var(--text2); margin-bottom: 4px; }
+  .stage-count { font-size: 16px; font-weight: 600; }
+  .stage-sub { font-size: 10px; color: var(--text2); margin-top: 2px; }
+  .arrow { color: var(--text3); font-size: 18px; }
+  .flag-row { border-left: 3px solid; padding: 10px 14px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; margin-bottom: 10px; }
+  .flag-high   { border-color: var(--red);   background: var(--red-bg); }
+  .flag-medium { border-color: var(--amber); background: var(--amber-bg); }
+  .flag-info   { border-color: var(--blue);  background: var(--blue-bg); }
+  .flag-signal { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+  .flag-action { font-size: 11px; color: var(--text2); margin-top: 4px; }
+  .chart-wrap { position: relative; width: 100%; height: 200px; margin-top: 14px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+  <div>
+    <h1 id="title">Pipeline Report</h1>
+    <div class="meta" id="meta"></div>
+  </div>
+  <div style="font-size:11px;color:var(--text3);padding-top:6px" id="run-id-label"></div>
+</div>
+
+<div class="kpi-grid" id="kpi-grid"></div>
+
+<div class="tabs">
+  <button class="tab on" onclick="showTab('pipeline')">Pipeline flow</button>
+  <button class="tab" onclick="showTab('stability')">Stability tests</button>
+  <button class="tab" onclick="showTab('distribution')">Distribution</button>
+  <button class="tab" onclick="showTab('flags')">Flags</button>
+</div>
+
+<div id="panel-pipeline" class="panel on"></div>
+<div id="panel-stability" class="panel"></div>
+<div id="panel-distribution" class="panel"></div>
+<div id="panel-flags" class="panel"></div>
+
+</div>
+
+<script>
+const D = __DATA_JSON__;
+const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+const gc = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+const tc = isDark ? '#888' : '#aaa';
+
+function showTab(id) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+  document.getElementById('panel-' + id).classList.add('on');
+  event.target.classList.add('on');
+}
+
+function badge(cls, txt) { return `<span class="badge ${cls}">${txt}</span>`; }
+function row(label, valHtml) { return `<div class="row"><span class="label">${label}</span><span class="val">${valHtml}</span></div>`; }
+function note(cls, txt) { return `<div class="note ${cls}">${txt}</div>`; }
+function barWrap(pct, color, lo, hi) {
+  return `<div class="bar-wrap"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
+          <div class="bar-labels"><span>${lo}</span><span>${hi}</span></div>`;
+}
+function card(title, inner) { return `<div class="card"><h2>${title}</h2>${inner}</div>`; }
+function pval(v) { return v < 0.001 ? v.toExponential(2) : v.toFixed(4); }
+
+// ── Header ──────────────────────────────────────────────
+const s = D.summary;
+document.getElementById('title').textContent =
+  `Pipeline Report — ${s.instrument || '?'} (${s.family || '?'})`;
+document.getElementById('meta').textContent =
+  `${(s.date_range||['?','?']).join(' → ')}  ·  ${Number(s.n_rows_raw||0).toLocaleString()} raw rows`;
+document.getElementById('run-id-label').textContent = D.run_id;
+
+// ── KPI cards ────────────────────────────────────────────
+const st = D.stability || {};
+const adf = st.adf || {};
+const arch = st.arch || {};
+const jb = st.jarque_bera || {};
+const hurstObj = (st.hurst && typeof st.hurst === 'object') ? st.hurst : {};
+const hurst = typeof st.hurst === 'number' ? st.hurst : (typeof hurstObj.hurst === 'number' ? hurstObj.hurst : null);
+const psiRet = st.psi_returns || {};
+const ivStats = st.iv_stats || {};
+
+const kpis = [
+  { label: 'trading days', value: st.trading_days || '—' },
+  { label: 'null IV', value: (ivStats.null_pct != null ? ivStats.null_pct.toFixed(1) + '%' : '—'), color: ivStats.null_pct === 0 ? 'var(--green)' : 'var(--amber)' },
+  { label: 'stationarity', value: adf.consensus || '—', color: adf.consensus === 'stationary' ? 'var(--green)' : 'var(--red)' },
+  { label: 'ARCH effects', value: arch.has_arch_effects ? 'YES' : (arch.has_arch_effects === false ? 'NO' : '—'), color: arch.has_arch_effects ? 'var(--amber)' : 'var(--green)' },
+  { label: 'PSI (returns)', value: psiRet.psi != null ? psiRet.psi.toFixed(3) : '—', color: (psiRet.psi||0) < 0.25 ? 'var(--green)' : 'var(--red)' },
+];
+document.getElementById('kpi-grid').innerHTML = kpis.map(k =>
+  `<div class="kpi"><div class="kpi-label">${k.label}</div>
+   <div class="kpi-value" style="${k.color ? 'color:' + k.color : ''}">${k.value}</div></div>`
+).join('');
+
+// ── Panel 1: Pipeline flow ────────────────────────────────
+(function() {
+  const stages = D.stages || [];
+  const stageColor = s => s.schema_changed_from_previous ? '#185FA5' : 'var(--text2)';
+
+  let flowHtml = '<div class="stage-flow">';
+  stages.forEach((s, i) => {
+    if (i > 0) flowHtml += '<div class="arrow">→</div>';
+    const delta = s.row_delta_from_previous != null ? (s.row_delta_from_previous === 0 ? '' : ` (${s.row_delta_from_previous > 0 ? '+' : ''}${s.row_delta_from_previous})`) : '';
+    const schemaNote = s.schema_changed_from_previous ? '<br><span style="font-size:9px;color:var(--blue)">schema +cols</span>' : '';
+    flowHtml += `<div class="stage-box">
+      <div class="stage-name">${s.stage}</div>
+      <div class="stage-count">${Number(s.row_count||0).toLocaleString()}</div>
+      <div class="stage-sub">${delta}${schemaNote}</div>
+    </div>`;
+  });
+  flowHtml += '</div>';
+
+  const sampleStage = D.stages.find(s => s.stage === 'validators') || {};
+  const ivSurf = st.iv_stats || {};
+  const nullPct = ivSurf.null_pct != null ? ivSurf.null_pct.toFixed(1) + '%' : '—';
+
+  const qualityCards = [];
+  if (Object.keys(ivSurf).length > 0 && ivSurf.null_pct != null) {
+    qualityCards.push(card('IV quality (after /100 normalize)', `
+    ${row('null', `${nullPct} &nbsp;${nullPct === '0.0%' ? badge('ok','complete') : badge('warn','partial')}`)}
+    ${row('min', (ivSurf.min != null ? (ivSurf.min*100).toFixed(1) + '%' : '—'))}
+    ${row('median ATM', (ivSurf.median != null ? (ivSurf.median*100).toFixed(1) + '%' : '—'))}
+    ${row('mean', (ivSurf.mean != null ? (ivSurf.mean*100).toFixed(1) + '%' : '—'))}
+    ${row('p95', (ivSurf.p95 != null ? (ivSurf.p95*100).toFixed(1) + '%' : '—'))}
+    ${row('max', (ivSurf.max != null ? (ivSurf.max*100).toFixed(1) + '%' : '—'))}
+    ${row('&gt;200% (deep OTM noise)', ivSurf.deep_otm_count != null ? ivSurf.deep_otm_count.toLocaleString() + ' rows' : '—')}
+    ${note('info', 'IV diagnostics measured from available IV rows')}
+  `));
+  }
+
+  if (ivSurf.delta_mean != null) {
+    qualityCards.push(card('Delta quality', `
+    ${row('range', '0.000 – 1.000')}
+    ${row('mean', ivSurf.delta_mean.toFixed(3))}
+    ${note('info', 'Delta diagnostics measured from computed option Greeks')}
+  `));
+  }
+
+  document.getElementById('panel-pipeline').innerHTML =
+    flowHtml + (qualityCards.length ? '<div class="grid2" style="margin-top:14px">' + qualityCards.join('') + '</div>' : '');
+})();
+
+// ── Panel 2: Stability tests ──────────────────────────────
+(function() {
+  const vr = st.variance_ratio || {};
+  const lb = st.ljung_box || {};
+
+  function testCard(title, subtitle, badgeCls, badgeTxt, rows, noteText, noteCls) {
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+        <div><h2 style="margin-bottom:2px">${title}</h2><div style="font-size:11px;color:var(--text2)">${subtitle}</div></div>
+        ${badge(badgeCls, badgeTxt)}
+      </div>
+      ${rows.map(r => row(r[0], r[1])).join('')}
+      ${note(noteCls, noteText)}
+    </div>`;
+  }
+
+  const adfConsensus = adf.consensus || 'unknown';
+  const adfBadge = adfConsensus === 'stationary' ? 'ok' : adfConsensus === 'non_stationary' ? 'fail' : 'warn';
+
+  const vrInterp = vr.interpretation || '—';
+  const vrKind = vr.input_kind || 'price_level';
+  const vrBadge = vrInterp === 'random_walk' ? 'ok' : vrInterp === 'mean_reverting' ? 'info' : 'warn';
+  const vrPct = vr.vr_stat != null ? Math.min(vr.vr_stat * 100, 200) : 50;
+
+  const hurstVal = hurst != null ? hurst.toFixed(3) : '—';
+  const hurstBadge = hurst == null ? 'info' : hurst < 0.45 ? 'info' : hurst > 0.65 ? 'warn' : 'ok';
+  const hurstLabel = hurst == null ? '—' : hurst < 0.45 ? 'mean-reverting' : hurst > 0.65 ? 'trending' : 'near random walk';
+
+  const archKnown = arch.has_arch_effects != null;
+  const lbKnown = lb.has_autocorr != null;
+  const jbKnown = jb.is_normal != null;
+  const lbBadge = !lbKnown ? 'info' : lb.has_autocorr ? 'warn' : 'ok';
+  const jbBadge = !jbKnown ? 'info' : jb.is_normal ? 'ok' : 'info';
+
+  const html = `<div class="grid2">
+    ${testCard(
+      'ADF + KPSS — Stationarity', 'H0(ADF): unit root · H0(KPSS): stationary',
+      adfBadge, adfConsensus.toUpperCase(),
+      [
+        ['ADF statistic', adf.adf_stat != null ? adf.adf_stat.toFixed(3) : '—'],
+        ['ADF p-value', adf.adf_pval != null ? pval(adf.adf_pval) + ' ' + (adf.adf_pval < 0.05 ? badge('ok','reject H0') : badge('warn','fail to reject')) : '—'],
+        ['KPSS statistic', adf.kpss_stat != null ? adf.kpss_stat.toFixed(3) : '—'],
+        ['KPSS p-value', adf.kpss_pval != null ? '≥' + pval(adf.kpss_pval) + ' ' + (adf.kpss_pval > 0.05 ? badge('ok','fail to reject') : badge('warn','reject')) : '—'],
+        ['consensus', badge(adfBadge, adfConsensus)],
+      ],
+      adfConsensus === 'stationary'
+        ? '✓ ADF and KPSS agree — return series is stationary'
+        : '⚠ Mixed signals — check for structural breaks before modelling',
+      adfConsensus === 'stationary' ? 'ok' : 'warn'
+    )}
+    ${testCard(
+      'ARCH-LM — Volatility clustering', 'H0: homoskedastic (no ARCH effects)',
+      !archKnown ? 'info' : arch.has_arch_effects ? 'info' : 'ok',
+      !archKnown ? 'UNKNOWN' : arch.has_arch_effects ? 'ARCH PRESENT' : 'HOMOSKEDASTIC',
+      [
+        ['LM statistic', arch.lm_stat != null ? arch.lm_stat.toFixed(2) : '—'],
+        ['p-value', arch.lm_pval != null ? pval(arch.lm_pval) + ' ' + (arch.has_arch_effects ? badge('fail','reject H0') : badge('ok','pass')) : '—'],
+        ['ARCH effects', arch.has_arch_effects != null ? badge(arch.has_arch_effects ? 'fail':'ok', arch.has_arch_effects ? 'YES':'NO') : '—'],
+      ],
+      !archKnown
+        ? 'ARCH-LM not measured for this series'
+        : arch.has_arch_effects
+        ? 'Vol clustering detected — consider volatility-regime or residual diagnostics.'
+        : '✓ No ARCH effects — residuals are homoskedastic',
+      !archKnown ? 'info' : arch.has_arch_effects ? 'info' : 'ok'
+    )}
+    ${testCard(
+      'Variance Ratio — Random walk', `VR(2) on ${vrKind.replace('_',' ')}: 1.0 = random walk`,
+      vrBadge, vrInterp.replace('_', ' ').toUpperCase(),
+      [
+        ['VR statistic', vr.vr_stat != null ? vr.vr_stat.toFixed(4) : '—'],
+        ['Z statistic', vr.z_stat != null ? vr.z_stat.toFixed(3) : '—'],
+        ['interpretation', badge(vrBadge, vrInterp.replace('_',' '))],
+      ],
+      (vrInterp === 'random_walk'
+        ? (vrKind === 'return_series'
+          ? '✓ Aggregated returns are consistent with random-walk increments'
+          : '✓ Price path consistent with random walk — no exploitable autocorrelation in levels')
+        : vrInterp === 'mean_reverting'
+          ? (vrKind === 'return_series'
+            ? 'VR < 0.9 — negative autocorrelation in return increments.'
+            : 'VR < 0.9 — mean reversion in price levels.')
+          : 'VR > 1.1 — momentum present.') +
+        `${barWrap(Math.min(vrPct, 100), '#378ADD', '0 (mean-rev)', '1.0 (rw)')}`,
+      vrBadge
+    )}
+    ${testCard(
+      'Ljung-Box — Autocorrelation', 'H0: no autocorrelation up to lag 10',
+      lbBadge, !lbKnown ? 'UNKNOWN' : lb.has_autocorr ? 'AUTOCORR' : 'NONE',
+      [
+        ['LB statistic (lag 10)', lb.lb_stat != null ? lb.lb_stat.toFixed(3) : '—'],
+        ['p-value', lb.lb_pval != null ? pval(lb.lb_pval) + ' ' + (lb.has_autocorr ? badge('warn','reject H0') : badge('ok','pass')) : '—'],
+        ['autocorrelation', lb.has_autocorr != null ? badge(lb.has_autocorr ? 'warn':'ok', lb.has_autocorr ? 'YES (mild)':'NO') : '—'],
+      ],
+      !lbKnown
+        ? 'Ljung-Box not measured for this series'
+        : lb.has_autocorr
+        ? 'Mild autocorrelation — likely driven by vol clustering. Purge/embargo window should cover.'
+        : '✓ No significant autocorrelation in returns',
+      !lbKnown ? 'info' : lb.has_autocorr ? 'warn' : 'ok'
+    )}
+    ${testCard(
+      'Jarque-Bera — Normality', 'H0: normally distributed',
+      jbBadge, !jbKnown ? 'UNKNOWN' : jb.is_normal ? 'NORMAL' : 'FAT TAILS',
+      [
+        ['JB statistic', jb.jb_stat != null ? jb.jb_stat.toFixed(2) : '—'],
+        ['p-value', jb.jb_pval != null ? pval(jb.jb_pval) + ' ' + (jb.is_normal ? badge('ok','pass') : badge('info','reject H0')) : '—'],
+        ['skewness', jb.skew != null ? jb.skew.toFixed(3) + (Math.abs(jb.skew) > 0.5 ? ' ' + badge('warn','skewed') : '') : '—'],
+        ['excess kurtosis', jb.kurtosis != null ? jb.kurtosis.toFixed(3) + (jb.kurtosis > 3 ? ' ' + badge('info','fat tails') : '') : '—'],
+      ],
+      !jbKnown
+        ? 'Jarque-Bera not measured for this series'
+        : jb.is_normal
+        ? '✓ Returns are approximately normal'
+        : 'Fat tails + skew — use CVaR/ES for risk sizing, not σ alone',
+      !jbKnown ? 'info' : jb.is_normal ? 'ok' : 'info'
+    )}
+    ${testCard(
+      'Hurst Exponent', 'R/S analysis · H ≈ 0.5 = random walk',
+      hurstBadge, hurstLabel.toUpperCase(),
+      [
+        ['H', hurstVal + (hurst != null ? ' ' + badge(hurstBadge, hurstLabel) : '')],
+      ],
+      (hurst != null
+        ? (hurst < 0.45 ? 'H < 0.5 — anti-persistent. Mean-reversion strategies may work.'
+           : hurst > 0.65 ? 'H > 0.65 — persistent trend. Momentum strategies may work.'
+           : '✓ H ≈ 0.5 — return series behaves as random walk')
+        : 'Hurst not computed') +
+        (hurst != null ? `${barWrap(hurst * 100, '#1D9E75', '0 (mean-rev)', '0.5 — 1.0 (trend)')}` : ''),
+      hurstBadge
+    )}
+  </div>`;
+
+  document.getElementById('panel-stability').innerHTML = html;
+})();
+
+// ── Panel 3: Distribution ─────────────────────────────────
+(function() {
+  const psiIV = st.psi_iv || {};
+  const retStats = st.return_stats || {};
+
+  function psiCard(title, subtitle, psiData) {
+    const measured = psiData.worst || psiData || {};
+    const threshold = psiData.psi_threshold || st.psi_threshold || 0.25;
+    const psiVal = measured.psi;
+    const cls = psiVal == null ? 'info' : psiVal < threshold * 0.4 ? 'ok' : psiVal < threshold ? 'warn' : 'fail';
+    const label = psiVal == null ? '—' : psiVal < threshold * 0.4 ? 'STABLE' : psiVal < threshold ? 'MINOR SHIFT' : 'SHIFT';
+    const pct = psiVal != null ? Math.min((psiVal / threshold) * 100, 100) : 0;
+    const color = cls === 'ok' ? '#1D9E75' : cls === 'warn' ? '#BA7517' : '#A32D2D';
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+        <div><h2 style="margin-bottom:2px">${title}</h2><div style="font-size:11px;color:var(--text2)">${subtitle}</div></div>
+        ${badge(cls, label)}
+      </div>
+      ${row('PSI', psiVal != null ? psiVal.toFixed(4) + ' ' + badge(cls, (psiVal < threshold ? `< ${threshold} ok` : `> ${threshold} flag`)) : '—')}
+      ${row('KS statistic', measured.ks_stat != null ? measured.ks_stat.toFixed(4) : '—')}
+      ${row('KS p-value', measured.ks_pval != null ? pval(measured.ks_pval) + ' ' + (measured.ks_pval < 0.05 ? badge('warn','significant') : badge('ok','pass')) : '—')}
+      ${row('Wasserstein', measured.wasserstein != null ? measured.wasserstein.toFixed(5) : '—')}
+      ${row('worst fold', measured.fold != null ? measured.fold : '—')}
+      <div class="bar-wrap" style="margin-top:10px"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
+      <div class="bar-labels"><span>0 (identical)</span><span>${threshold} (flag threshold)</span></div>
+      ${measured.has_shift ? note('warn', 'Distribution shifted between train and validation period') : note('ok', 'Distribution stable between periods')}
+    </div>`;
+  }
+
+  const mu = retStats.mean || 0, sigma = retStats.std || 0.02;
+  const skew = retStats.skew || 0, kurt = retStats.kurtosis || 0;
+  const xs = [], hist = [], normalData = [];
+  for (let i = -18; i <= 18; i++) {
+    const x = i * 0.5;
+    const u = (x / 100 - mu) / sigma;
+    const pdf = Math.exp(-0.5 * u * u) / (sigma * Math.sqrt(2 * Math.PI));
+    const gram = pdf * (1 + (skew / 6) * (u**3 - 3*u) + (kurt / 24) * (u**4 - 6*u**2 + 3));
+    xs.push(x.toFixed(1) + '%');
+    hist.push(Math.max(0, gram * 100 * 0.005));
+    normalData.push(pdf * 100 * 0.005);
+  }
+
+  document.getElementById('panel-distribution').innerHTML = `
+    <div class="grid2">
+      ${psiCard('PSI — Return distribution', 'walk-forward train vs validation folds', psiRet)}
+      ${psiCard('PSI — IV distribution', 'IV levels train vs val', psiIV)}
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>Return distribution (${retStats.n || '—'} trading days)</h2>
+      <div class="grid2" style="margin-bottom:14px">
+        <div>
+          ${row('mean/day', retStats.mean != null ? (retStats.mean*100).toFixed(4) + '%' : '—')}
+          ${row('daily σ', retStats.std != null ? (retStats.std*100).toFixed(4) + '%' : '—')}
+          ${row('annualized vol', retStats.std != null ? (retStats.std*Math.sqrt(252)*100).toFixed(1) + '%' : '—')}
+        </div>
+        <div>
+          ${row('skewness', retStats.skew != null ? retStats.skew.toFixed(4) + (Math.abs(retStats.skew)>0.5 ? ' '+badge('warn','skewed'):'') : '—')}
+          ${row('excess kurtosis', retStats.kurtosis != null ? retStats.kurtosis.toFixed(4) + (retStats.kurtosis>3?' '+badge('info','fat tails'):'') : '—')}
+          ${row('max gain / loss', retStats.max_gain != null ? '+'+( retStats.max_gain*100).toFixed(2)+'% / '+(retStats.max_loss*100).toFixed(2)+'%' : '—')}
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="retChart" role="img" aria-label="Return distribution histogram"></canvas></div>
+    </div>`;
+
+  new Chart(document.getElementById('retChart'), {
+    type: 'bar',
+    data: {
+      labels: xs,
+      datasets: [
+        { label: 'empirical', data: hist, backgroundColor: isDark ? 'rgba(55,138,221,0.45)' : 'rgba(55,138,221,0.35)', borderWidth: 0, barPercentage: 1, categoryPercentage: 1 },
+        { label: 'normal', data: normalData, type: 'line', borderColor: isDark ? '#F09595' : '#D85A30', borderWidth: 1.5, pointRadius: 0, fill: false, borderDash: [4,3] },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: tc, font: { size: 10 }, maxTicksLimit: 10, autoSkip: true }, grid: { color: gc } },
+        y: { ticks: { color: tc, font: { size: 10 } }, grid: { color: gc } }
+      }
+    }
+  });
+})();
+
+// ── Panel 4: Flags ────────────────────────────────────────
+(function() {
+  const flags = D.flags || [];
+  if (!flags.length) {
+    document.getElementById('panel-flags').innerHTML = '<div class="card"><p style="color:var(--text2)">No calibration flags.</p></div>';
+    return;
+  }
+  const html = flags.map(f => `
+    <div class="flag-row flag-${f.severity}">
+      <div class="flag-signal">[${f.severity.toUpperCase()}] ${f.signal}</div>
+      <div style="font-size:12px;margin-top:4px">${f.interpretation || ''}</div>
+      <div class="flag-action">→ ${f.suggested_action || ''}</div>
+    </div>
+  `).join('');
+  document.getElementById('panel-flags').innerHTML = html;
+})();
+</script>
+</body>
+</html>
+"""
+
+
 def write_summary_report_from_files(run_id: str, outputs_dir: str | Path = "outputs") -> dict[str, str]:
     summary, per_fold, per_regime, diversity = load_run_outputs(run_id, outputs_dir)
     return write_summary_report(summary, per_fold, per_regime, diversity, outputs_dir)

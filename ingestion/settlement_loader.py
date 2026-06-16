@@ -79,6 +79,10 @@ class SettlementLoader(ProviderBase):
         # ── Rename to standardized schema ──
         df = df.rename(columns=SETTLEMENT_COLUMN_MAP)
 
+        # ── Normalize IV: source stores as percent (e.g. 29.14 → 0.2914) ──
+        if "iv_provided" in df.columns:
+            df["iv_provided"] = df["iv_provided"] / 100.0
+
         # ── Add metadata ──
         df["provider"] = "settlement"
         df["timestamp"] = None  # EOD = no intraday timestamp

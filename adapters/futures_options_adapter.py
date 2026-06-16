@@ -9,6 +9,7 @@ Overrides OptionsBase for futures-specific concerns:
 
 from typing import Tuple
 
+import numpy as np
 import pandas as pd
 
 from .options_base import OptionsBase
@@ -24,7 +25,8 @@ class FuturesOptionsAdapter(OptionsBase):
 
     def prepare(self, raw_df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
         """Futures options prepare pipeline."""
-        df = raw_df.copy()
+        df = self._normalize_option_columns(raw_df)
+        self._require_option_chain_schema(df, "futures options")
 
         # ── Build continuous futures (shared with FuturesAdapter) ──
         fut = FuturesAdapter(self.cfg)
@@ -36,15 +38,15 @@ class FuturesOptionsAdapter(OptionsBase):
         # ── Term structure ──
         df = fut.compute_term_structure(df)
 
+        # ── Underlying futures map ──
+        df = self._attach_underlying_futures(df)
+
         # ── Returns + vol ──
         df = self.compute_returns(df)
 
         # ── DTE (via core/dte.py) ──
         dte_cfg = self.cfg.get("dte", {"basis": "calendar", "day_count": "act_365",
                                         "exclude_expiry_date": False})
-
-        # ── Forward price ──
-        df["F"] = df["price_std"]  # For futures options, F = futures price
 
         # ── IV surface (respects cfg['iv_source']) ──
         df = self.build_iv_surface(df)
@@ -66,8 +68,27 @@ class FuturesOptionsAdapter(OptionsBase):
             "vol_regime",
             "term_structure",
             "vrp_sign",
-            "skew_direction",
+            # skew_direction omitted: compute_skew returns placeholder 0.0 — dead axis
         ] + self.cfg.get("event_regimes", [])
+
+        # Resolve max_dte: actual max DTE in the dataset (for purge window)
+        max_dte = 90
+        if "dte" in df.columns:
+            max_dte = int(df["dte"].dropna().max()) if not df["dte"].dropna().empty else 90
+        elif "dte_days" in df.columns:
+            max_dte = int(df["dte_days"].dropna().max()) if not df["dte_days"].dropna().empty else 90
+        elif "T" in df.columns:
+            max_dte = int((df["T"].dropna().max() * 365)) if not df["T"].dropna().empty else 90
+
+        # Full contract key for validators — prevents duplicate-identity false-positives
+        # on option chains where many strikes share (product_id, as_of_date).
+        identity_cols = [
+            col for col in (
+                "product_id", "contract_root", "hub",
+                "delivery_month", "expiry", "right", "strike",
+            )
+            if col in df.columns
+        ]
 
         cfg = {
             **self.cfg,
@@ -77,14 +98,68 @@ class FuturesOptionsAdapter(OptionsBase):
             "return_col": "return_std",
             "vol_window": self.cfg.get("vol_window", 21),
             "trend_window": self.cfg.get("trend_window", 126),
-            "purge_bars": self.cfg.get("cv", {}).get("purge_bars", "max_dte"),
+            "n_folds": self.cfg.get("n_folds", 8),
+            "purge_bars": self.cfg.get("purge_bars", "max_dte"),
+            "event_embargo_bars": self.cfg.get("event_embargo_bars", 2),
+            "_max_dte": max_dte,
             "regime_axes": regime_axes,
             "event_flags": self.cfg.get("event_calendars", []),
-            "max_concentration": self.cfg.get("cv", {}).get("max_concentration", 0.80),
-            "kl_threshold": self.cfg.get("cv", {}).get("kl_threshold", 0.5),
-            "js_threshold": self.cfg.get("cv", {}).get("js_threshold", 0.3),
-            "rf_rate_col": self.cfg.get("performance", {}).get("rf_rate_source", "sofr"),
+            "max_concentration": self.cfg.get("max_concentration", 0.80),
+            "kl_threshold": self.cfg.get("kl_threshold", 0.5),
+            "js_threshold": self.cfg.get("js_threshold", 0.3),
+            "rf_rate_col": self.cfg.get("rf_rate_col", "sofr"),
             "dte": dte_cfg,
+            "identity_cols": identity_cols,
         }
 
         return df, cfg
+
+    def _attach_underlying_futures(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Attach PIT futures prices to each option row."""
+        df = df.copy()
+        option_mask = self._option_mask(df)
+        future_mask = self._future_mask(df)
+
+        if not future_mask.any():
+            raise ValueError("futures options require underlying future rows for F mapping")
+
+        df["option_price"] = np.nan
+        df.loc[option_mask, "option_price"] = df.loc[option_mask, "price"]
+
+        df["underlying_price"] = np.nan
+        df.loc[future_mask, "underlying_price"] = df.loc[future_mask, "price_std"]
+
+        identity_cols = [
+            col for col in ("product_id", "contract_root", "hub")
+            if col in df.columns
+        ]
+        join_keys = ["as_of_date", *identity_cols]
+        if "delivery_month" in df.columns and df.loc[option_mask, "delivery_month"].notna().any():
+            join_keys.append("delivery_month")
+
+        futures_cols = [*join_keys, "price_std"]
+        if "expiry" in df.columns:
+            futures_cols.append("expiry")
+        sort_cols = [col for col in [*join_keys, "expiry"] if col in df.columns]
+        futures = (
+            df.loc[future_mask & df["price_std"].notna(), futures_cols]
+            .sort_values(sort_cols)
+            .groupby(join_keys, dropna=False)["price_std"]
+            .first()
+            .rename("_underlying_price")
+        )
+
+        df = df.join(futures, on=join_keys)
+        df.loc[option_mask, "underlying_price"] = df.loc[option_mask, "_underlying_price"]
+
+        missing = option_mask & df["underlying_price"].isna()
+        if missing.any():
+            examples = df.loc[missing, join_keys].drop_duplicates().head(3).to_dict("records")
+            raise ValueError(
+                "Unable to map options to underlying future rows for "
+                f"{int(missing.sum())} option rows; examples: {examples}"
+            )
+
+        df["F"] = df["underlying_price"]
+        df["price_std"] = df["underlying_price"]
+        return df.drop(columns=["_underlying_price"])

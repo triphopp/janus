@@ -196,17 +196,31 @@ def validate_provided_iv(
 
     threshold = cfg.get("iv_validate_threshold", 0.005)  # 0.5 vol-point default
     model = cfg.get("pricing_model", "black76")
+    q = cfg.get("div_yield", 0.0)
+    bounds = tuple(cfg.get("iv_solver_bounds", (1e-4, 5.0)))
 
     results = []
     for _, row in df.iterrows():
+        mkt_price = row.get("option_price", row.get("price", np.nan))
+        underlying = row.get(
+            "underlying_price",
+            row.get("S", row.get("F", row.get("price_std", np.nan))),
+        )
+        required = [mkt_price, underlying, row.get("strike", np.nan), row.get("T", np.nan)]
+        if any(pd.isna(value) for value in required) or row.get("T", 0) <= 0:
+            results.append(np.nan)
+            continue
+
         solved = solve_iv(
             model=model,
-            mkt_price=row["price"],
-            S_or_F=row.get("F", row.get("price", np.nan)),
+            mkt_price=mkt_price,
+            S_or_F=underlying,
             K=row["strike"],
             T=row.get("T", np.nan),
             r=row.get("r", 0.05),
             right=row["right"],
+            q=q,
+            bounds=bounds,
         )
         results.append(solved)
 

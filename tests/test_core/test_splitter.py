@@ -28,6 +28,43 @@ class TestNoLookAhead:
                 gap = va.min() - tr.max()
                 assert gap >= 5, f"Purge gap {gap} < 5"
 
+    def test_walk_forward_no_shared_dates_for_chain_rows(self):
+        """All rows for the same decision date stay in one side of a fold."""
+        dates = pd.to_datetime(
+            ["2024-01-01"] * 5
+            + ["2024-01-02"] * 7
+            + ["2024-01-03"] * 6
+            + ["2024-01-04"] * 8
+        )
+        df = pd.DataFrame({"as_of_date": dates})
+        folds = walk_forward_split(df, {"n_folds": 2, "date_col": "as_of_date"})
+
+        for tr, va in folds:
+            train_dates = set(df.iloc[tr]["as_of_date"])
+            val_dates = set(df.iloc[va]["as_of_date"])
+            assert train_dates.isdisjoint(val_dates)
+
+    def test_purge_uses_time_groups_not_row_count(self):
+        """Purge over chain rows should remove whole dates, not a few rows."""
+        dates = pd.to_datetime(
+            ["2024-01-01"] * 100
+            + ["2024-01-02"] * 100
+            + ["2024-01-03"] * 100
+            + ["2024-01-04"] * 100
+            + ["2024-01-05"] * 100
+            + ["2024-01-06"] * 100
+        )
+        df = pd.DataFrame({"as_of_date": dates})
+        cfg = {"n_folds": 2, "date_col": "as_of_date", "purge_bars": 2, "event_embargo_bars": 0}
+        folds = purge_embargo(walk_forward_split(df, cfg), df, cfg)
+
+        tr, va = folds[0]
+        val_start = df.iloc[va]["as_of_date"].min()
+        max_train = df.iloc[tr]["as_of_date"].max()
+
+        assert max_train <= pd.Timestamp("2024-01-01")
+        assert val_start == pd.Timestamp("2024-01-03")
+
 
 class TestDiversityGate:
     """Regime diversity gate — KL + JS."""

@@ -34,6 +34,7 @@ from core import validators, stability as stab, splitter as spl
 from core import metrics, overfitting as ovf, regime, audit as aud
 from core import attribution as attr
 from core import reporting
+from core.config import normalize_config
 
 
 def load_config(instrument_name: str) -> dict:
@@ -56,7 +57,7 @@ def load_config(instrument_name: str) -> dict:
             if k not in cfg:
                 cfg[k] = v
 
-    return cfg
+    return normalize_config(cfg)
 
 
 def get_provider(cfg: dict):
@@ -87,6 +88,39 @@ def get_adapter(cfg: dict):
         raise ValueError(f"Unknown family: {family}")
 
 
+def _stability_series(df: pd.DataFrame, value_col: str, date_col: str = "as_of_date", agg: str = "mean") -> pd.Series:
+    """Build a date-grain stability series without arbitrary first-row dedupe."""
+    if value_col not in df.columns:
+        return pd.Series(dtype=float)
+
+    values = pd.to_numeric(df[value_col], errors="coerce")
+    if date_col not in df.columns:
+        return values.dropna()
+
+    tmp = pd.DataFrame({
+        date_col: pd.to_datetime(df[date_col]),
+        value_col: values,
+    }).dropna()
+    if tmp.empty:
+        return pd.Series(dtype=float)
+
+    grouped = tmp.groupby(date_col)[value_col]
+    if agg == "median":
+        return grouped.median().sort_index()
+    return grouped.mean().sort_index()
+
+
+def _fmt_float(value, digits: int = 4) -> str:
+    if value is None:
+        return "N/A"
+    try:
+        if pd.isna(value):
+            return "N/A"
+    except TypeError:
+        pass
+    return f"{float(value):.{digits}f}"
+
+
 def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     """Execute full pipeline: ingestion → adapter → core stages → outputs."""
     if run_id is None:
@@ -97,7 +131,15 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     # ── Phase 1: Ingestion ──
     print(f"[{run_id}] Loading {symbol} from {start} to {end}...")
     provider = get_provider(cfg)
-    raw_df = provider.fetch(symbol, start, end)
+
+    # SettlementLoader takes a file path; equity providers take a ticker symbol.
+    provider_name = cfg.get("provider", "settlement")
+    if provider_name == "settlement":
+        data_source = cfg.get("data_file") or symbol
+    else:
+        data_source = cfg.get("symbol", {}).get("ticker", symbol)
+
+    raw_df = provider.fetch(data_source, start, end)
     print(f"  Ingestion: {len(raw_df)} rows loaded")
 
     # Audit: after ingestion
@@ -121,25 +163,102 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     # Audit: after stage 1
     snap_v1 = aud.snapshot(df, "validators", cfg, run_id)
 
+    # Build date-grouped folds before stability so Stage 2 diagnostics use
+    # the same validation windows that metrics will score.
+    folds = spl.walk_forward_split(df, core_cfg)
+    folds = spl.purge_embargo(folds, df, core_cfg)
+
     # ── Stage 2: Stability ──
     return_col = core_cfg.get("return_col", "return_std")
+    stability_results: dict = {}
     if return_col in df.columns:
-        r = df[return_col].dropna()
+        r = _stability_series(df, return_col, agg="mean")
+
         adf_result = stab.adf_kpss_check(r)
         arch_result = stab.arch_lm_test(r)
         jb_result = stab.jarque_bera(r)
-        hurst = stab.hurst_exponent(r)
-        print(f"  Stage 2 (stability): ADF p={adf_result.get('adf_pval', 'N/A'):.4f}, "
-              f"Hurst={hurst:.3f}, ARCH={'yes' if arch_result.get('has_arch_effects') else 'no'}")
+        hurst_result = stab.hurst_exponent(r)
+        hurst_value = hurst_result.get("hurst")
+        vr_result = stab.variance_ratio_test(r, input_kind="return_series")
+        lb_result = stab.ljung_box(r)
 
-    # ── Stage 3: Splitter ──
-    folds = spl.walk_forward_split(df, core_cfg)
-    folds = spl.purge_embargo(folds, df, core_cfg)
+        # PSI: use the same folds as walk-forward CV.
+        row_return = pd.to_numeric(df[return_col], errors="coerce")
+        psi_returns = stab.fold_distribution_shift(row_return, folds, core_cfg) if folds else {}
+
+        # PSI on IV if available
+        iv_col = "iv_provided"
+        psi_iv: dict = {}
+        if iv_col in df.columns:
+            daily_iv = _stability_series(df, iv_col, agg="median")
+            if len(daily_iv) >= 20:
+                split_iv = int(len(daily_iv) * 0.6)
+                psi_iv = stab.distribution_shift(daily_iv.iloc[:split_iv], daily_iv.iloc[split_iv:], core_cfg)
+
+        # IV summary stats
+        iv_stats: dict = {}
+        if iv_col in df.columns:
+            iv_clean = df[iv_col].replace([float("inf"), float("-inf")], float("nan")).dropna()
+            iv_stats = {
+                "null_pct": round(df[iv_col].isna().mean() * 100, 2),
+                "min": float(iv_clean.min()) if len(iv_clean) else None,
+                "median": float(iv_clean.median()) if len(iv_clean) else None,
+                "mean": float(iv_clean.mean()) if len(iv_clean) else None,
+                "p95": float(iv_clean.quantile(0.95)) if len(iv_clean) else None,
+                "max": float(iv_clean.max()) if len(iv_clean) else None,
+                "deep_otm_count": int((iv_clean > 2.0).sum()),
+                "delta_mean": float(df["delta"].mean()) if "delta" in df.columns else None,
+            }
+
+        # Return summary stats
+        return_stats = {
+            "mean": float(r.mean()),
+            "std": float(r.std()),
+            "skew": float(r.skew()),
+            "kurtosis": float(r.kurtosis()),
+            "n": int(len(r)),
+            "max_gain": float(r.max()),
+            "max_loss": float(r.min()),
+        }
+
+        stability_results = {
+            "trading_days": int(len(r)),
+            "adf": adf_result,
+            "arch": arch_result,
+            "jarque_bera": jb_result,
+            "hurst": hurst_result,
+            "variance_ratio": vr_result,
+            "ljung_box": lb_result,
+            "psi_returns": psi_returns,
+            "psi_iv": psi_iv,
+            "iv_stats": iv_stats,
+            "return_stats": return_stats,
+            "input_grain": "date_mean",
+            "psi_threshold": core_cfg.get("psi_threshold", 0.25),
+        }
+
+        feature_cols = [col for col in core_cfg.get("feature_cols", []) if col in df.columns]
+        target_col = core_cfg.get("forward_return_col") or core_cfg.get("target_col")
+        if feature_cols:
+            stability_results["feature_quality"] = {
+                "vif": stab.vif_condition_number(df[feature_cols]),
+                "sign_consistency": stab.sign_consistency(df, {**core_cfg, "feature_cols": feature_cols}),
+            }
+            if target_col in df.columns:
+                stability_results["feature_quality"]["ic"] = {
+                    col: stab.information_coefficient(df[col], df[target_col])
+                    for col in feature_cols
+                }
+
+        arch_state = arch_result.get("has_arch_effects")
+        arch_text = "unknown" if arch_state is None else ("yes" if arch_state else "no")
+        print(f"  Stage 2 (stability): ADF p={_fmt_float(adf_result.get('adf_pval'))}, "
+              f"Hurst={_fmt_float(hurst_value, 3)}, ARCH={arch_text}")
 
     # Regime labels
     regime_labels = regime.assign_regime_labels(df, core_cfg)
     diversity = spl.regime_diversity_gate(folds, regime_labels, core_cfg)
-    passed_folds = diversity["pass"].sum()
+    passed_folds = int(diversity["pass"].sum()) if "pass" in diversity.columns else 0
     print(f"  Stage 3 (splitter): {len(folds)} folds, {passed_folds} passed diversity gate")
 
     # Audit: after stage 3
@@ -150,7 +269,8 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     for i, (tr, va) in enumerate(folds):
         if i not in diversity[diversity["pass"]].index:
             continue
-        r = df[return_col].iloc[va]
+        fold_df = df.iloc[va]
+        r = _stability_series(fold_df, return_col, agg="mean")
         if r.dropna().empty:
             continue
         fold_returns[i] = r
@@ -161,7 +281,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
 
     # Overfitting checks
     if return_col in df.columns:
-        all_r = df[return_col].dropna()
+        all_r = _stability_series(df, return_col, agg="mean").dropna()
         sr = metrics.risk_adjusted(all_r)["sharpe"] or 0.0
         n_trials = core_cfg.get("n_trials", 40)
         dsr_result = ovf.deflated_sharpe_ratio(sr, n_trials, len(all_r))
@@ -173,7 +293,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
 
     # ── Write outputs ──
     outputs_dir = Path("outputs")
-    for subdir in ["perf_report", "fold_manifest", "attribution"]:
+    for subdir in ["perf_report", "fold_manifest", "attribution", "data"]:
         (outputs_dir / subdir).mkdir(parents=True, exist_ok=True)
 
     attribution_summary = None
@@ -185,6 +305,18 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     per_fold.to_csv(outputs_dir / "perf_report" / f"{run_id}_per_fold.csv", index=False)
     per_regime.to_csv(outputs_dir / "perf_report" / f"{run_id}_per_regime.csv", index=False)
     diversity.to_csv(outputs_dir / "fold_manifest" / f"{run_id}_diversity.csv", index=False)
+
+    # ── Export prepared DataFrame ──
+    # Parquet for large datasets; CSV as a human-readable companion.
+    data_dir = outputs_dir / "data"
+    parquet_path = data_dir / f"{run_id}_prepared.parquet"
+    csv_path = data_dir / f"{run_id}_prepared.csv"
+    try:
+        df.to_parquet(parquet_path, index=False)
+    except Exception:
+        parquet_path = None
+    df.to_csv(csv_path, index=False)
+    print(f"  Data export: {csv_path}")
 
     # Summary
     summary = {
@@ -199,9 +331,21 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "stability_score": stab_score,
         "attribution": attribution_summary,
         "audit_snapshots": [snap_ingest, snap_adapter, snap_v1, snap_v3, snap_v4],
+        "data_export": {
+            "csv": str(csv_path),
+            "parquet": str(parquet_path) if parquet_path else None,
+            "columns": list(df.columns),
+            "n_rows": len(df),
+        },
     }
 
     summary["summary_report"] = reporting.write_summary_report(summary, per_fold, per_regime, diversity, outputs_dir)
+
+    if stability_results:
+        html_path = reporting.write_html_report(
+            summary, stability_results, per_fold, per_regime, diversity, outputs_dir
+        )
+        summary["html_report"] = html_path
 
     with open(outputs_dir / f"{run_id}_summary.json", "w") as f:
         json.dump({k: str(v) if isinstance(v, (pd.Timestamp, datetime)) else v
@@ -213,6 +357,8 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
           f"min={stab_score.get('sharpe_min', 0):.3f}")
     print(f"  Profitable folds: {stab_score.get('pct_profitable_folds', 0):.0%}")
     print("  Outputs: outputs/")
+    if summary.get("html_report"):
+        print(f"  HTML report: {summary['html_report']}")
 
     return summary
 

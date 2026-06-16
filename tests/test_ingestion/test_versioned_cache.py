@@ -15,6 +15,18 @@ def test_infer_available_at_uses_config_lag():
     assert event_ts == pd.Timestamp("2024-09-30T00:00:00Z")
 
 
+def test_equity_available_at_after_market_close():
+    cfg = {
+        "available_at_lag": {"equity_price": "3h"},
+        "exchange_tz": "America/New_York",
+        "market_close_time": "16:00",
+    }
+
+    ts = infer_available_at(pd.Timestamp("2024-01-02"), "equity_price", cfg)
+
+    assert ts == pd.Timestamp("2024-01-03T00:00:00Z")
+
+
 def test_pit_join_never_joins_future_event():
     signals = pd.DataFrame({
         "decision_time": pd.to_datetime(["2024-09-25T12:00:00Z", "2024-09-26T12:00:00Z"]),

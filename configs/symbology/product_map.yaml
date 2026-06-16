@@ -7,8 +7,8 @@ products:
     product_name: Brent Crude Futures
 
   - product_id: 425
-    contract_root: CL
-    hub: Cushing
+    contract_root: T
+    hub: WTI
     product_name: WTI Crude Futures
 
   - product_id: 500

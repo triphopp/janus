@@ -62,8 +62,10 @@ class EquityLoaderA(ProviderBase):
         # If not supplied, preserve raw prices and make the missing adjustment explicit.
         if "Adj Close" in df.columns and "Close" in df.columns:
             df["adj_factor"] = df["Adj Close"] / df["Close"]
+            adj_factor_source = "yfinance_adj_close_retroactive"
         else:
             df["adj_factor"] = 1.0
+            adj_factor_source = "none"
         df["raw_close"] = df["Close"]
 
         # Standardize output
@@ -72,6 +74,8 @@ class EquityLoaderA(ProviderBase):
             "symbol":      symbol,
             "raw_close":   df["raw_close"],
             "adj_factor":  df["adj_factor"],
+            "adj_factor_source": adj_factor_source,
+            "adj_factor_is_pit": False,
             "volume":      df["Volume"].fillna(0).astype(int),
             "is_delisted": False,
             "provider":    "yfinance",
@@ -79,7 +83,11 @@ class EquityLoaderA(ProviderBase):
         out = add_availability_columns(
             out,
             data_type="equity_price",
-            cfg={"available_at_lag": {"equity_price": "3h"}},
+            cfg={
+                "available_at_lag": {"equity_price": "3h"},
+                "exchange_tz": "America/New_York",
+                "market_close_time": "16:00",
+            },
         )
 
         # If symbol is in delisting list, mark rows after last available date

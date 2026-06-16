@@ -127,11 +127,15 @@ class FuturesAdapter(AdapterBase):
 
         df = df.sort_values(["as_of_date", "delivery_month"])
 
-        # For each date, front month vs second month spread
-        df["month_rank"] = df.groupby("as_of_date")["delivery_month"].rank("dense")
+        # Compute spread only from futures rows; options share the same date index
+        # and would create duplicates when set_index("as_of_date") is called.
+        fut_only = df[df.get("instrument_type", "future") == "future"] if "instrument_type" in df.columns else df
+        fut_only = fut_only.sort_values(["as_of_date", "delivery_month"])
+        fut_only["_rank"] = fut_only.groupby("as_of_date")["delivery_month"].rank("dense")
 
-        front = df[df["month_rank"] == 1].set_index("as_of_date")["price_std"]
-        second = df[df["month_rank"] == 2].set_index("as_of_date")["price_std"]
+        # One price per (date, rank) — take first to drop any duplicates within same month
+        front = fut_only[fut_only["_rank"] == 1].groupby("as_of_date")["price_std"].first()
+        second = fut_only[fut_only["_rank"] == 2].groupby("as_of_date")["price_std"].first()
 
         # Spread as fraction of front
         spread = (second - front) / front.replace(0, np.nan)

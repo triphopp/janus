@@ -84,15 +84,17 @@ class TestAdapterContract:
         from adapters.futures_options_adapter import FuturesOptionsAdapter
 
         dates = pd.date_range("2024-01-01", periods=30, freq="B")
+        delivery = dates + pd.DateOffset(months=1)
         raw = pd.DataFrame({
-            "as_of_date": dates,
+            "as_of_date": list(dates) + list(dates),
             "product_id": 1,
-            "delivery_month": dates + pd.DateOffset(months=1),
-            "expiry": pd.Timestamp("2024-06-30"),
-            "price": np.linspace(5, 6, 30),
-            "strike": 80.0,
-            "right": "C",
-            "iv_provided": 0.25,
+            "instrument_type": ["future"] * 30 + ["option"] * 30,
+            "delivery_month": list(delivery) + list(delivery),
+            "expiry": list(delivery) + [pd.Timestamp("2024-06-30")] * 30,
+            "price": list(np.linspace(80, 85, 30)) + list(np.linspace(5, 6, 30)),
+            "strike": [np.nan] * 30 + [80.0] * 30,
+            "right": [None] * 30 + ["C"] * 30,
+            "iv_provided": [np.nan] * 30 + [0.25] * 30,
         })
         cfg = {
             "pricing_model": "black76",

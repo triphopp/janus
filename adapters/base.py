@@ -9,6 +9,8 @@ from typing import Tuple
 
 import pandas as pd
 
+from core.config import normalize_config
+
 
 class AdapterBase(ABC):
     """Abstract base for asset adapters.
@@ -22,7 +24,7 @@ class AdapterBase(ABC):
         Args:
             cfg: instrument-level config (loaded from configs/instruments/*.yaml)
         """
-        self.cfg = cfg
+        self.cfg = normalize_config(cfg)
 
     @abstractmethod
     def prepare(self, raw_df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:

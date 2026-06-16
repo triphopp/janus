@@ -28,6 +28,13 @@ htmlcov/
 # Generated pipeline artifacts
 outputs/
 
+# Agent working memory — internal notes only
+memory/
+
+# Instrument configs with local machine-specific data paths
+# Use configs/instruments/wti.yaml.example as a template
+configs/instruments/wti.yaml
+
 # OS
 .DS_Store
 Thumbs.db

@@ -69,7 +69,26 @@ def infer_available_at(as_of_date, data_type: str, cfg: dict):
     """
     lag_map = cfg.get("available_at_lag", {})
     lag = _parse_lag(lag_map.get(data_type, cfg.get("default_available_at_lag", "0h")))
-    values = pd.to_datetime(as_of_date) + lag
+    asof = pd.to_datetime(as_of_date)
+
+    if data_type == "equity_price":
+        market_close = str(cfg.get("market_close_time", "16:00"))
+        exchange_tz = cfg.get("exchange_tz", "America/New_York")
+        hour, minute = [int(part) for part in market_close.split(":", 1)]
+
+        dates = pd.Series(asof).dt.normalize()
+        local_close = dates + pd.Timedelta(hours=hour, minutes=minute)
+        if local_close.dt.tz is None:
+            local_close = local_close.dt.tz_localize(exchange_tz)
+        else:
+            local_close = local_close.dt.tz_convert(exchange_tz)
+        values = local_close + lag
+
+        if isinstance(as_of_date, (pd.Series, pd.Index, list, tuple)):
+            return pd.to_datetime(values, utc=True)
+        return pd.to_datetime(values.iloc[0], utc=True)
+
+    values = asof + lag
     return pd.to_datetime(values, utc=True)
 
 

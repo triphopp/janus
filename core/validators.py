@@ -28,6 +28,7 @@ def logical_bounds_check(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     df = df.copy()
     price_col = cfg.get("price_col", "price")
     vol_col = cfg.get("vol_col", "volume")
+    volume_col = cfg.get("volume_col")
 
     flags = pd.Series(False, index=df.index)
     reasons = pd.Series("", index=df.index)
@@ -43,6 +44,11 @@ def logical_bounds_check(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         bad = df[vol_col] < 0
         flags |= bad
         reasons = reasons.where(~bad, reasons + "vol<0;")
+
+    if volume_col and volume_col in df.columns and volume_col != vol_col:
+        bad = df[volume_col] < 0
+        flags |= bad
+        reasons = reasons.where(~bad, reasons + "volume<0;")
 
     # IV positive
     iv_col = "iv_provided"
@@ -74,12 +80,25 @@ def missing_completeness(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """
     df = df.copy()
     min_oi = cfg.get("min_oi", 100)
+    min_volume = cfg.get("min_volume")
+    volume_col = cfg.get("volume_col", "volume")
     flags = pd.Series(False, index=df.index)
     reasons = pd.Series("", index=df.index)
 
-    # Check for gaps in date sequence per product_id
-    if "as_of_date" in df.columns and "product_id" in df.columns:
-        for pid, grp in df.groupby("product_id"):
+    identity_cols = cfg.get("identity_cols")
+    if identity_cols is None:
+        identity_cols = [col for col in ("product_id", "symbol") if col in df.columns]
+    if isinstance(identity_cols, str):
+        identity_cols = [identity_cols]
+
+    # Check for duplicate grain and gaps in date sequence per identity.
+    if "as_of_date" in df.columns and identity_cols:
+        duplicates = df.duplicated([*identity_cols, "as_of_date"], keep=False)
+        if duplicates.any():
+            flags |= duplicates
+            reasons = reasons.where(~duplicates, reasons + "duplicate_identity_date;")
+
+        for _, grp in df.groupby(identity_cols, dropna=False):
             grp = grp.sort_values("as_of_date")
             gaps = grp["as_of_date"].diff().dt.days > 5  # 5+ day gap
             if gaps.any():
@@ -94,6 +113,12 @@ def missing_completeness(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         bad = df[oi_col] < floor
         flags |= bad
         reasons = reasons.where(~bad, reasons + f"OI<{floor};")
+
+    # Equity volume/liquidity floor.
+    if min_volume is not None and volume_col in df.columns:
+        bad = df[volume_col].fillna(-1) < min_volume
+        flags |= bad
+        reasons = reasons.where(~bad, reasons + f"volume<{min_volume};")
 
     df["_missing_flag"] = flags
     df["_missing_reason"] = reasons
@@ -121,9 +146,18 @@ def outlier_cap(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 
     df["_outlier_flag"] = False
 
+    # When instrument_type is present, restrict MAD detection to non-option rows.
+    # Option rows carry broadcast underlying prices (one value per date repeated
+    # across all strikes), which distort the expanding MAD time-series.
+    if "instrument_type" in df.columns:
+        cap_mask = ~df["instrument_type"].astype("string").str.lower().eq("option").fillna(False)
+    else:
+        cap_mask = pd.Series(True, index=df.index)
+
     # Per-product rolling MAD outlier detection (PIT: expanding window)
-    if "product_id" in df.columns:
-        for pid, grp_idx in df.groupby("product_id").groups.items():
+    work = df[cap_mask]
+    if "product_id" in work.columns:
+        for pid, grp_idx in work.groupby("product_id").groups.items():
             idx = sorted(grp_idx)
             series = df.loc[idx, price_col]
             # Expanding window median + MAD
