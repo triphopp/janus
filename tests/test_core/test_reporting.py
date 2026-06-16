@@ -4,7 +4,13 @@ import json
 
 import pandas as pd
 
-from core.reporting import build_summary_report, load_run_outputs, write_summary_report
+from core.reporting import (
+    build_summary_report,
+    load_run_outputs,
+    run_output_dir,
+    write_html_report,
+    write_summary_report,
+)
 
 
 def _sample_summary():
@@ -62,13 +68,57 @@ def test_build_summary_report_creates_visualization_tables():
 def test_write_summary_report_outputs_csv_json_and_markdown(tmp_path):
     paths = write_summary_report(_sample_summary(), outputs_dir=tmp_path)
 
-    assert paths["stage_comparison"].endswith("_stage_comparison.csv")
-    assert paths["visualization_json"].endswith("_visualization.json")
-    assert paths["markdown"].endswith("_summary_report.md")
+    assert paths["stage_comparison"].endswith("stage_comparison.csv")
+    assert paths["visualization_json"].endswith("visualization.json")
+    assert paths["markdown"].endswith("summary_report.md")
 
-    payload = json.loads((tmp_path / "summary_report" / "unit_report_visualization.json").read_text())
+    payload = json.loads((tmp_path / "report" / "visualization.json").read_text())
     assert payload["stage_comparison"][0]["stage"] == "splitter"
-    assert "Pipeline Summary Report" in (tmp_path / "summary_report" / "unit_report_summary_report.md").read_text()
+    assert "Pipeline Summary Report" in (tmp_path / "report" / "summary_report.md").read_text()
+
+
+def test_run_output_dir_is_named_for_human_navigation(tmp_path):
+    path = run_output_dir(tmp_path, "run-01", "MSFT", "equity", "2024-01-01", "2024-12-31")
+
+    assert path.name == "run-01__MSFT__equity__2024-01-01_to_2024-12-31"
+    assert path.parent.name == "runs"
+
+
+def test_write_html_report_outputs_academic_final_report(tmp_path):
+    summary = {
+        **_sample_summary(),
+        "artifacts": {"per_fold": "tables/per_fold.csv"},
+        "summary_report": {"markdown": "report/summary_report.md"},
+    }
+    path = write_html_report(
+        summary,
+        {
+            "trading_days": 20,
+            "adf": {"consensus": "stationary", "adf_pval": 0.01, "kpss_pval": 0.1},
+            "arch": {"has_arch_effects": False, "lm_pval": 0.5},
+            "variance_ratio": {"interpretation": "random_walk", "vr_stat": 1.0},
+            "ljung_box": {"has_autocorr": False, "lb_pval": 0.4},
+            "jarque_bera": {"is_normal": False, "jb_pval": 0.01, "skew": 0.2, "kurtosis": 4.0},
+            "hurst": {"hurst": 0.5},
+            "return_stats": {"mean": 0.001, "std": 0.01, "max_gain": 0.02, "max_loss": -0.03},
+            "iv_stats": {"null_pct": 0.0},
+            "psi_returns": {"worst": {"psi": 0.1, "ks_stat": 0.2, "fold": 0}, "psi_threshold": 0.25},
+        },
+        pd.DataFrame(),
+        pd.DataFrame({"regime": ["low"], "sharpe": [1.2], "sortino": [1.5], "max_dd": [-0.1], "n_obs": [20]}),
+        pd.DataFrame({"fold": [0], "pass": [True], "conc": [0.5], "kl": [0.1], "js": [0.05]}),
+        outputs_dir=tmp_path,
+    )
+
+    html_path = tmp_path / "report" / "final_report.html"
+    html = html_path.read_text(encoding="utf-8")
+    assert path == str(html_path)
+    assert "Final Results Ledger" in html
+    assert "Return distribution" in html
+    assert "<svg" in html
+    assert "tables/per_fold.csv" in html
+    assert "report/summary_report.md" in html
+    assert "const D =" not in html
 
 
 def test_load_run_outputs_treats_empty_csv_as_empty_dataframe(tmp_path):

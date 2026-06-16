@@ -122,6 +122,7 @@ def test_equity_strike_adjustment_split_fixture():
         "product_id": [500],
         "raw_close": [100.0],
         "adj_factor": [0.5],
+        "adj_factor_is_pit": [True],
         "price": [5.0],
         "strike": [100.0],
         "expiry": [pd.Timestamp("2024-03-01")],
@@ -137,6 +138,36 @@ def test_equity_strike_adjustment_split_fixture():
 
     assert df.loc[0, "underlying_price"] == 50.0
     assert df.loc[0, "strike"] == 50.0
+
+
+def test_equity_options_blocks_retro_adjustment_by_default():
+    """Retro provider factors must not feed option pricing unless explicitly PIT."""
+    from adapters.equity_options_adapter import EquityOptionsAdapter
+
+    raw = pd.DataFrame({
+        "as_of_date": [pd.Timestamp("2024-01-01")],
+        "product_id": [500],
+        "raw_close": [100.0],
+        "adj_factor": [0.5],
+        "adj_factor_is_pit": [False],
+        "price": [5.0],
+        "strike": [100.0],
+        "expiry": [pd.Timestamp("2024-03-01")],
+        "right": ["C"],
+        "iv_provided": [0.25],
+    })
+
+    df, _ = EquityOptionsAdapter({
+        "pricing_model": "bsm",
+        "iv_source": "provided",
+        "dte": {"basis": "calendar", "day_count": "act_365"},
+    }).prepare(raw)
+
+    assert df.loc[0, "underlying_price"] == 100.0
+    assert df.loc[0, "strike"] == 100.0
+    assert df.loc[0, "adjusted_price_provider"] == 50.0
+    assert df.loc[0, "strike_adjusted_provider"] == 50.0
+    assert bool(df.loc[0, "price_adjustment_warning"])
 
 
 def test_futures_options_identity_cols_set_to_full_contract_key():
@@ -194,3 +225,31 @@ def test_nested_options_config_is_normalized_before_adapter_math():
     assert adapter.cfg["n_folds"] == 3
     assert adapter.cfg["purge_bars"] == 7
     assert adapter.cfg["min_oi"] == 100
+
+
+def test_event_calendar_respects_available_at_lag(tmp_path):
+    """Event rows must not become known before their configured release lag."""
+    from adapters.futures_adapter import FuturesAdapter
+
+    event_file = tmp_path / "eia.csv"
+    event_file.write_text("date,event,impact\n2024-01-02,EIA,high\n", encoding="utf-8")
+    raw = pd.DataFrame({
+        "as_of_date": pd.to_datetime(["2024-01-02"]),
+        "available_at": pd.to_datetime(["2024-01-02T03:00:00Z"]),
+        "decision_time": pd.to_datetime(["2024-01-02T03:00:00Z"]),
+        "price": [80.0],
+    })
+
+    out = FuturesAdapter({
+        "event_calendars": [str(event_file)],
+        "available_at_lag": {"eia_inventory": "P5D"},
+    }).flag_scheduled_events(raw)
+
+    assert not bool(out.loc[0, "scheduled_event"])
+
+    out = FuturesAdapter({
+        "event_calendars": [str(event_file)],
+        "available_at_lag": {"eia_inventory": "0h"},
+    }).flag_scheduled_events(raw)
+
+    assert bool(out.loc[0, "scheduled_event"])

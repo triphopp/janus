@@ -22,6 +22,38 @@ def test_logical_bounds_flags_bad_price_volume_iv_and_strike():
     assert "strike<=0" in out.loc[3, "_bound_reason"]
 
 
+def test_logical_bounds_flags_option_premium_even_when_price_std_is_underlying():
+    df = pd.DataFrame({
+        "instrument_type": ["option", "option"],
+        "right": ["C", "P"],
+        "strike": [100.0, 100.0],
+        "option_price": [0.0, 2.0],
+        "price_std": [105.0, 95.0],
+        "F": [105.0, 95.0],
+        "T": [30 / 365, 30 / 365],
+        "r": [0.0, 0.0],
+    })
+
+    out = logical_bounds_check(df, {"price_col": "price_std"})
+
+    assert out.loc[0, "_bound_flag"]
+    assert "option_price<=0" in out.loc[0, "_bound_reason"]
+
+
+def test_logical_bounds_flags_crossed_bid_ask():
+    df = pd.DataFrame({
+        "price": [1.0, 1.0],
+        "bid": [1.2, 0.9],
+        "ask": [1.0, 1.1],
+    })
+
+    out = logical_bounds_check(df, {"price_col": "price"})
+
+    assert out.loc[0, "_bound_flag"]
+    assert "bid>ask" in out.loc[0, "_bound_reason"]
+    assert not out.loc[1, "_bound_flag"]
+
+
 def test_missing_completeness_flags_date_gap_and_low_oi():
     df = pd.DataFrame({
         "product_id": [1, 1, 1],
