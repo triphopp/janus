@@ -1,0 +1,52 @@
+# Data Contract — equity price bars (EQUITY_RAW_SCHEMA, bronze tier)
+# Used by: family equity, equity_options (provider: yfinance).
+# See docs: Memory/plans/data_ops_architecture.md §2.
+contract_id: equity_price
+version: 1
+tier: bronze
+
+enforcement: warn
+
+identity:
+  cols: [as_of_date, symbol]
+  key_round: {}
+
+structural:
+  columns:
+    as_of_date:   {dtype: "datetime64[ns]",      nullable: false}
+    available_at: {dtype: "datetime64[ns, UTC]", nullable: false}
+    ingested_at:  {dtype: "datetime64[ns, UTC]", nullable: false}
+    symbol:       {dtype: "string",  nullable: false}
+    raw_close:    {dtype: "float64", nullable: false}
+    adj_factor:   {dtype: "float64", nullable: false}
+    volume:       {dtype: "int64",   nullable: false}
+    is_delisted:  {dtype: "boolean", nullable: false}
+
+semantic:
+  - rule: "raw_close > 0"
+    reason: close_le_0
+  - rule: "adj_factor > 0"
+    reason: adj_factor_le_0
+  - rule: "volume >= 0"
+    reason: volume_lt_0
+
+pit:
+  as_of_col: as_of_date
+  available_col: available_at
+
+symbology:
+  enforce_no_orphans: false
+  key: symbol
+
+distributional:
+  - {col: raw_close, check: null_rate, max: 0.0}
+  - {col: volume, check: null_rate, max: 0.0}
+
+sla:
+  freshness: "equity close available within 3h of market close"
+  completeness: ">= 99% of trading days per symbol"
+
+owner: equity-data-ops
+breaking_change_policy: "version bump + consumer migration window"
+data_classification: vendor_licensed
+redistribution_allowed: false

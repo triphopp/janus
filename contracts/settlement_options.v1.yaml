@@ -1,0 +1,80 @@
+# Data Contract — settlement futures + options (RAW_SCHEMA, bronze tier)
+# Versioned producer↔consumer interface. Replaces column-only validate_schema.
+# Used by: family futures, futures_options (provider: settlement).
+# See docs: Memory/plans/data_ops_architecture.md §2.
+contract_id: settlement_options
+version: 1
+tier: bronze
+
+# enforcement: warn | block
+#   warn  → per-row failures still divert to quarantine, frame-level issues only logged
+#   block → frame-level structural/PIT failure raises (halts promotion)
+# P0 rollout default is warn so existing runs keep flowing; flip to block once
+# real data is contract-clean (see §13.12 acceptance criteria).
+enforcement: warn
+
+# Row identity (per family) — float keys snapped before any join/group/diff (§9).
+identity:
+  cols: [as_of_date, product_id, contract_root, hub, instrument_type, right, strike, delivery_month, expiry]
+  key_round:
+    strike: 6
+
+structural:
+  columns:
+    as_of_date:      {dtype: "datetime64[ns]",      nullable: false}
+    available_at:    {dtype: "datetime64[ns, UTC]", nullable: false}
+    ingested_at:     {dtype: "datetime64[ns, UTC]", nullable: false}
+    timestamp:       {dtype: "datetime64[ns, UTC]", nullable: true}
+    product_id:      {dtype: "int64",   nullable: false}
+    contract_root:   {dtype: "string",  nullable: false}
+    hub:             {dtype: "string",  nullable: true}
+    instrument_type: {dtype: "string",  nullable: false}
+    right:           {dtype: "string",  nullable: true}
+    strike:          {dtype: "float64", nullable: true,  key_round: 6}
+    delivery_month:  {dtype: "datetime64[ns]", nullable: false}
+    expiry:          {dtype: "datetime64[ns]", nullable: false}
+    price:           {dtype: "float64", nullable: false}
+    net_change:      {dtype: "float64", nullable: true}
+    iv_provided:     {dtype: "float64", nullable: true}
+    delta_provided:  {dtype: "float64", nullable: true}
+    provider:        {dtype: "string",  nullable: false}
+
+# Semantic rules — vectorized boolean expressions over columns.
+# Form: "ASSERT" or "ASSERT when CONDITION". Use | & == <= >= < > (.
+# A row failing ASSERT where CONDITION holds is diverted to quarantine.
+semantic:
+  - rule: "price > 0"
+    reason: price_le_0
+  - rule: "(strike > 0) when (instrument_type == 'option')"
+    reason: option_strike_le_0
+  - rule: "((right == 'C') | (right == 'P')) when (instrument_type == 'option')"
+    reason: option_right_invalid
+  - rule: "as_of_date <= expiry"
+    reason: as_of_after_expiry
+
+# Point-in-time — knowledge_time must not precede valid_time.
+# Handled in code (tz-aware available_at vs naive as_of_date) rather than as a
+# semantic rule, which would crash on the tz mismatch.
+pit:
+  as_of_col: as_of_date
+  available_col: available_at
+
+# Symbology — product_id must resolve in product_map (audit H2).
+symbology:
+  enforce_no_orphans: true
+  key: product_id
+
+# Distributional — frame-level drift / quality guards.
+# psi needs a reference vintage (P1 bitemporal store); marked not_evaluated until then.
+distributional:
+  - {col: price, check: null_rate, max: 0.0}
+  - {col: iv_provided, check: psi, ref: trailing_60d, threshold: 0.25}
+
+sla:
+  freshness: "settlement available within 4h of as_of_date close"
+  completeness: ">= 99% of expected contracts per as_of_date"
+
+owner: energy-data-ops
+breaking_change_policy: "version bump + consumer migration window"
+data_classification: vendor_licensed
+redistribution_allowed: false

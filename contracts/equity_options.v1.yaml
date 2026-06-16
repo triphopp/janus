@@ -1,0 +1,62 @@
+# Data Contract — equity option chain (bronze tier)
+# Used by: family equity_options (provider: yfinance option_chain snapshot, or vendor feed).
+# NOTE: yfinance returns a CURRENT snapshot only (no option history) — a single as_of_date.
+# The coverage SLA + min-sample gates will correctly flag such a snapshot as not backtestable.
+contract_id: equity_options
+version: 1
+tier: bronze
+
+enforcement: warn
+
+identity:
+  cols: [as_of_date, symbol, expiry, right, strike]
+  key_round:
+    strike: 4
+
+structural:
+  columns:
+    as_of_date:       {dtype: "datetime64[ns]",      nullable: false}
+    available_at:     {dtype: "datetime64[ns, UTC]", nullable: false}
+    ingested_at:      {dtype: "datetime64[ns, UTC]", nullable: false}
+    symbol:           {dtype: "string",  nullable: false}
+    expiry:           {dtype: "datetime64[ns]", nullable: false}
+    right:            {dtype: "string",  nullable: false}
+    strike:           {dtype: "float64", nullable: false}
+    price:            {dtype: "float64", nullable: false}
+    underlying_price: {dtype: "float64", nullable: false}
+    iv_provided:      {dtype: "float64", nullable: true}
+    volume:           {dtype: "int64",   nullable: true}
+    open_interest:    {dtype: "int64",   nullable: true}
+
+semantic:
+  - rule: "strike > 0"
+    reason: strike_le_0
+  - rule: "price >= 0"
+    reason: price_lt_0
+  - rule: "underlying_price > 0"
+    reason: underlying_le_0
+  - rule: "right in ['C', 'P']"
+    reason: bad_right
+  - rule: "expiry >= as_of_date"
+    reason: expiry_before_asof
+
+pit:
+  as_of_col: as_of_date
+  available_col: available_at
+
+symbology:
+  enforce_no_orphans: false
+  key: symbol
+
+distributional:
+  - {col: strike, check: null_rate, max: 0.0}
+  - {col: price, check: null_rate, max: 0.0}
+
+sla:
+  freshness: "option chain snapshot as of ingestion time"
+  completeness: "snapshot only — yfinance has no historical option chains"
+
+owner: equity-data-ops
+breaking_change_policy: "version bump + consumer migration window"
+data_classification: vendor_licensed
+redistribution_allowed: false
