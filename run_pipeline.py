@@ -11,13 +11,27 @@ Flow: ingestion → adapter → core[validators→stability→splitter→metrics
 import argparse
 import copy
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
+
+# Load .env from project root (stdlib — no python-dotenv needed)
+_env_file = Path(__file__).parent / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            _k = _k.strip()
+            _v = _v.strip().strip('"').strip("'")
+            if _k and _v and _k not in os.environ:
+                os.environ[_k] = _v
 
 # ── Ingestion ──
 from ingestion.settlement_loader import SettlementLoader
@@ -57,7 +71,7 @@ def load_config(instrument_name: str) -> dict:
     """
     inst_path = Path(f"configs/instruments/{instrument_name}.yaml")
     if inst_path.exists():
-        with open(inst_path) as f:
+        with open(inst_path, encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
     else:
         cfg = {
@@ -71,7 +85,7 @@ def load_config(instrument_name: str) -> dict:
     family = cfg.get("family", "equity")
     family_path = Path(f"configs/{family}.yaml")
     if family_path.exists():
-        with open(family_path) as f:
+        with open(family_path, encoding="utf-8") as f:
             defaults = yaml.safe_load(f)
         # Shallow merge — instrument overrides family
         for k, v in defaults.items():
@@ -153,6 +167,57 @@ def _stability_series(df: pd.DataFrame, value_col: str, date_col: str = "as_of_d
     if agg == "median":
         return grouped.median().sort_index()
     return grouped.mean().sort_index()
+
+
+def _return_distribution_payload(returns: pd.Series, max_bins: int = 48) -> dict:
+    """Compact histogram payload for interactive reports without embedding raw returns."""
+    r = pd.to_numeric(returns, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+    if len(r) < 2:
+        return {}
+
+    n = int(len(r))
+    bins = min(max_bins, max(12, int(np.sqrt(n))))
+    lo = float(r.min())
+    hi = float(r.max())
+    if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+        return {}
+
+    counts, edges = np.histogram(r.to_numpy(dtype=float), bins=bins)
+    hist_rows = []
+    cumulative = 0
+    for i, count in enumerate(counts):
+        left = float(edges[i])
+        right = float(edges[i + 1])
+        width = right - left
+        cumulative += int(count)
+        hist_rows.append({
+            "lo": left,
+            "hi": right,
+            "mid": (left + right) / 2.0,
+            "count": int(count),
+            "density": float(count / (n * width)) if width > 0 else 0.0,
+            "cum_pct": float(cumulative / n),
+        })
+
+    var_95 = float(r.quantile(0.05))
+    tail = r[r <= var_95]
+    return {
+        "kind": "empirical_histogram",
+        "n": n,
+        "bins": hist_rows,
+        "markers": {
+            "mean": float(r.mean()),
+            "median": float(r.median()),
+            "var_95": var_95,
+            "cvar_95": float(tail.mean()) if len(tail) else None,
+            "p01": float(r.quantile(0.01)),
+            "p05": var_95,
+            "p95": float(r.quantile(0.95)),
+            "p99": float(r.quantile(0.99)),
+            "min": lo,
+            "max": hi,
+        },
+    }
 
 
 def _fmt_float(value, digits: int = 4) -> str:
@@ -296,9 +361,20 @@ def _price_adjustment_summary(df: pd.DataFrame, cfg: dict) -> dict:
     warning_rows = int(warnings.sum())
     factor_row_count = int(factor_rows.sum())
     use_retro = bool(cfg.get("allow_retro_adjusted_prices", False))
+
+    # Dividend handling: returns carry a PIT total-return add-back when the adapter
+    # produced a `dividend` column. This is the correct, leak-free dividend treatment.
+    div_pit = "dividend_pit_applied" in df.columns and bool(_bool_series(df["dividend_pit_applied"]).any())
+    dividends = pd.to_numeric(df["dividend"], errors="coerce").fillna(0.0) if "dividend" in df.columns else pd.Series(dtype=float)
+    dividend_days = int((dividends > 0).sum()) if not dividends.empty else 0
+    total_dividend = float(dividends.sum()) if not dividends.empty else 0.0
+
     if warning_rows:
         status = "warning"
         policy = "retro_adjustment_blocked"
+    elif div_pit:
+        status = "pass"
+        policy = "dividend_total_return_pit"
     elif factor_row_count:
         status = "pass"
         policy = "adjustments_applied" if (use_retro or int(pit_rows.sum())) else "provider_factor_observed"
@@ -313,6 +389,9 @@ def _price_adjustment_summary(df: pd.DataFrame, cfg: dict) -> dict:
         "factor_rows": factor_row_count,
         "warning_rows": warning_rows,
         "pit_factor_rows": int(pit_rows.sum()),
+        "dividend_pit_applied": div_pit,
+        "dividend_days": dividend_days,
+        "total_dividend": round(total_dividend, 6),
         "allow_retro_adjusted_prices": use_retro,
         "adj_factor_min": float(factors.min()) if factors.notna().any() else None,
         "adj_factor_max": float(factors.max()) if factors.notna().any() else None,
@@ -444,20 +523,69 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         coverage_gate = {"status": "error", "error": str(exc)}
 
     # ── Phase 2: Adapter ──
+    frame_ingestion = raw_df.copy()  # post-bronze-gate provider input — CDC chain head
     adapter = get_adapter(cfg)
     df, core_cfg = adapter.prepare(raw_df)
     print(f"  Adapter ({cfg['family']}): {len(df)} rows prepared")
 
     # Audit: after adapter
     snap_adapter = aud.snapshot(df, "adapter", cfg, run_id)
-    frame_adapter = df.copy()  # CDC before-image (P2)
+    frame_adapter = df.copy()  # CDC: post-derive, pre-return-clip
+
+    # ── Return outlier policy (equity only) — separate CDC-visible stage ──
+    # apply_return_clip() is kept as the adapter hook name for compatibility, but
+    # the default policy is now tag-only. Derived winsorized returns are opt-in.
+    _apply_return_clip = getattr(adapter, "apply_return_clip", None)
+    if _apply_return_clip:
+        df = _apply_return_clip(df)
+        n_flagged = int(df.get("_return_outlier_flag", pd.Series(dtype=bool)).sum())
+        policy = core_cfg.get("return_action", cfg.get("return_action", "tag_only"))
+        print(f"  Return outliers (pit_mad/{policy}): {n_flagged} returns flagged")
+    frame_clipped = df.copy()  # CDC: post-return-clip, pre-validators
+
+    # ── Cross-provider validation (optional) ──
+    # When cross_validate.provider is set, fetch a second price series and mark
+    # any PIT-MAD return tags where both providers agree the move was genuine.
+    _cross_validate = cfg.get("cross_validate") or {}
+    _cv_provider = _cross_validate.get("provider", "")
+    if _cv_provider and _apply_return_clip:
+        n_flagged = int(df.get("_return_outlier_flag", pd.Series(dtype=bool)).sum())
+        if n_flagged > 0:
+            _sym = cfg.get("symbol", {}).get("ticker", "")
+            _agree_tol = float(_cross_validate.get("agree_tol", 0.02))
+            _val_df = pd.DataFrame()
+            if _cv_provider == "alphavantage" and _sym:
+                from ingestion import alphavantage_loader
+                _av_key = _cross_validate.get("api_key") or None
+                _val_df = alphavantage_loader.fetch(
+                    _sym, df["as_of_date"].min(), df["as_of_date"].max(),
+                    api_key=_av_key,
+                )
+            elif _cv_provider == "stooq" and _sym:
+                from ingestion import stooq_loader
+                _val_df = stooq_loader.fetch(_sym, df["as_of_date"].min(), df["as_of_date"].max())
+
+            if not _val_df.empty:
+                df = adapter.validate_clips(df, _val_df, agree_tol=_agree_tol)
+                n_validated = int(
+                    (df.get("_return_outlier_reason", pd.Series(dtype=str)) == "cross_provider_validated").sum()
+                )
+                n_conflict = int(
+                    df.get("_return_outlier_reason", pd.Series(dtype=str))
+                    .str.startswith("provider_conflict", na=False).sum()
+                )
+                print(f"  Cross-validate ({_cv_provider}): {n_validated} confirmed genuine, "
+                      f"{n_conflict} needs review")
+            else:
+                print(f"  Cross-validate ({_cv_provider}): fetch returned no data — tags unchanged")
 
     # ── Stage 1: Validators ──
     df = validators.logical_bounds_check(df, core_cfg)
     df = validators.missing_completeness(df, core_cfg)
     df = validators.outlier_cap(df, core_cfg)
-    print(f"  Stage 1 (validators): {df['_bound_flag'].sum()} bound flags, "
-          f"{df.get('_outlier_flag', pd.Series()).sum()} outliers capped")
+    n_outlier = int(df.get("_outlier_flag", pd.Series(dtype=bool)).sum())
+    print(f"  Stage 1 (validators): {int(df['_bound_flag'].sum())} bound flags, "
+          f"{n_outlier} price outliers capped")
 
     # Audit: after stage 1
     snap_v1 = aud.snapshot(df, "validators", cfg, run_id)
@@ -468,14 +596,40 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     cdc_summary = {"status": "not_run"}
     try:
         price_col = core_cfg.get("price_col", "price")
-        reason_maps = {
-            "adapter->validators": {
+
+        # Full mutation chain (docs/stage_chain_diff_redesign.md):
+        #   ingestion   → adapter      : derive price_std, returns, vol (schema_add)
+        #   adapter     → return_clip  : PIT-MAD return outlier tags / derived series
+        #   return_clip → validators   : MAD cap on price_std + bound/missing flags
+        # return_clip stage only injected when adapter has apply_return_clip.
+        reason_maps = {}
+        if _apply_return_clip:
+            reason_maps["adapter->return_clip"] = {
+                "return_winsorized": {"flag_col": "_return_outlier_flag", "reason": "pit_mad_derived"},
+                "_return_outlier_flag": {"reason": "pit_mad_outlier"},
+                "_return_outlier_reason": {"reason": "pit_mad_outlier"},
+                "_return_outlier_policy": {"reason": "outlier_policy"},
+                "_return_clip_lower": {"reason": "pit_mad_threshold"},
+                "_return_clip_upper": {"reason": "pit_mad_threshold"},
+                "_row_drop": {"reason": "return_clip_filter"},
+            }
+            reason_maps["return_clip->validators"] = {
                 price_col: {"flag_col": "_outlier_flag", "reason": "outlier_cap"},
                 "_row_drop": {"reason": "validator_or_filter"},
             }
-        }
+        else:
+            reason_maps["adapter->validators"] = {
+                price_col: {"flag_col": "_outlier_flag", "reason": "outlier_cap"},
+                "_row_drop": {"reason": "validator_or_filter"},
+            }
+
+        stage_frames: list = [("ingestion", frame_ingestion), ("adapter", frame_adapter)]
+        if _apply_return_clip:
+            stage_frames.append(("return_clip", frame_clipped))
+        stage_frames.append(("validators", df.copy()))
+
         cdc_records = cdc.diff_run(
-            [("adapter", frame_adapter), ("validators", df.copy())],
+            stage_frames,
             identity_cols=core_cfg.get("identity_cols"),
             reason_maps=reason_maps,
             run_id=run_id,
@@ -497,7 +651,8 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         }
         unattributed = sum(1 for r in cdc_records if r.reason == cdc.UNATTRIBUTED
                            and r.change_type == "cell_mod")
-        print(f"  CDC (adapter->validators): {len(cdc_records)} changes, "
+        hops = "->".join(s for s, _ in stage_frames)
+        print(f"  CDC ({hops}): {len(cdc_records)} changes, "
               f"{unattributed} UNATTRIBUTED, {cdc_summary['breaks']['total']} breaks")
     except Exception as exc:  # CDC is observability — never break the run
         cdc_summary = {"status": "error", "error": str(exc)}
@@ -592,6 +747,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
             "psi_iv": psi_iv,
             "iv_stats": iv_stats,
             "return_stats": return_stats,
+            "return_distribution": _return_distribution_payload(r),
             "input_grain": "date_mean",
             "psi_threshold": core_cfg.get("psi_threshold", 0.25),
         }
@@ -626,7 +782,11 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     # ── Stage 4: Metrics + Overfitting ──
     strategy_return_col = _strategy_return_col(df, core_cfg)
     strategy_metrics_available = strategy_return_col is not None
-    metrics_return_col = strategy_return_col or return_col
+    configured_metrics_col = core_cfg.get("metrics_return_col")
+    metrics_return_col = strategy_return_col or configured_metrics_col or return_col
+    if metrics_return_col not in df.columns and metrics_return_col != return_col:
+        print(f"  Stage 4: metrics_return_col={metrics_return_col!r} missing; falling back to {return_col!r}")
+        metrics_return_col = return_col
     metrics_input = "strategy_pnl" if strategy_metrics_available else "market_diagnostic"
 
     fold_returns = {}
@@ -675,6 +835,10 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     snap_v4 = aud.snapshot(df, "metrics", cfg, run_id)
     price_adjustments = _price_adjustment_summary(df, cfg)
     split_adjustments = _split_adjustment_summary(df)
+    _pa = price_adjustments
+    print(f"  Price adjustments: {_pa.get('status')} ({_pa.get('policy')}) — "
+          f"{_pa.get('warning_rows', 0)}/{_pa.get('rows', 0)} warning rows, "
+          f"{_pa.get('dividend_days', 0)} dividend day(s) folded into total return")
 
     # ── Write outputs ──
     outputs_root = Path("outputs")
@@ -717,6 +881,9 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "n_folds_passed": int(passed_folds),
         "stability_score": stab_score,
         "metrics_input": metrics_input,
+        "metrics_return_col": metrics_return_col,
+        "return_outlier_policy": core_cfg.get("return_action", cfg.get("return_action", "tag_only")),
+        "derived_return_col": core_cfg.get("derived_return_col", cfg.get("derived_return_col")),
         "strategy_metrics_available": bool(strategy_metrics_available),
         "strategy_return_col": strategy_return_col,
         "metric_warning": "; ".join(filter(None, [
