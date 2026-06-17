@@ -80,8 +80,9 @@ def test_write_summary_report_outputs_csv_json_and_markdown(tmp_path):
 def test_run_output_dir_is_named_for_human_navigation(tmp_path):
     path = run_output_dir(tmp_path, "run-01", "MSFT", "equity", "2024-01-01", "2024-12-31")
 
-    assert path.name == "run-01__MSFT__equity__2024-01-01_to_2024-12-31"
-    assert path.parent.name == "runs"
+    assert path.name == "run-01"
+    assert path.parent.name == "MSFT"
+    assert path.parent.parent.name == "runs"
 
 
 def test_write_html_report_outputs_academic_final_report(tmp_path):
@@ -101,12 +102,45 @@ def test_write_html_report_outputs_academic_final_report(tmp_path):
             "jarque_bera": {"is_normal": False, "jb_pval": 0.01, "skew": 0.2, "kurtosis": 4.0},
             "hurst": {"hurst": 0.5},
             "return_stats": {"mean": 0.001, "std": 0.01, "max_gain": 0.02, "max_loss": -0.03},
+            "return_distribution": {
+                "kind": "empirical_histogram",
+                "n": 20,
+                "markers": {
+                    "mean": 0.001,
+                    "median": 0.0005,
+                    "var_95": -0.02,
+                    "cvar_95": -0.025,
+                    "p01": -0.03,
+                    "p05": -0.02,
+                    "p95": 0.018,
+                    "p99": 0.02,
+                    "min": -0.03,
+                    "max": 0.02,
+                },
+                "bins": [
+                    {"lo": -0.03, "hi": -0.01, "mid": -0.02, "count": 3, "density": 7.5, "cum_pct": 0.15},
+                    {"lo": -0.01, "hi": 0.01, "mid": 0.0, "count": 12, "density": 30.0, "cum_pct": 0.75},
+                    {"lo": 0.01, "hi": 0.02, "mid": 0.015, "count": 5, "density": 25.0, "cum_pct": 1.0},
+                ],
+            },
             "iv_stats": {"null_pct": 0.0},
             "psi_returns": {"worst": {"psi": 0.1, "ks_stat": 0.2, "fold": 0}, "psi_threshold": 0.25},
         },
-        pd.DataFrame(),
+        pd.DataFrame(
+            {
+                "fold": [1],
+                "date_range": ["(Timestamp('2024-01-15'), Timestamp('2024-02-01'))"],
+                "total_return": [0.12],
+                "sharpe": [0.7],
+                "sortino": [1.1],
+                "max_dd": [-0.08],
+                "cvar_95": [-0.03],
+                "hit_rate": [0.55],
+                "worst_day": [-0.02],
+            }
+        ),
         pd.DataFrame({"regime": ["low"], "sharpe": [1.2], "sortino": [1.5], "max_dd": [-0.1], "n_obs": [20]}),
-        pd.DataFrame({"fold": [0], "pass": [True], "conc": [0.5], "kl": [0.1], "js": [0.05]}),
+        pd.DataFrame({"fold": [0, 1], "pass": [False, True], "conc": [0.9, 0.5], "kl": [0.8, 0.1], "js": [0.2, 0.05]}),
         outputs_dir=tmp_path,
     )
 
@@ -115,6 +149,16 @@ def test_write_html_report_outputs_academic_final_report(tmp_path):
     assert path == str(html_path)
     assert "Final Results Ledger" in html
     assert "Return distribution" in html
+    assert "data-dist-mode=\"cdf\"" in html
+    assert "return-dist-payload" in html
+    assert "Empirical daily-return histogram" in html
+    assert "dist-x-label" in html
+    assert "Fold diversity gate + return diagnostics" in html
+    assert "not strategy P&amp;L" in html
+    assert "2024-01-15 to 2024-02-01" in html
+    assert "12.00%" in html
+    assert "0.700" in html
+    assert "55.0%" in html
     assert "<svg" in html
     assert "tables/per_fold.csv" in html
     assert "report/summary_report.md" in html

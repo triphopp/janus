@@ -54,17 +54,35 @@ def run_output_dir(
     start: str,
     end: str,
 ) -> Path:
-    """Return the run-scoped output directory."""
-    return Path(outputs_dir) / "runs" / run_folder_name(run_id, instrument, family, start, end)
+    """Return the run-scoped output directory.
+
+    New layout: outputs/runs/{INSTRUMENT}/{run_id}/
+    Clean and grouped by symbol — no redundant metadata encoded in folder name.
+    """
+    return Path(outputs_dir) / "runs" / safe_path_part(instrument) / safe_path_part(run_id)
 
 
 def locate_run_output_dir(run_id: str, outputs_dir: str | Path = "outputs") -> Path:
-    """Find a run folder by run_id, falling back to legacy flat output layout."""
+    """Find a run folder by run_id.
+
+    Tries new layout (runs/{symbol}/{run_id}/) first, then falls back to
+    legacy flat layout (runs/{run_id}__*/) for existing runs.
+    """
     outputs_dir = Path(outputs_dir)
     runs_dir = outputs_dir / "runs"
     safe_run = safe_path_part(run_id)
     if runs_dir.exists():
-        matches = sorted(path for path in runs_dir.iterdir() if path.is_dir() and path.name.startswith(f"{safe_run}__"))
+        # New layout: runs/{symbol}/{run_id}
+        for candidate in runs_dir.iterdir():
+            if candidate.is_dir():
+                p = candidate / safe_run
+                if p.is_dir():
+                    return p
+        # Legacy layout: runs/{run_id}__*
+        matches = sorted(
+            path for path in runs_dir.iterdir()
+            if path.is_dir() and path.name.startswith(f"{safe_run}__")
+        )
         if matches:
             return matches[-1]
     return outputs_dir
@@ -564,6 +582,7 @@ def write_html_report(
     tables = build_summary_report(summary, per_fold, per_regime, diversity)
     stage_rows = _records(tables["stage_comparison"])
     flag_rows = _records(tables["calibration_flags"])
+    per_fold_rows = _records(per_fold) if per_fold is not None and not per_fold.empty else []
     regime_rows = _records(per_regime) if per_regime is not None and not per_regime.empty else []
     diversity_rows = _records(diversity) if diversity is not None and not diversity.empty else []
 
@@ -573,6 +592,7 @@ def write_html_report(
         stability_results=stability_results,
         stage_rows=stage_rows,
         flag_rows=flag_rows,
+        per_fold_rows=per_fold_rows,
         regime_rows=regime_rows,
         diversity_rows=diversity_rows,
     )
@@ -602,6 +622,84 @@ def _fmt_pct(value: Any, digits: int = 2) -> str:
         return f"{float(value) * 100:.{digits}f}%"
     except (TypeError, ValueError):
         return "-"
+
+
+def _fold_key(value: Any) -> str:
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    try:
+        as_float = float(value)
+        if math.isfinite(as_float) and as_float.is_integer():
+            return str(int(as_float))
+    except (TypeError, ValueError):
+        pass
+    return str(value)
+
+
+def _fold_window(value: Any) -> str:
+    try:
+        if pd.isna(value):
+            return "-"
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        return f"{_fold_window(value[0])} to {_fold_window(value[1])}"
+    text = str(value or "")
+    dates = re.findall(r"\d{4}-\d{2}-\d{2}", text)
+    if len(dates) >= 2:
+        return f"{dates[0]} to {dates[1]}"
+    if dates:
+        return dates[0]
+    return text or "-"
+
+
+def _fold_metric_table_rows(
+    per_fold_rows: list[dict[str, Any]],
+    diversity_rows: list[dict[str, Any]],
+) -> list[list[str]]:
+    metrics_by_fold = {_fold_key(row.get("fold")): row for row in per_fold_rows}
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for diversity_row in diversity_rows:
+        key = _fold_key(diversity_row.get("fold"))
+        merged = {**diversity_row, **metrics_by_fold.get(key, {})}
+        rows.append(merged)
+        seen.add(key)
+
+    for key, metric_row in metrics_by_fold.items():
+        if key not in seen:
+            rows.append(metric_row)
+
+    def sort_key(row: dict[str, Any]) -> tuple[int, float | str]:
+        key = _fold_key(row.get("fold"))
+        try:
+            return 0, float(key)
+        except ValueError:
+            return 1, key
+
+    rows = sorted(rows, key=sort_key)
+    return [
+        [
+            f'<span class="num">{_h(row.get("fold"))}</span>',
+            _badge("pass" if row.get("pass") else "fail") if "pass" in row else _badge("unknown"),
+            _h(_fold_window(row.get("date_range"))),
+            f'<span class="num">{_fmt_num(row.get("conc"), 3)}</span>',
+            f'<span class="num">{_fmt_num(row.get("kl"), 3)}</span>',
+            f'<span class="num">{_fmt_num(row.get("js"), 3)}</span>',
+            f'<span class="num">{_fmt_pct(row.get("total_return"), 2)}</span>',
+            f'<span class="num">{_fmt_num(row.get("sharpe"), 3)}</span>',
+            f'<span class="num">{_fmt_num(row.get("sortino"), 3)}</span>',
+            f'<span class="num">{_fmt_pct(row.get("max_dd"), 2)}</span>',
+            f'<span class="num">{_fmt_pct(row.get("cvar_95"), 2)}</span>',
+            f'<span class="num">{_fmt_pct(row.get("hit_rate"), 1)}</span>',
+            f'<span class="num">{_fmt_pct(row.get("worst_day"), 2)}</span>',
+        ]
+        for row in rows
+    ]
 
 
 def _status_class(value: Any) -> str:
@@ -654,11 +752,23 @@ def _as_float(value: Any) -> float | None:
     return out
 
 
-def _return_distribution_svg(return_stats: dict[str, Any]) -> str:
+def _format_axis_value(value: float, has_counts: bool) -> str:
+    if has_counts:
+        return f"{int(round(value)):,}"
+    if abs(value) >= 10:
+        return f"{value:.1f}"
+    return f"{value:.2f}"
+
+
+def _json_script_payload(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=True, allow_nan=False, separators=(",", ":")).replace("</", "<\\/")
+
+
+def _fallback_return_distribution(return_stats: dict[str, Any]) -> dict[str, Any]:
     mean = _as_float(return_stats.get("mean")) or 0.0
     std = _as_float(return_stats.get("std"))
     if std is None or std <= 0:
-        return '<p class="small">Return distribution graph unavailable because daily volatility is missing or zero.</p>'
+        return {}
 
     skew = _as_float(return_stats.get("skew")) or 0.0
     kurt = _as_float(return_stats.get("kurtosis"))
@@ -670,10 +780,6 @@ def _return_distribution_svg(return_stats: dict[str, Any]) -> str:
     if lo >= hi:
         lo, hi = mean - 4.0 * std, mean + 4.0 * std
 
-    width, height = 720, 260
-    left, right, top, bottom = 56, 20, 18, 42
-    plot_w = width - left - right
-    plot_h = height - top - bottom
     bins = 37
     dx = (hi - lo) / bins
 
@@ -681,69 +787,263 @@ def _return_distribution_svg(return_stats: dict[str, Any]) -> str:
         z = (x - mean) / std
         return math.exp(-0.5 * z * z) / (std * math.sqrt(2.0 * math.pi))
 
-    points: list[tuple[float, float, float]] = []
+    rows: list[dict[str, Any]] = []
+    cumulative = 0.0
     for i in range(bins):
-        x = lo + (i + 0.5) * dx
-        z = (x - mean) / std
-        base = normal_pdf(x)
+        left = lo + i * dx
+        right = left + dx
+        mid = (left + right) / 2.0
+        z = (mid - mean) / std
+        base = normal_pdf(mid)
         # Gram-Charlier moment fit: good for visual diagnostics, not a replacement for raw histograms.
         adjusted = base * (
             1.0
             + (skew / 6.0) * (z**3 - 3.0 * z)
             + (excess_kurt / 24.0) * (z**4 - 6.0 * z**2 + 3.0)
         )
-        points.append((x, base, max(0.0, adjusted)))
+        density = max(0.0, adjusted)
+        cumulative += density * dx
+        rows.append({
+            "lo": left,
+            "hi": right,
+            "mid": mid,
+            "count": None,
+            "density": density,
+            "cum_pct": min(1.0, max(0.0, cumulative)),
+        })
 
-    y_max = max(max(p[1], p[2]) for p in points) or 1.0
+    return {
+        "kind": "moment_fit_proxy",
+        "n": int(return_stats.get("n") or 0),
+        "bins": rows,
+        "markers": {
+            "mean": mean,
+            "median": None,
+            "var_95": None,
+            "cvar_95": None,
+            "p01": None,
+            "p05": None,
+            "p95": None,
+            "p99": None,
+            "min": max_loss,
+            "max": max_gain,
+        },
+    }
+
+
+def _return_distribution_panel(return_stats: dict[str, Any], distribution: dict[str, Any] | None = None) -> str:
+    payload = distribution if isinstance(distribution, dict) and distribution.get("bins") else None
+    if payload is None:
+        payload = _fallback_return_distribution(return_stats)
+    bins = payload.get("bins") if isinstance(payload, dict) else None
+    if not bins:
+        return '<p class="small">Return distribution graph unavailable because daily volatility is missing or zero.</p>'
+
+    mean = _as_float(return_stats.get("mean")) or _as_float((payload.get("markers") or {}).get("mean")) or 0.0
+    std = _as_float(return_stats.get("std"))
+    markers = payload.get("markers") or {}
+    has_counts = any(row.get("count") is not None for row in bins)
+    y_values = [
+        _as_float(row.get("count")) if has_counts else _as_float(row.get("density"))
+        for row in bins
+    ]
+    y_values = [v for v in y_values if v is not None and v >= 0]
+    y_max = max(y_values) if y_values else 1.0
+    if y_max <= 0:
+        y_max = 1.0
+
+    lo = min(float(row["lo"]) for row in bins)
+    hi = max(float(row["hi"]) for row in bins)
+    if lo >= hi:
+        return '<p class="small">Return distribution graph unavailable because return range is empty.</p>'
+
+    width, height = 760, 340
+    left, right, top, bottom = 64, 28, 24, 78
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+    base_y = top + plot_h
 
     def sx(x: float) -> float:
         return left + ((x - lo) / (hi - lo)) * plot_w
 
     def sy(y: float) -> float:
-        return top + plot_h - (y / y_max) * plot_h
+        return base_y - (max(0.0, y) / y_max) * plot_h
 
-    bar_gap = 2.0
-    bar_w = max(1.0, plot_w / bins - bar_gap)
     bars = []
-    for x, _, adjusted in points:
-        cx = sx(x)
-        y = sy(adjusted)
+    for idx, row in enumerate(bins):
+        row_lo = float(row["lo"])
+        row_hi = float(row["hi"])
+        value = _as_float(row.get("count")) if has_counts else _as_float(row.get("density"))
+        value = value or 0.0
+        x = sx(row_lo)
+        bar_w = max(1.0, sx(row_hi) - x - 1.5)
+        y = sy(value)
+        var_95 = _as_float(markers.get("var_95"))
+        tail_class = " dist-tail" if var_95 is not None and row_hi <= var_95 else ""
+        count_attr = "" if row.get("count") is None else str(int(row.get("count") or 0))
         bars.append(
-            f'<rect class="dist-bar" x="{cx - bar_w / 2:.2f}" y="{y:.2f}" '
-            f'width="{bar_w:.2f}" height="{top + plot_h - y:.2f}" />'
+            f'<rect class="dist-bar{tail_class}" tabindex="0" role="button" '
+            f'x="{x:.2f}" y="{y:.2f}" width="{bar_w:.2f}" height="{base_y - y:.2f}" '
+            f'data-index="{idx}" data-lo="{row_lo:.12g}" data-hi="{row_hi:.12g}" '
+            f'data-count="{count_attr}" data-density="{float(row.get("density") or 0.0):.12g}" '
+            f'data-cum="{float(row.get("cum_pct") or 0.0):.12g}" />'
         )
 
-    line_points = " ".join(f"{sx(x):.2f},{sy(base):.2f}" for x, base, _ in points)
+    normal_line = ""
+    if std is not None and std > 0:
+        bin_widths = [float(row["hi"]) - float(row["lo"]) for row in bins]
+        median_width = sorted(bin_widths)[len(bin_widths) // 2]
+        n_obs = _as_float(payload.get("n")) or _as_float(return_stats.get("n")) or 0.0
+
+        def normal_pdf(x: float) -> float:
+            z = (x - mean) / std
+            return math.exp(-0.5 * z * z) / (std * math.sqrt(2.0 * math.pi))
+
+        line_points = []
+        for i in range(80):
+            x_val = lo + (hi - lo) * i / 79
+            y_val = normal_pdf(x_val)
+            if has_counts and n_obs > 0:
+                y_val *= n_obs * median_width
+            line_points.append(f"{sx(x_val):.2f},{sy(y_val):.2f}")
+        normal_line = f'<polyline class="dist-normal" points="{" ".join(line_points)}" />'
+
+    def marker_line(name: str, label: str, class_name: str) -> str:
+        value = _as_float(markers.get(name))
+        if value is None or value < lo or value > hi:
+            return ""
+        x = sx(value)
+        return (
+            f'<line class="dist-marker {class_name}" x1="{x:.2f}" y1="{top}" x2="{x:.2f}" y2="{base_y}" />'
+            f'<text class="dist-marker-label {class_name}" x="{x:.2f}" y="{top - 7}" text-anchor="middle">{_h(label)}</text>'
+        )
+
     zero_x = sx(0.0) if lo <= 0.0 <= hi else None
-    mean_x = sx(mean)
-    ticks = [lo, mean, hi]
+    ticks = [lo, 0.0, hi] if zero_x is not None else [lo, mean, hi]
     tick_labels = "".join(
-        f'<g><line class="dist-tick" x1="{sx(t):.2f}" y1="{top + plot_h:.2f}" x2="{sx(t):.2f}" y2="{top + plot_h + 4:.2f}" />'
-        f'<text class="dist-text" x="{sx(t):.2f}" y="{height - 14}" text-anchor="middle">{_fmt_pct(t, 1)}</text></g>'
+        f'<g><line class="dist-tick" x1="{sx(t):.2f}" y1="{base_y:.2f}" x2="{sx(t):.2f}" y2="{base_y + 5:.2f}" />'
+        f'<text class="dist-text" x="{sx(t):.2f}" y="{base_y + 21:.2f}" text-anchor="middle">{_fmt_pct(t, 1)}</text></g>'
         for t in ticks
     )
     zero_line = (
-        f'<line class="dist-zero" x1="{zero_x:.2f}" y1="{top}" x2="{zero_x:.2f}" y2="{top + plot_h}" />'
+        f'<line class="dist-zero" x1="{zero_x:.2f}" y1="{top}" x2="{zero_x:.2f}" y2="{base_y}" />'
         if zero_x is not None
         else ""
     )
+    marker_lines = "".join([
+        marker_line("var_95", "VaR 5", "marker-var"),
+        marker_line("mean", "Mean", "marker-mean"),
+        marker_line("median", "Median", "marker-median"),
+    ])
+    source_text = "Empirical daily-return histogram" if payload.get("kind") == "empirical_histogram" else "Moment-fit proxy from summary statistics"
+    y_title = "Observations" if has_counts else "Density"
+    y_top = _format_axis_value(y_max, has_counts)
+    json_payload = _json_script_payload({
+        "hasCounts": has_counts,
+        "source": source_text,
+        "markers": markers,
+    })
+
+    def stat(label: str, value: Any) -> str:
+        return f'<div><span>{_h(label)}</span><strong class="num">{_fmt_pct(value, 2)}</strong></div>'
 
     return f"""
-<div class="dist-figure" role="img" aria-label="Return distribution graph">
+<div class="dist-figure" id="return-dist" data-mode="freq">
+  <div class="dist-toolbar">
+    <div class="dist-controls" aria-label="Return distribution controls">
+      <button type="button" class="dist-mode on" data-dist-mode="freq">Frequency</button>
+      <button type="button" class="dist-mode" data-dist-mode="cdf">CDF</button>
+    </div>
+    <div class="dist-readout" aria-live="polite">Hover or focus a bar to inspect that return bucket.</div>
+  </div>
   <svg class="dist-svg" viewBox="0 0 {width} {height}" preserveAspectRatio="xMidYMid meet">
-    <line class="dist-axis" x1="{left}" y1="{top + plot_h}" x2="{width - right}" y2="{top + plot_h}" />
-    <line class="dist-axis" x1="{left}" y1="{top}" x2="{left}" y2="{top + plot_h}" />
+    <line class="dist-axis" x1="{left}" y1="{base_y}" x2="{width - right}" y2="{base_y}" />
+    <line class="dist-axis" x1="{left}" y1="{top}" x2="{left}" y2="{base_y}" />
+    <text class="dist-text dist-y-label" x="{left - 48}" y="{top + 4}">{_h(y_title)}</text>
+    <text class="dist-text dist-y-top" x="{left - 8}" y="{top + 4}" text-anchor="end">{_h(y_top)}</text>
+    <text class="dist-text" x="{left - 8}" y="{base_y + 4}" text-anchor="end">0</text>
     {zero_line}
     {''.join(bars)}
-    <polyline class="dist-normal" points="{line_points}" />
-    <line class="dist-mean" x1="{mean_x:.2f}" y1="{top}" x2="{mean_x:.2f}" y2="{top + plot_h}" />
+    {normal_line}
+    {marker_lines}
     {tick_labels}
-    <text class="dist-text" x="{left}" y="12">Density</text>
-    <text class="dist-text" x="{width - right}" y="{height - 14}" text-anchor="end">Daily return</text>
+    <text class="dist-text dist-x-label" x="{left + plot_w / 2:.2f}" y="{height - 12}" text-anchor="middle">Daily return</text>
   </svg>
-  <div class="dist-legend"><span><i class="legend-bar"></i>moment-fit distribution</span><span><i class="legend-line"></i>normal reference</span><span><i class="legend-mean"></i>mean</span></div>
-  <p class="small">Moment-fit proxy from summary statistics; use prepared data for a raw-return histogram.</p>
-</div>"""
+  <div class="dist-legend"><span><i class="legend-bar"></i>{_h(source_text)}</span><span><i class="legend-tail"></i>left tail</span><span><i class="legend-line"></i>normal reference</span><span><i class="legend-mean"></i>mean / median / VaR</span></div>
+  <div class="dist-stats">
+    {stat("Mean", markers.get("mean"))}
+    {stat("Median", markers.get("median"))}
+    {stat("VaR 5%", markers.get("var_95"))}
+    {stat("CVaR 5%", markers.get("cvar_95"))}
+    {stat("P1", markers.get("p01"))}
+    {stat("P99", markers.get("p99"))}
+  </div>
+  <script type="application/json" id="return-dist-payload">{json_payload}</script>
+</div>
+<script>
+(function() {{
+  const root = document.getElementById("return-dist");
+  if (!root) return;
+  const bars = Array.from(root.querySelectorAll(".dist-bar"));
+  const readout = root.querySelector(".dist-readout");
+  const yLabel = root.querySelector(".dist-y-label");
+  const yTop = root.querySelector(".dist-y-top");
+  const normal = root.querySelector(".dist-normal");
+  const payloadNode = document.getElementById("return-dist-payload");
+  const payload = payloadNode ? JSON.parse(payloadNode.textContent || "{{}}") : {{}};
+  const baseY = {base_y:.6f};
+  const plotH = {plot_h:.6f};
+  function num(v) {{
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }}
+  function pct(v, digits = 2) {{
+    const n = num(v);
+    return n === null ? "-" : (n * 100).toFixed(digits) + "%";
+  }}
+  function axis(v, mode) {{
+    if (mode === "cdf") return pct(v, 0);
+    if (payload.hasCounts) return Math.round(v).toLocaleString();
+    return Number(v).toFixed(Math.abs(v) >= 10 ? 1 : 2);
+  }}
+  function valueFor(bar, mode) {{
+    if (mode === "cdf") return num(bar.dataset.cum) || 0;
+    return (payload.hasCounts ? num(bar.dataset.count) : num(bar.dataset.density)) || 0;
+  }}
+  function describe(bar) {{
+    const count = num(bar.dataset.count);
+    const density = num(bar.dataset.density);
+    const countText = count === null ? "density " + (density === null ? "-" : density.toFixed(3)) : count.toLocaleString() + " observations";
+    readout.textContent = pct(bar.dataset.lo) + " to " + pct(bar.dataset.hi) + ": " + countText + "; cumulative " + pct(bar.dataset.cum, 1);
+    bars.forEach(b => b.classList.toggle("selected", b === bar));
+  }}
+  function setMode(mode) {{
+    root.dataset.mode = mode;
+    const values = bars.map(bar => valueFor(bar, mode));
+    const max = Math.max(1e-12, ...values);
+    bars.forEach((bar, i) => {{
+      const h = (values[i] / max) * plotH;
+      bar.setAttribute("y", (baseY - h).toFixed(2));
+      bar.setAttribute("height", h.toFixed(2));
+    }});
+    if (yLabel) yLabel.textContent = mode === "cdf" ? "Cumulative share" : (payload.hasCounts ? "Observations" : "Density");
+    if (yTop) yTop.textContent = axis(max, mode);
+    if (normal) normal.style.display = mode === "cdf" ? "none" : "";
+    root.querySelectorAll("[data-dist-mode]").forEach(button => {{
+      button.classList.toggle("on", button.dataset.distMode === mode);
+    }});
+  }}
+  bars.forEach(bar => {{
+    bar.addEventListener("mouseenter", () => describe(bar));
+    bar.addEventListener("focus", () => describe(bar));
+    bar.addEventListener("click", () => describe(bar));
+  }});
+  root.querySelectorAll("[data-dist-mode]").forEach(button => {{
+    button.addEventListener("click", () => setMode(button.dataset.distMode));
+  }});
+  setMode("freq");
+}})();
+</script>"""
 
 
 def _guard_value(value: Any) -> tuple[str, str]:
@@ -759,6 +1059,7 @@ def _render_static_final_report(
     stability_results: dict[str, Any],
     stage_rows: list[dict[str, Any]],
     flag_rows: list[dict[str, Any]],
+    per_fold_rows: list[dict[str, Any]],
     regime_rows: list[dict[str, Any]],
     diversity_rows: list[dict[str, Any]],
 ) -> str:
@@ -854,10 +1155,19 @@ def _render_static_final_report(
         [_h(r.get("regime")), f'<span class="num">{_fmt_num(r.get("sharpe"), 3)}</span>', f'<span class="num">{_fmt_num(r.get("sortino"), 3)}</span>', f'<span class="num">{_fmt_pct(r.get("max_dd"), 2)}</span>', f'<span class="num">{_h(r.get("n_obs", r.get("n", "-")))}</span>']
         for r in regime_rows[:12]
     ]
-    diversity_table_rows = [
-        [f'<span class="num">{_h(r.get("fold"))}</span>', _badge("pass" if r.get("pass") else "fail"), f'<span class="num">{_fmt_num(r.get("conc"), 3)}</span>', f'<span class="num">{_fmt_num(r.get("kl"), 3)}</span>', f'<span class="num">{_fmt_num(r.get("js"), 3)}</span>']
-        for r in diversity_rows[:12]
-    ]
+    fold_metric_rows = _fold_metric_table_rows(per_fold_rows, diversity_rows)
+    regime_title = "Regime performance" if strategy_ready else "Regime return diagnostics"
+    regime_note = (
+        "First 12 regime rows."
+        if strategy_ready
+        else "First 12 regime rows from market returns; not strategy P&L."
+    )
+    fold_title = "Fold diversity gate + performance" if strategy_ready else "Fold diversity gate + return diagnostics"
+    fold_note = (
+        "Validation-period strategy metrics by fold. Blank metric cells mean the fold failed the gate or had no usable return series."
+        if strategy_ready
+        else "Validation-period market-return diagnostics by fold. Blank metric cells mean the fold failed the gate or had no usable return series."
+    )
     distribution = ''.join([
         _box(5, '<h2>Distribution shift</h2>' + _kv([
             ("Return PSI", f'<span class="num">{_fmt_num(psi_value, 4)}</span> {_badge("pass" if psi_value is not None and float(psi_value) <= float(psi_threshold) else "fail" if psi_value is not None else "unknown", "below threshold" if psi_value is not None and float(psi_value) <= float(psi_threshold) else "above threshold" if psi_value is not None else "unknown")}'),
@@ -865,9 +1175,19 @@ def _render_static_final_report(
             ("KS statistic", f'<span class="num">{_fmt_num(worst_psi.get("ks_stat") if isinstance(worst_psi, dict) else None, 4)}</span>'),
             ("Worst fold", f'<span class="num">{_h(worst_psi.get("fold", "-") if isinstance(worst_psi, dict) else "-")}</span>'),
         ])),
-        _box(7, '<h2>Regime performance</h2><p class="small">First 12 regime rows.</p>' + _table(["Regime", "Sharpe", "Sortino", "Max DD", "N"], regime_table_rows)),
-        _box(12, '<h2>Return distribution</h2>' + _return_distribution_svg(ret)),
-        _box(12, '<h2>Fold diversity gate</h2>' + _table(["Fold", "Pass", "Concentration", "KL", "JS"], diversity_table_rows)),
+        _box(7, f'<h2>{_h(regime_title)}</h2><p class="small">{_h(regime_note)}</p>' + _table(["Regime", "Sharpe", "Sortino", "Max DD", "N"], regime_table_rows)),
+        _box(12, '<h2>Return distribution</h2>' + _return_distribution_panel(ret, st.get("return_distribution"))),
+        _box(
+            12,
+            f'<h2>{_h(fold_title)}</h2>'
+            f'<p class="small">{_h(fold_note)}</p>'
+            '<div class="table-scroll fold-metrics">'
+            + _table(
+                ["Fold", "Gate", "Window", "Conc", "KL", "JS", "Total Ret", "Sharpe", "Sortino", "Max DD", "CVaR 95", "Hit Rate", "Worst Day"],
+                fold_metric_rows,
+            )
+            + '</div>',
+        ),
     ])
 
     flags = _box(12, '<h2>Calibration flags</h2>' + _table(
@@ -911,6 +1231,8 @@ def _render_static_final_report(
   th { text-align:left; border-bottom:1px solid var(--rule-strong); padding:5px 6px; }
   td { border-bottom:1px solid var(--rule); padding:5px 6px; vertical-align:top; overflow-wrap:anywhere; word-break:break-word; }
   tr:last-child td { border-bottom:0; }
+  .table-scroll { overflow-x:auto; }
+  .fold-metrics table { min-width:1120px; }
   .num,.mono { font-family:var(--mono); overflow-wrap:anywhere; word-break:break-word; }
   .ledger { display:grid; grid-template-columns:190px minmax(0,1fr); border-top:1px solid var(--rule); }
   .ledger div { padding:5px 6px; border-bottom:1px solid var(--rule); min-width:0; overflow-wrap:anywhere; }
@@ -918,20 +1240,38 @@ def _render_static_final_report(
   .status { display:inline-block; font-family:var(--sans); font-size:10px; font-weight:700; border:1px solid currentColor; padding:1px 6px; border-radius:2px; white-space:nowrap; }
   .ok{color:var(--ok)}.warn{color:var(--warn)}.fail{color:var(--fail)}.info{color:var(--info)}
   .dist-figure { margin-top:3px; }
+  .dist-toolbar { display:flex; align-items:center; gap:10px; justify-content:space-between; flex-wrap:wrap; margin:2px 0 8px; }
+  .dist-controls { display:flex; gap:6px; }
+  .dist-mode { font-family:var(--sans); font-size:11px; border:1px solid var(--rule-strong); background:transparent; color:var(--ink); padding:3px 8px; cursor:pointer; }
+  .dist-mode.on { background:var(--ink); color:var(--paper); }
+  .dist-readout { font-family:var(--mono); font-size:11px; color:var(--muted); min-height:18px; flex:1; text-align:right; }
   .dist-svg { display:block; width:100%; height:auto; border:1px solid var(--rule); background:#fffdf8; }
-  .dist-bar { fill:#c9b98d; opacity:.62; }
+  .dist-bar { fill:#c9b98d; opacity:.72; cursor:pointer; outline:none; transition:opacity .12s ease, fill .12s ease; }
+  .dist-bar:hover,.dist-bar:focus,.dist-bar.selected { fill:#315f8c; opacity:.88; }
+  .dist-tail { fill:#d9a65f; }
   .dist-normal { fill:none; stroke:#315f8c; stroke-width:2; stroke-dasharray:6 5; }
-  .dist-mean { stroke:#9b2f2f; stroke-width:1.5; }
+  .dist-marker { stroke-width:1.4; stroke-dasharray:3 4; }
+  .marker-mean { stroke:#9b2f2f; fill:#9b2f2f; }
+  .marker-median { stroke:#1f6f50; fill:#1f6f50; }
+  .marker-var { stroke:#986b13; fill:#986b13; }
+  .dist-marker-label { font-family:var(--mono); font-size:9px; }
   .dist-zero { stroke:#8f8778; stroke-width:1; stroke-dasharray:2 4; }
   .dist-axis,.dist-tick { stroke:#6d6860; stroke-width:1; }
   .dist-text { fill:#6d6860; font-family:var(--mono); font-size:10px; }
+  .dist-y-label { font-family:var(--sans); font-size:9px; text-transform:uppercase; letter-spacing:.04em; }
+  .dist-x-label { font-family:var(--sans); font-size:10px; text-transform:uppercase; letter-spacing:.04em; }
   .dist-legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:6px; font-family:var(--sans); font-size:11px; color:var(--muted); }
   .dist-legend i { display:inline-block; width:16px; height:8px; margin-right:5px; vertical-align:middle; }
   .legend-bar { background:#c9b98d; opacity:.62; }
+  .legend-tail { background:#d9a65f; opacity:.78; }
   .legend-line { border-top:2px dashed #315f8c; height:0 !important; }
-  .legend-mean { border-top:2px solid #9b2f2f; height:0 !important; }
+  .legend-mean { border-top:2px dashed #9b2f2f; height:0 !important; }
+  .dist-stats { display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:1px; margin-top:8px; border:1px solid var(--rule); background:var(--rule); }
+  .dist-stats div { background:rgba(255,255,255,.38); padding:6px 8px; min-width:0; }
+  .dist-stats span { display:block; font-family:var(--sans); font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .dist-stats strong { display:block; margin-top:1px; font-size:12px; overflow-wrap:anywhere; }
   .footer { margin-top:18px; padding-top:8px; border-top:1px solid var(--rule); font-size:10px; color:var(--muted); display:flex; justify-content:space-between; gap:12px; }
-  @media(max-width:820px){.inner{padding:20px 16px 24px}.masthead{grid-template-columns:1fr}.run-stamp{text-align:left;white-space:normal}.span-3,.span-4,.span-5,.span-6,.span-7{grid-column:span 12}}
+  @media(max-width:820px){.inner{padding:20px 16px 24px}.masthead{grid-template-columns:1fr}.run-stamp{text-align:left;white-space:normal}.span-3,.span-4,.span-5,.span-6,.span-7{grid-column:span 12}.dist-readout{text-align:left;flex-basis:100%}.dist-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media print{body{background:white}.sheet{width:100%;margin:0;box-shadow:none;border:0}.inner{padding:18mm}}
 """
     return f"""<!DOCTYPE html>

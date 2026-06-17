@@ -33,6 +33,7 @@ def _blank(rid: str) -> dict:
     return {
         "run_id": rid,
         "created_at": None,
+        "date_range": None,
         "symbol": None,
         "instrument": None,
         "family": None,
@@ -43,6 +44,8 @@ def _blank(rid: str) -> dict:
         "n_rows": None,
         "n_folds": None,
         "n_folds_passed": None,
+        "metrics_input": None,
+        "strategy_metrics_available": None,
         "sharpe_mean": None,
         "changes": 0,
         "unattributed": 0,
@@ -58,6 +61,7 @@ def _blank(rid: str) -> dict:
         "adjustment_status": "not_applicable",
         "adjustment_max_abs_price_diff": None,
         "price_adjustments": None,
+        "has_report": False,
     }
 
 
@@ -139,9 +143,15 @@ def scan_runs() -> list[dict]:
                      sev_high=h, sev_medium=mday, sev_low=low)
 
     # 4. run summaries (instrument/family/stability) — keyed by their own run_id.
-    # Two layouts: legacy top-level outputs/<rid>_summary.json AND the current
-    # per-run outputs/runs/<rid>__.../summary.json. Glob both or Sharpe shows blank.
-    summary_paths = list(OUTPUTS.glob("*_summary.json")) + list(OUTPUTS.glob("runs/*/summary.json"))
+    # Three layouts supported:
+    #   legacy:   outputs/<rid>_summary.json
+    #   old flat: outputs/runs/<rid>__.../summary.json
+    #   new:      outputs/runs/<SYMBOL>/<rid>/summary.json
+    summary_paths = (
+        list(OUTPUTS.glob("*_summary.json"))
+        + list(OUTPUTS.glob("runs/*/summary.json"))       # old flat: runs/{rid}__*/
+        + list(OUTPUTS.glob("runs/*/*/summary.json"))     # new:      runs/{symbol}/{rid}/
+    )
     for sp in summary_paths:
         s = _read_json(sp)
         if not s:
@@ -150,9 +160,12 @@ def scan_runs() -> list[dict]:
         r = runs.setdefault(rid, _blank(rid))
         r["instrument"] = s.get("instrument")
         r["family"] = s.get("family")
+        r["date_range"] = s.get("date_range")
         r["n_rows"] = s.get("n_rows_prepared") or s.get("n_rows_raw")
         r["n_folds"] = s.get("n_folds")
         r["n_folds_passed"] = s.get("n_folds_passed")
+        r["metrics_input"] = s.get("metrics_input")
+        r["strategy_metrics_available"] = s.get("strategy_metrics_available")
         ss = s.get("stability_score") or {}
         r["sharpe_mean"] = ss.get("sharpe_mean")
         _apply_price_adjustments(r, s.get("price_adjustments"))
@@ -161,9 +174,13 @@ def scan_runs() -> list[dict]:
 
     # Older runs do not have price_adjustments in summary.json. Read only the
     # needed prepared.csv columns so the dashboard still exposes adjustment drift.
+    # Also mark runs that have a final_report.html.
     for rid, r in runs.items():
         if r.get("price_adjustments") is None:
             _apply_price_adjustments(r, _load_price_adjustments_from_prepared(rid))
+        d = find_run_dir(rid)
+        if d is not None:
+            r["has_report"] = (d / "report" / "final_report.html").exists()
 
     rows = list(runs.values())
     rows.sort(key=lambda x: (x.get("created_at") or "", x["run_id"]), reverse=True)
@@ -176,8 +193,38 @@ def run_detail(run_id: str) -> Optional[dict]:
             r = dict(r)
             r["breaks"] = load_breaks(run_id)
             r["changes_sample"] = _changes_sample(run_id)
+            r["stage_hops"] = _stage_hops(run_id)
+            tagged = load_tagged_return_outliers(run_id)
+            r["tagged_return_outliers"] = tagged["rows"]
+            r["tagged_return_outlier_summary"] = tagged["summary"]
             return r
     return None
+
+
+def _stage_hops(run_id: str) -> list[dict]:
+    """Per stage-transition rollup over the FULL ledger — feeds the dashboard stage strip.
+
+    One entry per consecutive hop (ingestion→adapter, adapter→validators, ...) in first-
+    seen order, so the UI can show which step each change came from.
+    """
+    order: list[str] = []
+    by_hop: dict[str, dict] = {}
+    for d in _iter_jsonl(DIFF_DIR / f"{run_id}_changes.jsonl"):
+        hop = f"{d.get('stage_from')}->{d.get('stage_to')}"
+        slot = by_hop.get(hop)
+        if slot is None:
+            slot = {"stage_from": d.get("stage_from"), "stage_to": d.get("stage_to"),
+                    "changes": 0, "cell_mod": 0, "schema_add": 0, "schema_drop": 0,
+                    "row_add": 0, "row_drop": 0, "unattributed": 0}
+            by_hop[hop] = slot
+            order.append(hop)
+        slot["changes"] += 1
+        ct = d.get("change_type")
+        if ct in slot:
+            slot[ct] += 1
+        if d.get("reason") == _cdc.UNATTRIBUTED:
+            slot["unattributed"] += 1
+    return [by_hop[h] for h in order]
 
 
 def _changes_sample(run_id: str, limit: int = 200) -> list[dict]:
@@ -226,7 +273,17 @@ def break_trend() -> list[dict]:
 def find_run_dir(run_id: str) -> Optional[Path]:
     if not RUNS_DIR.exists():
         return None
-    hits = sorted(RUNS_DIR.glob(f"{run_id}__*"))
+    exact = RUNS_DIR / run_id
+    if exact.is_dir():
+        return exact
+
+    # New layout: outputs/runs/{SYMBOL}/{run_id}
+    hits = sorted(path for path in RUNS_DIR.glob(f"*/{run_id}") if path.is_dir())
+    if hits:
+        return hits[0]
+
+    # Legacy flat layout: outputs/runs/{run_id}__{SYMBOL}__...
+    hits = sorted(path for path in RUNS_DIR.glob(f"{run_id}__*") if path.is_dir())
     return hits[0] if hits else None
 
 
@@ -315,6 +372,155 @@ def _load_price_adjustments_from_prepared(run_id: str) -> Optional[dict]:
         "adj_factor_max": float(factors.max()) if factors.notna().any() else None,
         "max_abs_price_std_vs_provider_adjusted": float(diff.max()) if not diff.empty else None,
         "mean_abs_price_std_vs_provider_adjusted": float(diff.mean()) if not diff.empty else None,
+    }
+
+
+def load_raw_row(run_id: str, symbol: str, as_of_date: str) -> Optional[dict]:
+    """Return raw-source fields for one (symbol, date) row from prepared data.
+
+    Prefer parquet (faster) over CSV. Date matching uses date-part only so
+    timezone offsets in the CDC key (e.g. 2022-05-18T00:00:00-04:00) don't
+    cause a miss.
+    """
+    import math
+
+    d = find_run_dir(run_id)
+    if d is None:
+        return None
+    pq = d / "data" / "prepared.parquet"
+    csv = d / "data" / "prepared.csv"
+    if pq.exists():
+        df = pd.read_parquet(pq)
+    elif csv.exists():
+        df = pd.read_csv(csv)
+    else:
+        return None
+
+    if "as_of_date" not in df.columns or "symbol" not in df.columns:
+        return None
+
+    date_part = str(as_of_date)[:10]
+    df["_date_str"] = pd.to_datetime(df["as_of_date"], utc=True).dt.date.astype(str)
+    mask = (df["symbol"].astype(str) == symbol) & (df["_date_str"] == date_part)
+    rows = df[mask]
+    if rows.empty:
+        return None
+
+    raw = rows.iloc[0]
+    wanted = [
+        "raw_close", "raw_close_unadj", "adj_factor", "adj_factor_source",
+        "adj_factor_is_pit", "provider", "price_std", "adjusted_price_provider",
+        "price_adjustment_warning", "return_raw", "return_std", "return_winsorized",
+        "_return_outlier_flag", "_return_outlier_reason", "_return_outlier_policy",
+        "_return_outlier_evidence", "_return_clip_lower", "_return_clip_upper",
+        "_return_validation_status",
+        "_bound_flag", "_bound_reason", "_outlier_flag",
+    ]
+    out: dict = {}
+    for f in wanted:
+        if f not in raw.index:
+            continue
+        v = raw[f]
+        if hasattr(v, "item"):
+            v = v.item()
+        try:
+            if math.isnan(v) or math.isinf(v):
+                v = None
+        except (TypeError, ValueError):
+            pass
+        if v is pd.NA or (isinstance(v, float) and v != v):
+            v = None
+        out[f] = v
+    return out
+
+
+def load_tagged_return_outliers(run_id: str, limit: int = 200) -> dict:
+    """Return rows with return outlier tags for reviewer follow-up."""
+    import math
+
+    d = find_run_dir(run_id)
+    if d is None:
+        return {"summary": {"total": 0, "shown": 0}, "rows": []}
+    pq = d / "data" / "prepared.parquet"
+    csv = d / "data" / "prepared.csv"
+    if pq.exists():
+        try:
+            df = pd.read_parquet(pq)
+        except Exception:
+            return {"summary": {"total": 0, "shown": 0}, "rows": []}
+    elif csv.exists():
+        wanted = {
+            "as_of_date", "symbol", "raw_close", "price_std",
+            "return_raw", "return_std", "return_winsorized",
+            "_return_outlier_flag", "_return_outlier_reason", "_return_outlier_policy",
+            "_return_outlier_evidence", "_return_clip_lower", "_return_clip_upper",
+            "_return_validation_status",
+        }
+        try:
+            df = pd.read_csv(csv, usecols=lambda c: c in wanted)
+        except Exception:
+            return {"summary": {"total": 0, "shown": 0}, "rows": []}
+    else:
+        return {"summary": {"total": 0, "shown": 0}, "rows": []}
+
+    if "_return_outlier_flag" not in df.columns:
+        return {"summary": {"total": 0, "shown": 0}, "rows": []}
+
+    mask = _bool_series(df["_return_outlier_flag"])
+    tagged = df[mask].copy()
+    total = int(len(tagged))
+    if total == 0:
+        return {"summary": {"total": 0, "shown": 0}, "rows": []}
+
+    if "return_raw" in tagged.columns:
+        tagged["_abs_return_sort"] = pd.to_numeric(tagged["return_raw"], errors="coerce").abs()
+        tagged = tagged.sort_values("_abs_return_sort", ascending=False, na_position="last")
+
+    def _counts(col: str) -> dict:
+        if col not in tagged.columns:
+            return {}
+        return {
+            str(k): int(v)
+            for k, v in tagged[col].fillna("").astype(str).value_counts().items()
+            if str(k)
+        }
+
+    fields = [
+        "as_of_date", "symbol", "raw_close", "price_std",
+        "return_raw", "return_std", "return_winsorized",
+        "_return_outlier_reason", "_return_outlier_policy", "_return_outlier_evidence",
+        "_return_clip_lower", "_return_clip_upper", "_return_validation_status",
+    ]
+    rows = []
+    for _, raw in tagged.head(limit).iterrows():
+        out = {}
+        for f in fields:
+            if f not in raw.index:
+                continue
+            v = raw[f]
+            if hasattr(v, "item"):
+                v = v.item()
+            if f == "as_of_date" and v is not None:
+                v = str(v)
+            try:
+                if math.isnan(v) or math.isinf(v):
+                    v = None
+            except (TypeError, ValueError):
+                pass
+            if v is pd.NA or (isinstance(v, float) and v != v):
+                v = None
+            out[f] = v
+        rows.append(out)
+
+    return {
+        "summary": {
+            "total": total,
+            "shown": len(rows),
+            "by_policy": _counts("_return_outlier_policy"),
+            "by_status": _counts("_return_validation_status"),
+            "by_reason": _counts("_return_outlier_reason"),
+        },
+        "rows": rows,
     }
 
 
