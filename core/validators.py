@@ -184,28 +184,48 @@ def outlier_cap(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     if not cap_mask.any() and "instrument_type" not in df.columns:
         cap_mask = pd.Series(True, index=df.index)
 
-    # Per-product rolling MAD outlier detection (PIT: expanding window)
+    # Per-instrument rolling MAD outlier detection (PIT: expanding window).
+    # Prefer product_id (futures/options), fall back to symbol (equity), then treat
+    # the entire frame as a single series. The original code only handled product_id,
+    # leaving equity frames with zero outlier detection (silent dead-code path).
     work = df[cap_mask]
-    if "product_id" in work.columns:
-        for pid, grp_idx in work.groupby("product_id").groups.items():
-            idx = list(grp_idx)
-            if "as_of_date" in df.columns:
-                idx = df.loc[idx].sort_values("as_of_date").index.tolist()
-            else:
-                idx = sorted(idx)
-            series = df.loc[idx, price_col]
-            # Expanding window median + MAD
-            rolling_median = series.expanding(min_periods=20).median()
-            rolling_mad = (series - rolling_median).abs().expanding(min_periods=20).median()
-            threshold = k * rolling_mad * 1.4826  # MAD → std conversion
-            upper = rolling_median + threshold
-            lower = rolling_median - threshold
-            outliers = (series > upper) | (series < lower)
-            df.loc[outliers[outliers].index, "_outlier_flag"] = True
-            # Cap
-            df.loc[outliers[outliers].index, price_col] = df.loc[
-                outliers[outliers].index
-            ].apply(lambda r: np.clip(r[price_col], lower[r.name], upper[r.name]), axis=1)
+    group_col = next(
+        (c for c in ("product_id", "symbol") if c in work.columns), None
+    )
+
+    def _cap_series(idx: list) -> None:
+        """Apply expanding-window MAD clip to one instrument's price series."""
+        if "as_of_date" in df.columns:
+            idx = df.loc[idx].sort_values("as_of_date").index.tolist()
+        else:
+            idx = sorted(idx)
+        series = df.loc[idx, price_col]
+        rolling_median = series.expanding(min_periods=20).median()
+        rolling_mad = (series - rolling_median).abs().expanding(min_periods=20).median()
+        threshold = k * rolling_mad * 1.4826      # MAD → std conversion
+        upper = rolling_median + threshold
+        lower = rolling_median - threshold
+        outliers = (series > upper) | (series < lower)
+        hit = outliers[outliers].index
+        df.loc[hit, "_outlier_flag"] = True
+        df.loc[hit, price_col] = df.loc[hit].apply(
+            lambda r: np.clip(r[price_col], lower[r.name], upper[r.name]), axis=1
+        )
+
+    # Equity frames use non-stationary price levels — expanding median on a trending
+    # stock (e.g. TSLA 3× rally) anchors to early-year prices, clipping genuine
+    # late-year highs as false outliers. Return-level clipping (stationary) is already
+    # handled upstream by EquityAdapter._pit_mad_clip. Skip here for equity frames only;
+    # futures/options (product_id present) use price-level MAD on stationary spreads.
+    if group_col == "symbol" and "product_id" not in work.columns:
+        return df
+
+    if group_col is not None:
+        for _gid, grp_idx in work.groupby(group_col).groups.items():
+            _cap_series(list(grp_idx))
+    elif len(work) > 0:
+        # No identity column — treat whole frame as one series (single-instrument file)
+        _cap_series(work.index.tolist())
 
     return df
 

@@ -123,6 +123,49 @@ def test_missing_completeness_option_chain_no_false_duplicate():
     )
 
 
+def test_outlier_cap_skips_price_level_mad_for_equity_frames():
+    """Equity frames (symbol present, no product_id) must not clip price_std.
+
+    Trending equities produce false outliers when expanding median anchors to
+    early low prices. Returns are tagged by EquityAdapter._pit_mad_clip instead.
+    """
+    import pandas as pd
+
+    # Simulate TSLA-style 3× rally: 45 bars at ~53, then genuine high at 166.
+    dates = pd.date_range("2020-01-02", periods=46, freq="B")
+    prices = [53.0] * 45 + [166.11]
+    df = pd.DataFrame({
+        "symbol": ["TSLA"] * 46,
+        "as_of_date": dates,
+        "price_std": prices,
+    })
+
+    out = outlier_cap(df, {"price_col": "price_std", "outlier_k": 5.0})
+
+    assert not out["_outlier_flag"].any(), (
+        "Equity price levels must not be MAD-clipped; expanding median wrongly "
+        "flags genuine trending prices as outliers"
+    )
+    assert out.loc[45, "price_std"] == 166.11, "Genuine high-price row must not be capped"
+
+
+def test_outlier_cap_still_clips_futures_price_levels():
+    """Futures frames (product_id present) must still run price-level MAD."""
+    import pandas as pd
+
+    base = [100.0] * 45
+    df = pd.DataFrame({
+        "product_id": [42] * 46,
+        "as_of_date": pd.date_range("2024-01-02", periods=46, freq="B"),
+        "price": base + [1000.0],
+    })
+
+    out = outlier_cap(df, {"price_col": "price", "outlier_k": 3.0})
+
+    assert out.loc[45, "_outlier_flag"], "Spike in futures price series must be clipped"
+    assert out.loc[45, "price"] < 1000.0
+
+
 def test_outlier_cap_skips_option_rows():
     """outlier_cap must not include option rows in the price-series MAD.
     Option rows carry broadcast underlying prices, not per-contract series."""

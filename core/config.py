@@ -20,6 +20,7 @@ def normalize_config(cfg: dict | None) -> dict:
     performance = out.get("performance") or {}
     columns = out.get("columns") or {}
     stability = out.get("stability") or {}
+    outlier_policy = out.get("outlier_policy") or {}
 
     _setdefault_from(out, "pricing_model", pricing, "model")
     for key in (
@@ -60,6 +61,9 @@ def normalize_config(cfg: dict | None) -> dict:
 
     for key in ("price_col", "vol_col", "return_col"):
         _setdefault_from(out, key, columns, key)
+
+    for key in ("return_action", "derived_return_col", "metrics_return_col"):
+        _setdefault_from(out, key, outlier_policy, key)
 
     return out
 

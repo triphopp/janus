@@ -23,6 +23,14 @@ validation:
   min_volume: 10000
   outlier_k: 5.0
 
+outlier_policy:
+  # Statistical outliers are not proof of bad data. By default Janus tags them
+  # and preserves return_raw/return_std. Use derive_winsorized to create a
+  # separate model-safe series without mutating canonical returns.
+  return_action: tag_only
+  derived_return_col: return_winsorized
+  metrics_return_col: return_std
+
 stability:
   psi_threshold: 0.25
   use_iv_change: true
@@ -46,3 +54,14 @@ audit:
   snapshot_cols: [as_of_date, symbol, price_std, return_std, vol_std]
   hash_algo: xxh64
   retain_days: 30
+
+# Cross-provider validation — fetch a free second source to confirm outlier clips.
+# When both providers agree a return was large → genuine event, clip is reversed.
+# agree_tol: max absolute return difference to count as agreement (0.02 = 2%)
+# Disable by removing this section or setting provider to null.
+cross_validate:
+  provider: alphavantage
+  agree_tol: 0.02
+  # api_key: YOUR_KEY_HERE   ← or set env var ALPHA_VANTAGE_API_KEY
+  # Free tier: 25 req/day at https://www.alphavantage.co/support/#api-key
+  # Set provider: stooq to disable (Stooq is currently blocked by Cloudflare)
