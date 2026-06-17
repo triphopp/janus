@@ -44,6 +44,7 @@ class ChangeRecord:
     reason: Optional[str] = None
     reason_flag_col: Optional[str] = None
     run_id: Optional[str] = None
+    sample_count: Optional[int] = None   # schema_add: non-null count of the new column
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -129,12 +130,19 @@ def diff_frames(
     tol = tol or {}
     records: list[ChangeRecord] = []
 
-    # schema changes
+    # schema changes — a derived column shows up here, not as cell_mod, because the
+    # adapter ADDS price_std rather than mutating raw_close in place. Enrich the add with
+    # a representative value + non-null count so it reads "price_std appeared = 95.21"
+    # instead of a bare "column added" (data_diff_design / stage_chain_diff_redesign).
     before_cols, after_cols = set(before.columns), set(after.columns)
     for col in sorted(after_cols - before_cols):
-        records.append(ChangeRecord(stage_from, stage_to, "schema_add", column=col, run_id=run_id))
+        sample, count = _first_sample(after[col])
+        records.append(ChangeRecord(stage_from, stage_to, "schema_add", column=col,
+                                    after=sample, sample_count=count, run_id=run_id))
     for col in sorted(before_cols - after_cols):
-        records.append(ChangeRecord(stage_from, stage_to, "schema_drop", column=col, run_id=run_id))
+        sample, count = _first_sample(before[col])
+        records.append(ChangeRecord(stage_from, stage_to, "schema_drop", column=col,
+                                    before=sample, sample_count=count, run_id=run_id))
 
     key_cols = _resolve_identity_cols(after, identity_cols)
     if not key_cols:
@@ -187,6 +195,18 @@ def _drop_reason(reason_map: Optional[dict]) -> Optional[str]:
     if reason_map and "_row_drop" in reason_map:
         return reason_map["_row_drop"].get("reason")
     return None
+
+
+def _first_sample(series: pd.Series) -> tuple[object, int]:
+    """First non-null value of a column + its non-null count, JSON-safe.
+
+    Used to give schema_add/schema_drop records a concrete value to display so a
+    derived column is legible as a before/after, not just a name.
+    """
+    clean = series.dropna()
+    count = int(len(clean))
+    sample = _jsonable(clean.iloc[0]) if count else None
+    return sample, count
 
 
 def _delta_pct(before, after):

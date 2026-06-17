@@ -115,7 +115,7 @@ _HTML = r"""<!doctype html>
  <label class="tog"><input id="issues" type="checkbox"> important only</label>
  <div class="resultline"><span id="n" class="count">0</span> rows shown</div>
 </div>
-<div class="panel"><div class="tablewrap"><table id="t"><thead><tr><th>Change</th><th>Field</th><th>Row key</th><th>Before → After</th><th>Delta</th><th>Reason</th></tr></thead><tbody></tbody></table></div></div>
+<div class="panel"><div class="tablewrap"><table id="t"><thead><tr><th>Change</th><th>Stage</th><th>Field</th><th>Row key</th><th>Before → After</th><th>Delta</th><th>Reason</th></tr></thead><tbody></tbody></table></div></div>
 <div class="breaks"><h2>Breaks <span id="nb" class="count">0</span></h2><div class="panel"><div class="tablewrap"><table id="bt"><thead><tr><th>Break</th><th>Severity</th><th>Type</th><th>Stage</th><th>Field</th><th>Before → After</th><th>Status</th></tr></thead><tbody></tbody></table></div></div></div>
 </div>
 <script>
@@ -189,8 +189,9 @@ function render(){
   const cls=c.change_type;
   const rc=c.reason==='UNATTRIBUTED'?'UNATTRIBUTED':'';
   const change='<div class="changebox"><span class="val before">'+val(c.before)+'</span><span class="arr">→</span><span class="val after">'+val(c.after)+'</span></div>';
-  return '<tr class="'+cls+'"><td><span class="type">'+typeLabel(c.change_type)+'</span></td><td class="field">'+val(c.column)+'</td><td>'+keyHtml(c.key)+'</td><td>'+change+'</td><td>'+delta(c)+'</td><td>'+(c.reason?'<span class="reason '+rc+'">'+esc(c.reason)+'</span>':'<span class="muted">—</span>')+'</td></tr>';
- }).join(''):'<tr><td colspan="6" class="empty">No rows match the current filters.</td></tr>';
+  const stg='<span class="kchip">'+esc(c.stage_from)+' → '+esc(c.stage_to)+'</span>';
+  return '<tr class="'+cls+'"><td><span class="type">'+typeLabel(c.change_type)+'</span></td><td>'+stg+'</td><td class="field">'+val(c.column)+'</td><td>'+keyHtml(c.key)+'</td><td>'+change+'</td><td>'+delta(c)+'</td><td>'+(c.reason?'<span class="reason '+rc+'">'+esc(c.reason)+'</span>':'<span class="muted">—</span>')+'</td></tr>';
+ }).join(''):'<tr><td colspan="7" class="empty">No rows match the current filters.</td></tr>';
 }
 ['stage','type','col','reason','minabs','issues','q','sort'].forEach(id=>$(id).addEventListener('input',render));
 $('nb').textContent=BREAKS.length;
