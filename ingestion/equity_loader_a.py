@@ -100,6 +100,16 @@ class EquityLoaderA(ProviderBase):
         df["raw_close_unadj"] = df["raw_close"] * df["split_factor"]
         df["split_ratio"] = split_ratio.to_numpy()
 
+        # ── Cash dividend on this row's ex-date ──
+        # actions=True gives a "Dividends" column: the cash dividend per share with
+        # ex-date == this bar. It is on the SAME split-adjusted scale as Close, so it
+        # lines up with raw_close. Known on the ex-date itself → PIT-safe to fold into
+        # the return on day t (no look-ahead). The adapter does the add-back.
+        if "Dividends" in df.columns:
+            df["dividend"] = pd.to_numeric(df["Dividends"], errors="coerce").fillna(0.0)
+        else:
+            df["dividend"] = 0.0
+
         # Standardize output
         out = pd.DataFrame({
             "as_of_date":  pd.to_datetime(df["as_of_date"]),
@@ -108,6 +118,7 @@ class EquityLoaderA(ProviderBase):
             "raw_close_unadj": df["raw_close_unadj"],  # true traded price (level-correct)
             "split_factor": df["split_factor"],        # retroactive split adj == future-only
             "split_ratio":  df["split_ratio"],         # split ratio on this row's ex-date
+            "dividend":    df["dividend"],             # cash div on ex-date (PIT total-return)
             "adj_factor":  df["adj_factor"],
             "adj_factor_source": adj_factor_source,
             "adj_factor_is_pit": False,
