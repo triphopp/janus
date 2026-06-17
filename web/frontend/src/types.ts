@@ -1,0 +1,149 @@
+export type Severity = "high" | "medium" | "low" | string;
+export type BreakStatus =
+  | "DETECTED"
+  | "TRIAGED"
+  | "ESCALATED"
+  | "ACKNOWLEDGED"
+  | "AUTO_RESOLVED"
+  | "CLOSED"
+  | string;
+
+export type RunRow = {
+  run_id: string;
+  created_at?: string | null;
+  date_range?: [string, string] | string[] | null;
+  symbol?: string | null;
+  instrument?: string | null;
+  family?: string | null;
+  code_version?: string | null;
+  config_hash?: string | null;
+  knowledge_cutoff?: string | null;
+  n_rows?: number | null;
+  metrics_input?: string | null;
+  strategy_metrics_available?: boolean | null;
+  sharpe_mean?: number | null;
+  changes: number;
+  unattributed: number;
+  breaks_total: number;
+  breaks_open: number;
+  sev_high: number;
+  sev_medium: number;
+  sev_low: number;
+  has_diff: boolean;
+  has_report: boolean;
+  adjustment_warning_rows?: number | null;
+  adjustment_factor_rows?: number | null;
+  adjustment_policy?: string | null;
+  adjustment_status?: string | null;
+  adjustment_max_abs_price_diff?: number | null;
+  price_adjustments?: Record<string, unknown> | null;
+};
+
+export type FleetSummary = {
+  n_runs: number;
+  total_changes: number;
+  total_unattributed: number;
+  total_adjustment_warnings: number;
+  breaks_total: number;
+  breaks_open: number;
+  sev_high: number;
+};
+
+export type RunsResponse = {
+  summary: FleetSummary;
+  runs: RunRow[];
+};
+
+export type TrendDay = {
+  day: string;
+  high: number;
+  medium: number;
+  low: number;
+  total: number;
+};
+
+export type BreakHistoryEntry = {
+  to_status: BreakStatus;
+  actor_id?: string | null;
+  actor_role?: string | null;
+  at?: string | null;
+  reason_code?: string | null;
+  note?: string | null;
+  prev_hash?: string | null;
+  entry_hash?: string | null;
+};
+
+export type BreakRow = {
+  run_id: string;
+  break_id: string;
+  detected_at?: string | null;
+  severity: Severity;
+  status: BreakStatus;
+  type?: string | null;
+  stage?: string | null;
+  stage_from?: string | null;
+  stage_to?: string | null;
+  field?: string | null;
+  before?: unknown;
+  after?: unknown;
+  delta?: unknown;
+  key?: Record<string, unknown> | null;
+  history?: BreakHistoryEntry[];
+  chain_valid?: boolean;
+  lineage_impact?: string[];
+};
+
+export type BreaksResponse = {
+  n: number;
+  breaks: BreakRow[];
+};
+
+export type ChangeRecord = {
+  stage_from?: string | null;
+  stage_to?: string | null;
+  change_type?: string | null;
+  column?: string | null;
+  reason?: string | null;
+  before?: unknown;
+  after?: unknown;
+  delta?: unknown;
+  key?: Record<string, unknown> | null;
+};
+
+export type StageHop = {
+  stage_from?: string | null;
+  stage_to?: string | null;
+  changes: number;
+  cell_mod: number;
+  schema_add: number;
+  row_add: number;
+  row_drop: number;
+  unattributed: number;
+};
+
+export type TaggedOutlier = {
+  as_of_date?: string | null;
+  symbol?: string | null;
+  return_raw?: number | null;
+  return_std?: number | null;
+  return_winsorized?: number | null;
+  _return_outlier_policy?: string | null;
+  _return_validation_status?: string | null;
+  _return_outlier_reason?: string | null;
+};
+
+export type RunDetail = RunRow & {
+  breaks: BreakRow[];
+  changes_sample: ChangeRecord[];
+  stage_hops: StageHop[];
+  tagged_return_outliers: TaggedOutlier[];
+  tagged_return_outlier_summary?: {
+    total?: number;
+    shown?: number;
+    by_policy?: Record<string, number>;
+    by_status?: Record<string, number>;
+    by_reason?: Record<string, number>;
+  };
+};
+
+export type RawRow = Record<string, unknown>;

@@ -1,10 +1,10 @@
-"""Launch the live data-ops dashboard.
+"""Launch the live data-ops dashboard API and built React app.
 
-  python run_dashboard.py                 # → http://127.0.0.1:8800
+  python run_dashboard.py                 # -> http://127.0.0.1:8800
   python run_dashboard.py --port 9000 --reload
 
-Reads outputs/ live on every request — no build step, no DB. Start a pipeline run in
-another terminal and refresh; the new run shows up.
+The dashboard UI is built from web/frontend. Run `npm run build` there before
+starting this server. API reads outputs/ live on every request; no DB.
 """
 
 import argparse
@@ -18,7 +18,7 @@ def main():
     ap.add_argument("--port", type=int, default=8800)
     ap.add_argument("--reload", action="store_true")
     a = ap.parse_args()
-    print(f"Janus dashboard -> http://{a.host}:{a.port}")
+    print(f"Janus dashboard API + React app -> http://{a.host}:{a.port}")
     uvicorn.run("web.dashboard:app", host=a.host, port=a.port, reload=a.reload)
 
 

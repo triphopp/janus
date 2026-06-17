@@ -11,12 +11,14 @@ dist/
 venv/
 env/
 .codex_pydeps/
+node_modules/
 
 # Test caches
 .pytest_cache/
 .pytest_tmp/
 .coverage
 htmlcov/
+*.tsbuildinfo
 
 # Codex / editor
 .codex/
