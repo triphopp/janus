@@ -51,6 +51,7 @@ from core import validators, stability as stab, splitter as spl
 from core import metrics, overfitting as ovf, regime, audit as aud
 from core import attribution as attr
 from core import reporting
+from core import data_quality as dq
 from core import contracts as contracts_mod
 from core import manifest as manifest_mod
 from core import cdc
@@ -148,6 +149,30 @@ def get_adapter(cfg: dict):
         raise ValueError(f"Unknown family: {family}")
 
 
+def _assert_family_schema(cfg: dict, df: pd.DataFrame) -> None:
+    """Catch obvious family/data-file mismatches before adapter-specific math."""
+    family = cfg.get("family", "equity")
+    cols = set(df.columns)
+    if "as_of_date" not in cols and "date" not in cols:
+        raise ValueError(f"{family} input missing required date column: as_of_date/date")
+
+    def require_any(names: tuple[str, ...], context: str) -> None:
+        if not any(name in cols for name in names):
+            raise ValueError(
+                f"{family} input missing required {context} column; expected one of: "
+                f"{', '.join(names)}"
+            )
+
+    if family == "equity":
+        require_any(("raw_close", "close", "price"), "price")
+    elif family == "futures":
+        require_any(("price", "raw_close", "settlement"), "settlement price")
+    elif family in {"equity_options", "futures_options"}:
+        missing = [col for col in ("expiry", "right", "strike", "price") if col not in cols]
+        if missing:
+            raise ValueError(f"{family} input is not an option chain; missing: {', '.join(missing)}")
+
+
 def _stability_series(df: pd.DataFrame, value_col: str, date_col: str = "as_of_date", agg: str = "mean") -> pd.Series:
     """Build a date-grain stability series without arbitrary first-row dedupe."""
     if value_col not in df.columns:
@@ -168,6 +193,71 @@ def _stability_series(df: pd.DataFrame, value_col: str, date_col: str = "as_of_d
     if agg == "median":
         return grouped.median().sort_index()
     return grouped.mean().sort_index()
+
+
+def _date_grain_regime_labels(
+    df: pd.DataFrame,
+    labels: pd.Series,
+    date_col: str = "as_of_date",
+) -> pd.Series:
+    """Collapse row-grain regime labels to one label per decision date."""
+    if labels is None or labels.empty:
+        return pd.Series(dtype=object)
+    if date_col not in df.columns:
+        return labels
+
+    aligned = labels.reindex(df.index)
+    tmp = pd.DataFrame({
+        date_col: pd.to_datetime(df[date_col]),
+        "regime": aligned,
+    }).dropna()
+    if tmp.empty:
+        return pd.Series(dtype=object)
+
+    def _mode_or_first(series: pd.Series):
+        mode = series.mode(dropna=True)
+        if not mode.empty:
+            return mode.iloc[0]
+        return series.iloc[0]
+
+    return tmp.groupby(date_col)["regime"].agg(_mode_or_first).sort_index()
+
+
+def _annotate_fold_metrics(
+    per_fold: pd.DataFrame,
+    diversity: pd.DataFrame,
+    fold_ids: list[int],
+    *,
+    missing_reason: str | None = None,
+) -> pd.DataFrame:
+    """Attach fold-gate metadata while keeping every walk-forward fold visible."""
+    if not fold_ids:
+        return per_fold
+
+    out = per_fold.copy() if per_fold is not None else pd.DataFrame()
+    if "fold" not in out.columns:
+        out["fold"] = pd.Series(dtype=int)
+
+    present = set(pd.to_numeric(out["fold"], errors="coerce").dropna().astype(int))
+    missing_rows = [{"fold": fid, "skip_reason": missing_reason or "no_metric_observations"} for fid in fold_ids if fid not in present]
+    if missing_rows:
+        out = pd.concat([out, pd.DataFrame(missing_rows)], ignore_index=True, sort=False)
+
+    out["fold"] = pd.to_numeric(out["fold"], errors="coerce").astype("Int64")
+    if diversity is not None and not diversity.empty and "fold" in diversity.columns:
+        div_cols = [col for col in ("fold", "pass", "unseen", "conc", "kl", "js") if col in diversity.columns]
+        div = diversity[div_cols].copy()
+        div["fold"] = pd.to_numeric(div["fold"], errors="coerce").astype("Int64")
+        div = div.rename(columns={"pass": "diversity_pass"})
+        out = out.merge(div, on="fold", how="left")
+        failed = out["diversity_pass"].eq(False)
+        no_reason = out.get("skip_reason", pd.Series("", index=out.index)).fillna("").eq("")
+        out.loc[failed & no_reason, "skip_reason"] = "diversity_gate_failed"
+    else:
+        out["diversity_pass"] = pd.NA
+
+    out["fold"] = out["fold"].astype(int)
+    return out.sort_values("fold").reset_index(drop=True)
 
 
 def _return_distribution_payload(returns: pd.Series, max_bins: int = 48) -> dict:
@@ -556,6 +646,8 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     except Exception as exc:  # SLA gate is observability — never break the run
         coverage_gate = {"status": "error", "error": str(exc)}
 
+    _assert_family_schema(cfg, raw_df)
+
     # ── Phase 2: Adapter ──
     frame_ingestion = raw_df.copy()  # post-bronze-gate provider input — CDC chain head
     adapter = get_adapter(cfg)
@@ -620,6 +712,18 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     n_outlier = int(df.get("_outlier_flag", pd.Series(dtype=bool)).sum())
     print(f"  Stage 1 (validators): {int(df['_bound_flag'].sum())} bound flags, "
           f"{n_outlier} price outliers capped")
+
+    data_quality = dq.build_scorecard(
+        df,
+        cfg,
+        contract_gate=contract_gate,
+        coverage_gate=coverage_gate,
+    )
+    dq.enforce_scorecard(data_quality)
+    print(
+        f"  Data quality: {data_quality['status'].upper()} "
+        f"(worst={data_quality['worst_dimension']}, enforcement={data_quality['enforcement']})"
+    )
 
     # Audit: after stage 1
     snap_v1 = aud.snapshot(df, "validators", cfg, run_id)
@@ -819,36 +923,61 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     # ── Stage 4: Metrics + Overfitting ──
     strategy_return_col = _strategy_return_col(df, core_cfg)
     strategy_metrics_available = strategy_return_col is not None
+    metrics_mode = str(core_cfg.get("metrics_mode", cfg.get("metrics_mode", "auto")))
     configured_metrics_col = core_cfg.get("metrics_return_col")
-    metrics_return_col = strategy_return_col or configured_metrics_col or return_col
-    if metrics_return_col not in df.columns and metrics_return_col != return_col:
+    metrics_skipped_reason = None
+    if metrics_mode == "strategy_required" and not strategy_metrics_available:
+        metrics_return_col = None
+        metrics_input = "strategy_required_missing"
+        metrics_skipped_reason = (
+            "metrics_mode=strategy_required but no strategy/P&L return column is present"
+        )
+        print(f"  Stage 4: SKIPPED - {metrics_skipped_reason}")
+    else:
+        metrics_return_col = strategy_return_col or configured_metrics_col or return_col
+        metrics_input = "strategy_pnl" if strategy_metrics_available else "market_diagnostic"
+
+    if metrics_return_col and metrics_return_col not in df.columns and metrics_return_col != return_col:
         print(f"  Stage 4: metrics_return_col={metrics_return_col!r} missing; falling back to {return_col!r}")
         metrics_return_col = return_col
-    metrics_input = "strategy_pnl" if strategy_metrics_available else "market_diagnostic"
 
-    fold_returns = {}
-    if metrics_return_col in df.columns:
+    all_fold_returns = {}
+    metrics_regime_labels = _date_grain_regime_labels(df, regime_labels)
+    if metrics_return_col and metrics_return_col in df.columns:
         for i, (tr, va) in enumerate(folds):
-            if i not in diversity[diversity["pass"]].index:
-                continue
             fold_df = df.iloc[va]
             r = _stability_series(fold_df, metrics_return_col, agg="mean")
             if r.dropna().empty:
                 continue
-            fold_returns[i] = r
+            all_fold_returns[i] = r
 
-    per_fold = metrics.per_fold_breakdown(fold_returns, regime_labels)
-    if metrics_return_col in df.columns:
-        per_regime = metrics.per_regime_breakdown(df[metrics_return_col], regime_labels)
+    passed_fold_ids = set(
+        pd.to_numeric(diversity.loc[diversity["pass"], "fold"], errors="coerce").dropna().astype(int)
+    ) if "pass" in diversity.columns and "fold" in diversity.columns else set()
+    passed_fold_returns = {
+        fid: returns for fid, returns in all_fold_returns.items() if fid in passed_fold_ids
+    }
+    per_fold_all = metrics.per_fold_breakdown(all_fold_returns, metrics_regime_labels)
+    per_fold_passed = metrics.per_fold_breakdown(passed_fold_returns, metrics_regime_labels)
+    per_fold = _annotate_fold_metrics(
+        per_fold_all,
+        diversity,
+        list(range(len(folds))),
+        missing_reason=metrics_skipped_reason,
+    )
+    if metrics_return_col and metrics_return_col in df.columns:
+        all_regime_returns = _stability_series(df, metrics_return_col, agg="mean")
+        per_regime = metrics.per_regime_breakdown(all_regime_returns, metrics_regime_labels)
     else:
         per_regime = pd.DataFrame()
-    stab_score = metrics.stability_score(per_fold)
+    stab_score = metrics.stability_score(per_fold_all)
+    passed_stab_score = metrics.stability_score(per_fold_passed)
 
     # Min-sample floor: a Sharpe computed on a handful of points is noise, not signal.
     # Below the floor, refuse to report it instead of printing a misleading 3.5.
     MIN_METRIC_SAMPLES = int(core_cfg.get("min_metric_samples", 60))
     sample_warning = None
-    if metrics_return_col in df.columns:
+    if metrics_return_col and metrics_return_col in df.columns:
         all_r = _stability_series(df, metrics_return_col, agg="mean").dropna()
         n_obs = len(all_r)
         if 0 < n_obs < MIN_METRIC_SAMPLES:
@@ -917,7 +1046,10 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "n_folds": len(folds),
         "n_folds_passed": int(passed_folds),
         "stability_score": stab_score,
+        "passed_stability_score": passed_stab_score,
+        "fold_metric_scope": "all_folds",
         "metrics_input": metrics_input,
+        "metrics_mode": metrics_mode,
         "metrics_return_col": metrics_return_col,
         "return_outlier_policy": core_cfg.get("return_action", cfg.get("return_action", "tag_only")),
         "derived_return_col": core_cfg.get("derived_return_col", cfg.get("derived_return_col")),
@@ -925,7 +1057,8 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "strategy_return_col": strategy_return_col,
         "metric_warning": "; ".join(filter(None, [
             sample_warning,
-            None if strategy_metrics_available else
+            metrics_skipped_reason,
+            None if strategy_metrics_available or metrics_input != "market_diagnostic" else
             "Stage 4 used market return diagnostics because strategy P&L/return data is absent.",
         ])) or None,
         "sample_floor_breached": bool(sample_warning),
@@ -943,6 +1076,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "contract_gate": contract_gate,
         "coverage_gate": coverage_gate,
         "quarantine": quarantine_summary,
+        "data_quality": data_quality,
         "cdc": cdc_summary,
         "lineage_purge": lineage_purge,
         "data_cache_mode": cache_mode,

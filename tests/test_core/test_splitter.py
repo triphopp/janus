@@ -88,6 +88,21 @@ class TestNoLookAhead:
 
         assert unique_dates.get_loc(val_start) - unique_dates.get_loc(max_train) >= 2
 
+    def test_max_dte_fallback_clamps_to_available_dates(self):
+        """Fallback path should not let max_dte erase every training fold."""
+        df = pd.DataFrame({"as_of_date": pd.date_range("2024-01-01", periods=12, freq="B")})
+        cfg = {
+            "n_folds": 2,
+            "date_col": "as_of_date",
+            "purge_bars": "max_dte",
+            "_max_dte": 90,
+            "event_embargo_bars": 1,
+        }
+
+        folds = purge_embargo(walk_forward_split(df, cfg), df, cfg)
+
+        assert folds
+
 
 class TestDiversityGate:
     """Regime diversity gate — KL + JS."""

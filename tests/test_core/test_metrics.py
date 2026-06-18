@@ -79,6 +79,50 @@ class TestPerRegimeBreakdown:
         assert set(result["regime"]) == {"calm", "stress"}
         assert set(result["n_obs"]) == {6}
 
+    def test_breakdown_compounds_each_date_once_when_chain_rows_are_collapsed(self):
+        """Pipeline callers should pass date-grain returns, not row-grain option chains."""
+        from run_pipeline import _date_grain_regime_labels, _stability_series
+
+        dates = pd.date_range("2024-01-01", periods=6)
+        daily_returns = pd.Series([0.01, 0.02, -0.01, 0.005, 0.0, 0.003], index=dates)
+        df = pd.DataFrame({
+            "as_of_date": np.repeat(dates, 4),
+            "return_std": np.repeat(daily_returns.to_numpy(), 4),
+            "strike": list(range(4)) * len(dates),
+        })
+        row_regimes = pd.Series(["calm"] * len(df), index=df.index)
+
+        returns = _stability_series(df, "return_std")
+        regimes = _date_grain_regime_labels(df, row_regimes)
+        result = per_regime_breakdown(returns, regimes)
+
+        expected = (1 + daily_returns).prod() - 1
+        assert result.loc[0, "n_obs"] == 6
+        assert result.loc[0, "total_return"] == expected
+
+    def test_failed_diversity_fold_stays_in_metric_ledger(self):
+        """Diversity gate failures must be flagged, not removed from per-fold metrics."""
+        from run_pipeline import _annotate_fold_metrics
+
+        per_fold = pd.DataFrame({
+            "fold": [0, 1, 2],
+            "total_return": [0.01, -0.02, 0.03],
+            "sharpe": [0.5, -0.4, 0.8],
+        })
+        diversity = pd.DataFrame({
+            "fold": [0, 1, 2],
+            "pass": [True, False, True],
+            "conc": [0.5, 0.95, 0.6],
+            "kl": [0.1, 0.9, 0.2],
+            "js": [0.05, 0.4, 0.08],
+        })
+
+        result = _annotate_fold_metrics(per_fold, diversity, [0, 1, 2])
+
+        assert result["fold"].tolist() == [0, 1, 2]
+        assert result.loc[result["fold"] == 1, "diversity_pass"].iloc[0] == False
+        assert result.loc[result["fold"] == 1, "skip_reason"].iloc[0] == "diversity_gate_failed"
+
 
 class TestHitMetrics:
     """Hit/conistency metrics."""

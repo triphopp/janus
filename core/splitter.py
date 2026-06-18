@@ -84,9 +84,10 @@ def purge_embargo(
     """
     purge_bars = cfg.get("purge_bars", 5)
     embargo_bars = cfg.get("event_embargo_bars", 2)
+    purge_from_max_dte = purge_bars == "max_dte"
 
     # "max_dte" sentinel: resolve to the max DTE found in the data (options context)
-    if purge_bars == "max_dte":
+    if purge_from_max_dte:
         purge_bars = int(cfg.get("_max_dte", 90))
 
     date_col = cfg.get("date_col", "as_of_date")
@@ -101,6 +102,13 @@ def purge_embargo(
 
     dates = pd.to_datetime(df[date_col]) if date_col in df.columns else None
     unique_dates = pd.Index(dates.dropna().sort_values().unique()) if dates is not None else None
+    if (
+        label_end_col is None
+        and unique_dates is not None
+        and len(unique_dates) > 0
+        and int(purge_bars) + int(embargo_bars) >= len(unique_dates)
+    ):
+        purge_bars = max(0, len(unique_dates) - int(embargo_bars) - 2)
 
     result = []
     for train_idx, val_idx in folds:
@@ -124,6 +132,8 @@ def purge_embargo(
             else:
                 val_pos = unique_dates.searchsorted(val_start_time)
                 gap = int(purge_bars) + int(embargo_bars)
+                if purge_from_max_dte:
+                    gap = min(gap, max(0, val_pos - 1))
                 cutoff_pos = val_pos - gap
                 if cutoff_pos < 0:
                     new_train = np.array([], dtype=int)
