@@ -1,0 +1,48 @@
+stateDiagram-v2
+    %% Evaluation and reporting view checked against run_pipeline.py and core/reporting.py.
+    direction TB
+
+    [*] --> AllFolds : all purged walk-forward folds
+    AllFolds --> DiversityAnnot : attach diversity_pass and gate metrics
+    DiversityAnnot --> ReturnSelection : choose metrics input
+    ReturnSelection --> StrategyReturns : strategy/PnL return column if present
+    ReturnSelection --> StrategyRequired : skip performance if strategy_required missing
+    ReturnSelection --> MarketDiagnostic : optional market diagnostic return
+    StrategyReturns --> SampleFloor : minimum validation samples
+    StrategyRequired --> MetricsLedger : empty metrics with skip_reason
+    MarketDiagnostic --> SampleFloor
+    SampleFloor --> FoldReturns : validation return series
+
+    state "Stage 4: Metrics and Overfitting" as Metrics {
+        direction TB
+        [*] --> PerFold : per_fold_breakdown(all folds)
+        PerFold --> PerRegime : per_regime_breakdown()
+        PerRegime --> StabilityScore : stability_score()
+        StabilityScore --> PassedScore : passed_stability_score()
+        PassedScore --> DSR : deflated_sharpe_ratio()
+        DSR --> [*]
+    }
+
+    FoldReturns --> Metrics
+    MetricsLedger --> Metrics
+    Metrics --> MetricsAudit : audit.snapshot("metrics")
+    MetricsAudit --> Outputs
+
+    state "Reporting Artifacts" as Outputs {
+        direction TB
+        [*] --> RunDir : outputs/runs/instrument/run_id
+        RunDir --> PerformanceCsv : tables/per_fold.csv with diversity annotations
+        PerformanceCsv --> DiversityCsv : tables/diversity.csv
+        DiversityCsv --> PreparedData : data/*_prepared.csv / parquet
+        PreparedData --> DataQuality : summary.data_quality scorecard
+        DataQuality --> DiffBreaks : outputs/diff + outputs/breaks
+        DiffBreaks --> Manifest : outputs/manifest/*.json
+        Manifest --> SummaryReport : summary report tables + markdown
+        SummaryReport --> HtmlReport : summary_report/*_report.html
+        HtmlReport --> SummaryJson : outputs/*_summary.json
+        SummaryJson --> [*]
+    }
+
+    MetricsAudit --> Attribution : optional attr.waterfall()
+    Attribution --> Outputs : if PnL columns exist
+    Outputs --> [*]

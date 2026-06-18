@@ -1,0 +1,19 @@
+flowchart TB
+    %% Single-column friendly evaluation and reporting view.
+    classDef box fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef io fill:#f2f2f2,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef optional fill:#ffffff,stroke:#555555,stroke-width:1px,stroke-dasharray:4 3,color:#111111;
+
+    A["All Purged Folds"]:::io
+    B["Diversity Annotation<br/>pass / fail / skip reason"]:::box
+    C["Sample Floor<br/>validation rows"]:::box
+    D["Metrics<br/>all folds + regime"]:::box
+    E["DSR<br/>overfitting check"]:::box
+    F["Reports<br/>DQ / CSV / JSON / HTML"]:::io
+    G["Diff / Breaks<br/>Manifest"]:::optional
+    H["Attribution<br/>if PnL exists"]:::optional
+    I["Return Input<br/>strategy required / diagnostic"]:::box
+
+    A --> B --> I --> C --> D --> E --> F
+    G -.-> F
+    H -.-> F

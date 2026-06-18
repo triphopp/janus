@@ -1,0 +1,16 @@
+flowchart LR
+    %% Paper-friendly overview. Uses flowchart syntax for broad Mermaid compatibility.
+    classDef stage fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef io fill:#f2f2f2,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef note fill:#ffffff,stroke:#555555,stroke-width:1px,stroke-dasharray:4 3,color:#111111;
+
+    A["Configuration<br/>instrument YAML, defaults, normalized cfg"]:::io
+    B["Data Preparation<br/>fixed input guard, schema guard, bronze contract, adapter"]:::stage
+    C["Validation and CV Folds<br/>validators, DQ scorecard, CDC/breaks, purge/embargo"]:::stage
+    D["Diagnostics and Gate<br/>stability tests, regime labels, diversity gate"]:::stage
+    E["Evaluation<br/>all-fold metrics, diversity annotations, DSR"]:::stage
+    F["Reporting<br/>DQ scorecard, diff, breaks, manifest, HTML"]:::io
+    N["Walk-forward CV folds are purged and embargoed before diagnostics<br/>so PSI and metrics share leakage-controlled validation windows."]:::note
+
+    A --> B --> C --> D --> E --> F
+    N -.-> C

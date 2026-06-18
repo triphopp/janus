@@ -1,0 +1,15 @@
+flowchart TB
+    %% Single-column friendly validation and diagnostics view.
+    classDef box fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef gate fill:#f2f2f2,stroke:#111111,stroke-width:1px,color:#111111;
+
+    A["Prepared Data"]:::box
+    B["Stage 1<br/>Validators<br/>bounds / gaps / outliers"]:::box
+    C["DQ Scorecard<br/>AQL-style budgets"]:::gate
+    D["CDC + Break Ledger<br/>diff and lifecycle"]:::box
+    E["Walk-Forward CV<br/>purge + embargo"]:::box
+    F["Stage 2<br/>Stability<br/>ADF / ARCH / PSI / VR"]:::box
+    G["Stage 3<br/>Regime Gate"]:::gate
+    H["Annotated Folds"]:::gate
+
+    A --> B --> C --> D --> E --> F --> G --> H

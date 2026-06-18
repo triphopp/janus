@@ -1,0 +1,44 @@
+stateDiagram-v2
+    %% Data preparation view checked against load_config(), get_provider(),
+    %% versioned cache guard, schema guard, bronze contract, coverage SLA, and adapter.prepare().
+    direction TB
+
+    [*] --> Config
+    state "Configuration" as Config {
+        direction TB
+        [*] --> InstrumentYaml : instrument YAML
+        InstrumentYaml --> FamilyDefaults : merge family defaults
+        FamilyDefaults --> NormalizedConfig : normalize_config()
+        NormalizedConfig --> [*]
+    }
+
+    Config --> FixedInputGuard : cache/version pin guard
+    FixedInputGuard --> SourceRead : provider.fetch() or versioned cache read
+    SourceRead --> VersionedCache : optional cache write
+    VersionedCache --> BronzeContract : validate bronze contract
+    SourceRead --> BronzeContract
+    BronzeContract --> Quarantine : diverted bad rows
+    BronzeContract --> CoverageSLA : coverage/freshness SLA
+    CoverageSLA --> FamilySchemaGuard : required columns for family
+    FamilySchemaGuard --> IngestionAudit : audit.snapshot("ingestion")
+    IngestionAudit --> AdapterSelection : get_adapter(cfg)
+    AdapterSelection --> PreparedData : adapter.prepare(clean_raw_df)
+    PreparedData --> OptionPrep : options only: universe, IV, Greeks, PCP, expiry labels
+    PreparedData --> AdapterAudit : audit.snapshot("adapter")
+    OptionPrep --> AdapterAudit
+    AdapterAudit --> [*]
+
+    note right of PreparedData
+        Adapter output is the shared prepared DataFrame
+        and core_cfg consumed by downstream stages.
+    end note
+
+    note right of FixedInputGuard
+        Local CSV inputs can pass the guard when
+        file path and SHA-256 are pinned in config.
+    end note
+
+    note right of FamilySchemaGuard
+        Family schema guard catches obvious YAML/data
+        mismatches before adapter math runs.
+    end note

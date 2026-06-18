@@ -1,0 +1,72 @@
+stateDiagram-v2
+    %% Validation, fold construction, and diagnostics view.
+    direction TB
+
+    [*] --> Stage1
+    state "Stage 1: Data Validators" as Stage1 {
+        direction TB
+        [*] --> Bounds : logical_bounds_check()
+        Bounds --> Completeness : missing_completeness()
+        Completeness --> Outliers : outlier_cap()
+        Outliers --> [*]
+    }
+
+    Stage1 --> DataQuality : build_scorecard()
+    state "Data Quality Scorecard" as DataQuality {
+        direction TB
+        [*] --> FlagRates : return / price / bound / missing rates
+        FlagRates --> GateRates : quarantine + coverage rates
+        GateRates --> DQStatus : pass / warn / fail
+        DQStatus --> [*]
+    }
+
+    DataQuality --> ValidatorAudit : audit.snapshot("validators")
+    ValidatorAudit --> CDCBreaks
+    state "Change Data Capture and Break Ledger" as CDCBreaks {
+        direction TB
+        [*] --> DiffChain : ingestion to adapter to return_clip to validators
+        DiffChain --> BreakLedger : attributed changes + coverage breaks
+        BreakLedger --> DiffReport : outputs/diff and outputs/breaks
+        DiffReport --> [*]
+    }
+
+    CDCBreaks --> FoldConstruction
+    state "Walk-Forward Cross-Validation" as FoldConstruction {
+        direction TB
+        [*] --> LineagePurge : optional lineage.max_lookback()
+        LineagePurge --> WalkForward : chronological train / validation windows
+        WalkForward --> LabelPurge : purge train rows whose labels overlap validation
+        LabelPurge --> Embargo : remove train rows near validation start
+        Embargo --> ClampFallback : clamp max_dte fallback if no label horizon
+        ClampFallback --> FoldAssert : assert_validation_folds()
+        FoldAssert --> [*]
+    }
+
+    FoldConstruction --> Stability
+    state "Stage 2: Stability Diagnostics" as Stability {
+        direction TB
+        [*] --> Stationarity : ADF + KPSS
+        Stationarity --> Volatility : ARCH-LM
+        Volatility --> Distribution : JB + Hurst + VR + Ljung-Box
+        Distribution --> Shift : fold PSI / KS / Wasserstein
+        Shift --> FeatureQuality : optional IC / VIF / sign consistency
+        Shift --> [*]
+        FeatureQuality --> [*]
+    }
+
+    Stability --> RegimeGate
+    state "Stage 3: Regime Diversity Gate" as RegimeGate {
+        direction TB
+        [*] --> RegimeLabels : assign_regime_labels()
+        RegimeLabels --> Diversity : regime_diversity_gate()
+        Diversity --> [*]
+    }
+
+    RegimeGate --> SplitterAudit : audit.snapshot("splitter")
+    SplitterAudit --> [*]
+
+    note right of FoldConstruction
+        Purging uses label_end_col such as expiry for options.
+        Embargo adds a time gap before each validation window.
+        The same purged CV folds feed PSI, diversity, and metrics.
+    end note
