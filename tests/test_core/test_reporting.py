@@ -165,6 +165,32 @@ def test_write_html_report_outputs_academic_final_report(tmp_path):
     assert "const D =" not in html
 
 
+def test_return_distribution_svg_avoids_axis_and_marker_overlap():
+    from core.reporting import _return_distribution_panel
+
+    html = _return_distribution_panel(
+        {"mean": 0.001, "std": 0.01, "n": 20},
+        {
+            "kind": "empirical_histogram",
+            "n": 20,
+            "markers": {
+                "mean": 0.001,
+                "median": 0.001,
+                "var_95": -0.02,
+                "cvar_95": -0.025,
+            },
+            "bins": [
+                {"lo": -0.03, "hi": -0.01, "count": 3, "density": 7.5, "cum_pct": 0.15},
+                {"lo": -0.01, "hi": 0.01, "count": 12, "density": 30.0, "cum_pct": 0.75},
+                {"lo": 0.01, "hi": 0.02, "count": 5, "density": 25.0, "cum_pct": 1.0},
+            ],
+        },
+    )
+
+    assert 'transform="rotate(-90' in html
+    assert "Mean / Median" in html
+
+
 def test_load_run_outputs_treats_empty_csv_as_empty_dataframe(tmp_path):
     (tmp_path / "perf_report").mkdir()
     (tmp_path / "fold_manifest").mkdir()

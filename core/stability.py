@@ -235,14 +235,40 @@ def hurst_exponent(series: pd.Series, max_lag: int = 100) -> dict:
 
     lags_arr = np.log([r[0] for r in rs_values])
     rs_arr = np.log([r[1] for r in rs_values])
-    slope, _ = np.polyfit(lags_arr, rs_arr, 1)
+    slope, intercept = np.polyfit(lags_arr, rs_arr, 1)
+    fitted = slope * lags_arr + intercept
+    resid = rs_arr - fitted
+    dof = max(0, len(lags_arr) - 2)
+    slope_se = None
+    ci_low = None
+    ci_high = None
+    if dof > 0:
+        s_err = float(np.sqrt(np.sum(resid ** 2) / dof))
+        x_var = float(np.sum((lags_arr - lags_arr.mean()) ** 2))
+        if x_var > 0:
+            slope_se = s_err / np.sqrt(x_var)
+            ci_low = slope - 1.96 * slope_se
+            ci_high = slope + 1.96 * slope_se
 
     return {
         "hurst": min(max(float(slope), 0.0), 1.0),
+        "slope_se": None if slope_se is None else float(slope_se),
+        "ci95": None if ci_low is None else [float(max(0.0, ci_low)), float(min(1.0, ci_high))],
+        "memory": _hurst_memory_label(float(slope), ci_low, ci_high),
         "status": "ok",
         "n": n,
         "max_lag": max_lag,
     }
+
+
+def _hurst_memory_label(hurst: float, ci_low, ci_high) -> str:
+    if ci_low is not None and ci_high is not None and ci_low <= 0.5 <= ci_high:
+        return "inconclusive_memory"
+    if hurst > 0.65:
+        return "persistent_trend"
+    if hurst < 0.45:
+        return "anti_persistent"
+    return "inconclusive_memory"
 
 
 def distribution_shift(
