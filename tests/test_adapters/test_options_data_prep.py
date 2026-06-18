@@ -187,6 +187,60 @@ def test_futures_options_identity_cols_set_to_full_contract_key():
     for key_col in ("expiry", "right", "strike"):
         assert key_col in identity, f"identity_cols must include '{key_col}'; got {identity}"
 
+    assert core_cfg["label_end_col"] == "expiry"
+    assert "delivery_month" in core_cfg.get("outlier_identity_cols", [])
+
+
+def test_futures_options_universe_filter_drops_expiry_day_and_long_tail():
+    """WTI-sized chains can narrow option rows before expensive IV/Greeks work."""
+    from adapters.futures_options_adapter import FuturesOptionsAdapter
+
+    raw = _mixed_futures_options_fixture()
+    extra = []
+    as_of = pd.Timestamp("2024-01-01")
+    delivery = pd.Timestamp("2024-03-01")
+    extra.append({
+        "as_of_date": as_of,
+        "product_id": 254,
+        "contract_root": "B",
+        "hub": "North Sea",
+        "instrument_type": "option",
+        "delivery_month": delivery,
+        "expiry": as_of,
+        "right": "P",
+        "strike": 80.0,
+        "price": 0.0,
+        "iv_provided": 0.25,
+    })
+    extra.append({
+        "as_of_date": as_of,
+        "product_id": 254,
+        "contract_root": "B",
+        "hub": "North Sea",
+        "instrument_type": "option",
+        "delivery_month": delivery,
+        "expiry": pd.Timestamp("2027-01-01"),
+        "right": "C",
+        "strike": 80.0,
+        "price": 5.0,
+        "iv_provided": 0.25,
+    })
+    raw = pd.concat([raw, pd.DataFrame(extra)], ignore_index=True)
+
+    df, _ = FuturesOptionsAdapter({
+        "pricing_model": "black76",
+        "iv_source": "provided",
+        "dte": {"basis": "calendar", "day_count": "act_365"},
+        "vol_window": 5,
+        "option_universe": {"min_dte_days": 1, "max_dte_days": 730, "min_option_price": 0.00001},
+    }).prepare(raw)
+
+    options = df[df["instrument_type"] == "option"]
+    assert (options["dte_days"] >= 1).all()
+    assert (options["dte_days"] <= 730).all()
+    assert (options["option_price"] > 0).all()
+    assert (df["instrument_type"] == "future").any()
+
 
 def test_skew_direction_absent_from_futures_options_regime_axes():
     """skew_direction is a placeholder (always 0.0) and must not appear in regime_axes."""
@@ -225,6 +279,30 @@ def test_nested_options_config_is_normalized_before_adapter_math():
     assert adapter.cfg["n_folds"] == 3
     assert adapter.cfg["purge_bars"] == 7
     assert adapter.cfg["min_oi"] == 100
+
+
+def test_equity_options_core_cfg_uses_expiry_as_label_end():
+    from adapters.equity_options_adapter import EquityOptionsAdapter
+
+    raw = pd.DataFrame({
+        "as_of_date": [pd.Timestamp("2024-01-01")],
+        "product_id": [500],
+        "raw_close": [100.0],
+        "adj_factor": [1.0],
+        "price": [5.0],
+        "strike": [100.0],
+        "expiry": [pd.Timestamp("2024-03-01")],
+        "right": ["C"],
+        "iv_provided": [0.25],
+    })
+
+    _, core_cfg = EquityOptionsAdapter({
+        "pricing_model": "bsm",
+        "iv_source": "provided",
+        "dte": {"basis": "calendar", "day_count": "act_365"},
+    }).prepare(raw)
+
+    assert core_cfg["label_end_col"] == "expiry"
 
 
 def test_event_calendar_respects_available_at_lag(tmp_path):

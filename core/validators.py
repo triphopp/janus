@@ -124,12 +124,18 @@ def missing_completeness(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 
     # Check for duplicate grain and gaps in date sequence per identity.
     if "as_of_date" in df.columns and identity_cols:
-        duplicates = df.duplicated([*identity_cols, "as_of_date"], keep=False)
+        grain_cols = list(dict.fromkeys([*identity_cols, "as_of_date"]))
+        duplicates = df.duplicated(grain_cols, keep=False)
         if duplicates.any():
             flags |= duplicates
             reasons = reasons.where(~duplicates, reasons + "duplicate_identity_date;")
 
-        for _, grp in df.groupby(identity_cols, dropna=False):
+        series_identity_cols = [col for col in identity_cols if col != "as_of_date"]
+        groups = (
+            df.groupby(series_identity_cols, dropna=False)
+            if series_identity_cols else [(None, df)]
+        )
+        for _, grp in groups:
             grp = grp.sort_values("as_of_date")
             gaps = grp["as_of_date"].diff().dt.days > 5  # 5+ day gap
             if gaps.any():
@@ -189,9 +195,23 @@ def outlier_cap(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     # the entire frame as a single series. The original code only handled product_id,
     # leaving equity frames with zero outlier detection (silent dead-code path).
     work = df[cap_mask]
-    group_col = next(
-        (c for c in ("product_id", "symbol") if c in work.columns), None
-    )
+    group_cols = cfg.get("outlier_identity_cols")
+    if isinstance(group_cols, str):
+        group_cols = [group_cols]
+    if group_cols:
+        group_cols = [col for col in group_cols if col in work.columns]
+    if not group_cols:
+        contract_cols = [
+            col for col in ("product_id", "contract_root", "hub", "delivery_month", "expiry")
+            if col in work.columns
+        ]
+        if {"product_id", "delivery_month"}.issubset(contract_cols):
+            group_cols = contract_cols
+        else:
+            group_col = next(
+                (c for c in ("product_id", "symbol") if c in work.columns), None
+            )
+            group_cols = [group_col] if group_col is not None else []
 
     def _cap_series(idx: list) -> None:
         """Apply expanding-window MAD clip to one instrument's price series."""
@@ -217,11 +237,12 @@ def outlier_cap(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     # late-year highs as false outliers. Return-level clipping (stationary) is already
     # handled upstream by EquityAdapter._pit_mad_clip. Skip here for equity frames only;
     # futures/options (product_id present) use price-level MAD on stationary spreads.
-    if group_col == "symbol" and "product_id" not in work.columns:
+    if group_cols == ["symbol"] and "product_id" not in work.columns:
         return df
 
-    if group_col is not None:
-        for _gid, grp_idx in work.groupby(group_col).groups.items():
+    if group_cols:
+        group_key = group_cols[0] if len(group_cols) == 1 else group_cols
+        for _gid, grp_idx in work.groupby(group_key, dropna=False).groups.items():
             _cap_series(list(grp_idx))
     elif len(work) > 0:
         # No identity column — treat whole frame as one series (single-instrument file)

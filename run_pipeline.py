@@ -9,6 +9,7 @@ Flow: ingestion → adapter → core[validators→stability→splitter→metrics
 """
 
 import argparse
+import hashlib
 import copy
 import json
 import os
@@ -268,6 +269,31 @@ def _pit_guard_status(df: pd.DataFrame) -> dict:
 
 def _cache_guard_status(cfg: dict, cache_mode: str) -> dict:
     if cache_mode != "versioned_cache":
+        expected_hash = cfg.get("data_file_sha256")
+        data_file = cfg.get("data_file")
+        if data_file and expected_hash:
+            path = Path(data_file)
+            if not path.exists():
+                return {
+                    "status": "fail",
+                    "reason": f"configured data_file does not exist: {data_file}",
+                }
+            actual_hash = _sha256_file(path)
+            expected_hash = str(expected_hash).replace("sha256:", "").strip().lower()
+            if actual_hash == expected_hash:
+                return {
+                    "status": "pass",
+                    "data_version": cfg.get("data_version", f"sha256:{actual_hash}"),
+                    "source": "pinned_local_file",
+                    "data_file_sha256": actual_hash,
+                }
+            return {
+                "status": "fail",
+                "reason": (
+                    "configured data_file_sha256 does not match local file "
+                    f"(expected {expected_hash}, got {actual_hash})"
+                ),
+            }
         return {
             "status": "fail",
             "reason": "pipeline read directly from provider/source instead of VersionedCache",
@@ -279,6 +305,14 @@ def _cache_guard_status(cfg: dict, cache_mode: str) -> dict:
             "reason": "VersionedCache is enabled but data_version is mutable latest",
         }
     return {"status": "pass", "data_version": str(version)}
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _enforce_cache_guard(cache_guard: dict, cfg: dict) -> None:
@@ -603,6 +637,9 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         #   return_clip → validators   : MAD cap on price_std + bound/missing flags
         # return_clip stage only injected when adapter has apply_return_clip.
         reason_maps = {}
+        reason_maps["ingestion->adapter"] = {
+            "_row_drop": {"reason": "adapter_universe_filter"},
+        }
         if _apply_return_clip:
             reason_maps["adapter->return_clip"] = {
                 "return_winsorized": {"flag_col": "_return_outlier_flag", "reason": "pit_mad_derived"},

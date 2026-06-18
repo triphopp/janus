@@ -43,8 +43,10 @@ structural:
 # Form: "ASSERT" or "ASSERT when CONDITION". Use | & == <= >= < > (.
 # A row failing ASSERT where CONDITION holds is diverted to quarantine.
 semantic:
-  - rule: "price > 0"
+  - rule: "(price > 0) when (instrument_type == 'future')"
     reason: price_le_0
+  - rule: "(price >= 0) when (instrument_type == 'option')"
+    reason: option_price_lt_0
   - rule: "(strike > 0) when (instrument_type == 'option')"
     reason: option_strike_le_0
   - rule: "((right == 'C') | (right == 'P')) when (instrument_type == 'option')"

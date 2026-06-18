@@ -104,7 +104,11 @@ class EquityOptionsAdapter(OptionsBase):
         # Full contract key for validators — prevents duplicate-identity false-positives
         # on option chains where many strikes share (symbol, as_of_date).
         identity_cols = [
-            col for col in ("product_id", "symbol", "expiry", "right", "strike")
+            col for col in ("as_of_date", "product_id", "symbol", "expiry", "right", "strike")
+            if col in df.columns
+        ]
+        outlier_identity_cols = [
+            col for col in ("product_id", "symbol")
             if col in df.columns
         ]
 
@@ -120,9 +124,11 @@ class EquityOptionsAdapter(OptionsBase):
             "purge_bars": self.cfg.get("purge_bars", 5),
             "n_folds": self.cfg.get("n_folds", 8),
             "event_embargo_bars": self.cfg.get("event_embargo_bars", 2),
+            "label_end_col": self.cfg.get("label_end_col", "expiry"),
             # skew_direction omitted: compute_skew returns placeholder 0.0 — dead axis
             "regime_axes": self.cfg.get("regime_axes", ["vol_regime", "vrp_sign"]),
             "identity_cols": identity_cols,
+            "outlier_identity_cols": outlier_identity_cols,
         }
 
         return df, cfg
