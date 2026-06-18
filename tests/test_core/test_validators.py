@@ -166,6 +166,31 @@ def test_outlier_cap_still_clips_futures_price_levels():
     assert out.loc[45, "price"] < 1000.0
 
 
+def test_outlier_cap_groups_futures_curve_by_contract_identity():
+    """Same-date futures term structure is cross-sectional, not a time-series spike."""
+    df = pd.DataFrame({
+        "product_id": [425] * 25,
+        "contract_root": ["T"] * 25,
+        "hub": ["WTI"] * 25,
+        "instrument_type": ["future"] * 25,
+        "as_of_date": [pd.Timestamp("2024-09-25")] * 25,
+        "delivery_month": pd.date_range("2024-11-01", periods=25, freq="MS"),
+        "expiry": pd.date_range("2024-10-17", periods=25, freq="MS"),
+        "price_std": [70.0 - i * 0.12 for i in range(25)],
+    })
+
+    out = outlier_cap(df, {
+        "price_col": "price_std",
+        "outlier_k": 5.0,
+        "outlier_identity_cols": [
+            "product_id", "contract_root", "hub", "delivery_month", "expiry",
+        ],
+    })
+
+    assert not out["_outlier_flag"].any()
+    assert out["price_std"].tolist() == df["price_std"].tolist()
+
+
 def test_outlier_cap_skips_option_rows():
     """outlier_cap must not include option rows in the price-series MAD.
     Option rows carry broadcast underlying prices, not per-contract series."""

@@ -96,6 +96,8 @@ def purge_embargo(
             if candidate in df.columns:
                 label_end_col = candidate
                 break
+    elif label_end_col not in df.columns:
+        raise ValueError(f"label_end_col={label_end_col!r} not found in DataFrame")
 
     dates = pd.to_datetime(df[date_col]) if date_col in df.columns else None
     unique_dates = pd.Index(dates.dropna().sort_values().unique()) if dates is not None else None
@@ -109,7 +111,16 @@ def purge_embargo(
             val_start_time = dates.iloc[val_idx].min()
             if label_end_col is not None:
                 label_end = pd.to_datetime(df[label_end_col])
-                new_train = train_idx[label_end.iloc[train_idx] < val_start_time]
+                keep = (label_end.iloc[train_idx] < val_start_time).to_numpy(copy=True)
+                if int(embargo_bars) > 0:
+                    val_pos = unique_dates.searchsorted(val_start_time)
+                    cutoff_pos = val_pos - int(embargo_bars)
+                    if cutoff_pos < 0:
+                        keep = np.zeros(len(train_idx), dtype=bool)
+                    else:
+                        allowed_dates = set(unique_dates[:cutoff_pos + 1])
+                        keep &= dates.iloc[train_idx].isin(allowed_dates).to_numpy()
+                new_train = train_idx[keep]
             else:
                 val_pos = unique_dates.searchsorted(val_start_time)
                 gap = int(purge_bars) + int(embargo_bars)

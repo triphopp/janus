@@ -17,14 +17,24 @@ columns:
 price_field: settlement         # NOT last-trade
 iv_source: provided             # use OPTION_VOLATILITY from exchange (validate first)
 date_grain: eod
-data_version: latest
+data_version: sha256:<fill-with-file-sha256>
+data_file_sha256: <fill-with-file-sha256>
 
 pricing:
   model: black76                # futures options → Black-76
   iv_validate_threshold: 0.005
+  validate_provided_iv: true
+  iv_validate_sample_size: 5000
+  compute_greeks: false          # enable after universe narrowing if needed
+  check_pcp: false               # run as sampled/offline quality check for large chains
   iv_solver_bounds: [0.0001, 5.0]
   vega_bucket_cutoff: 60
   vega_beta: 0.7
+
+option_universe:
+  min_dte_days: 1
+  max_dte_days: 730
+  min_option_price: 0.00001
 
 dte:
   basis: calendar

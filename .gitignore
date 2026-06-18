@@ -30,7 +30,9 @@ htmlcov/
 # Generated pipeline artifacts
 outputs/
 quarantine/
-lineage/
+lineage/*
+!lineage/
+!lineage/*.json
 data/
 
 # Agent working memory — internal notes only

@@ -91,6 +91,43 @@ class OptionsBase(AdapterBase):
 
         return option_mask
 
+    def _option_universe_cfg(self) -> dict:
+        """Return optional option-chain filters without changing legacy defaults."""
+        universe = dict(self.cfg.get("option_universe") or {})
+        for key in ("min_dte_days", "max_dte_days", "min_option_price"):
+            if key in self.cfg and key not in universe:
+                universe[key] = self.cfg[key]
+        return universe
+
+    def _filter_option_universe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply configured option-row filters while retaining underlying rows."""
+        universe = self._option_universe_cfg()
+        if not universe:
+            return df
+
+        option_mask = self._option_mask(df)
+        if not option_mask.any():
+            return df
+
+        keep = pd.Series(True, index=df.index)
+        dte_days = pd.to_numeric(df.get("dte_days"), errors="coerce")
+
+        min_dte = universe.get("min_dte_days")
+        if min_dte is not None and dte_days is not None:
+            keep &= (~option_mask) | (dte_days.notna() & (dte_days >= int(min_dte)))
+
+        max_dte = universe.get("max_dte_days")
+        if max_dte is not None and dte_days is not None:
+            keep &= (~option_mask) | (dte_days.notna() & (dte_days <= int(max_dte)))
+
+        min_price = universe.get("min_option_price")
+        if min_price is not None:
+            premium_col = "option_price" if "option_price" in df.columns else "price"
+            premium = pd.to_numeric(df[premium_col], errors="coerce")
+            keep &= (~option_mask) | (premium >= float(min_price))
+
+        return df.loc[keep].copy()
+
     def _row_underlying_value(self, row: pd.Series) -> float:
         """Pick the model underlying column for one option row."""
         for col in ("underlying_price", "S", "F", "price_std"):
@@ -179,22 +216,41 @@ class OptionsBase(AdapterBase):
             df.loc[df["as_of_date"] > df["expiry"], "dte_days"] = np.nan
             df["r"] = rf_rate
 
+        df = self._filter_option_universe(df)
         option_mask = self._option_mask(df)
         df["iv"] = np.nan
         if option_mask.any():
             df.loc[option_mask, "iv_source_used"] = iv_source
 
         if iv_source == "provided" and "iv_provided" in df.columns and option_mask.any():
-            # Validate provided IV against self-solved
-            checked = _pricing.validate_provided_iv(df.loc[option_mask], self.cfg)
+            pricing_cfg = self.cfg.get("pricing") or {}
+            validate_iv = self.cfg.get(
+                "validate_provided_iv",
+                pricing_cfg.get("validate_provided_iv", True),
+            )
+            if "iv_flag" not in df.columns:
+                df["iv_flag"] = False
             for col in ("iv_solved", "iv_diff"):
                 if col not in df.columns:
                     df[col] = np.nan
-                df.loc[checked.index, col] = checked[col]
-            if "iv_flag" not in df.columns:
-                df["iv_flag"] = False
-            df.loc[checked.index, "iv_flag"] = checked["iv_flag"]
-            df.loc[option_mask, "iv"] = checked["iv_provided"].copy()
+            if validate_iv:
+                # Validate provided IV against self-solved. Large historical chains can
+                # sample this check while still using exchange-provided IV for all rows.
+                check_df = df.loc[option_mask]
+                sample_size = self.cfg.get(
+                    "iv_validate_sample_size",
+                    pricing_cfg.get("iv_validate_sample_size"),
+                )
+                if sample_size is not None and len(check_df) > int(sample_size):
+                    check_df = check_df.sample(
+                        int(sample_size),
+                        random_state=int(self.cfg.get("iv_validate_random_state", 0)),
+                    )
+                checked = _pricing.validate_provided_iv(check_df, self.cfg)
+                df.loc[checked.index, "iv_solved"] = checked["iv_solved"]
+                df.loc[checked.index, "iv_diff"] = checked["iv_diff"]
+                df.loc[checked.index, "iv_flag"] = checked["iv_flag"]
+            df.loc[option_mask, "iv"] = df.loc[option_mask, "iv_provided"].copy()
 
         elif iv_source == "solve" and option_mask.any():
             # Solve IV for each row
@@ -232,6 +288,10 @@ class OptionsBase(AdapterBase):
         greeks_cols = ["delta", "gamma", "vega", "theta", "rho"]
         for col in greeks_cols:
             df[col] = np.nan
+
+        pricing_cfg = self.cfg.get("pricing") or {}
+        if not bool(self.cfg.get("compute_greeks", pricing_cfg.get("compute_greeks", True))):
+            return df
 
         option_mask = self._option_mask(df)
         for idx, row in df.loc[option_mask].iterrows():
@@ -284,6 +344,12 @@ class OptionsBase(AdapterBase):
         Pairing is scoped to a single decision date and underlying identity.
         """
         df = df.copy()
+        pricing_cfg = self.cfg.get("pricing") or {}
+        if not bool(self.cfg.get("check_pcp", pricing_cfg.get("check_pcp", True))):
+            df["_pcp_flag"] = False
+            df["pcp_pair_missing"] = False
+            df["pcp_duplicate_pair"] = False
+            return df
         if "right" not in df.columns:
             return df
 

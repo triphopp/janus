@@ -60,6 +60,28 @@ def test_cache_guard_fails_unversioned_or_latest_data():
     assert _cache_guard_status({"data_version": "as_of_backtest_start"}, "versioned_cache")["status"] == "pass"
 
 
+def test_cache_guard_accepts_hash_pinned_local_file(tmp_path):
+    import hashlib
+
+    data_file = tmp_path / "settle.csv"
+    data_file.write_text("fixed input\n", encoding="utf-8")
+    digest = hashlib.sha256(data_file.read_bytes()).hexdigest()
+
+    ok = _cache_guard_status({
+        "data_file": str(data_file),
+        "data_file_sha256": digest,
+        "data_version": f"sha256:{digest}",
+    }, "provider_fetch")
+    bad = _cache_guard_status({
+        "data_file": str(data_file),
+        "data_file_sha256": "0" * 64,
+    }, "provider_fetch")
+
+    assert ok["status"] == "pass"
+    assert ok["source"] == "pinned_local_file"
+    assert bad["status"] == "fail"
+
+
 def test_cache_guard_is_fail_closed_by_default():
     guard = _cache_guard_status({"data_version": "2024-01-01"}, "provider_fetch")
 

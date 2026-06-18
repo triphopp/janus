@@ -63,6 +63,13 @@ class SettlementLoader(ProviderBase):
             if c in df.columns:
                 df[c] = pd.to_datetime(df[c], format="%m/%d/%Y")
 
+        # Filter early so large settlement files do not run symbology checks,
+        # net-change diagnostics, and schema coercion over rows outside the request.
+        start_ts = pd.Timestamp(start)
+        end_ts = pd.Timestamp(end)
+        if "TRADE DATE" in df.columns:
+            df = df[(df["TRADE DATE"] >= start_ts) & (df["TRADE DATE"] <= end_ts)].copy()
+
         # ── Disambiguate future vs option ──
         contract_type = df.get("CONTRACT TYPE", pd.Series(dtype=str))
         strike = df.get("STRIKE", pd.Series(dtype=float))
@@ -119,8 +126,19 @@ class SettlementLoader(ProviderBase):
         # ── Validate net_change ──
         df["net_change_flag"] = False
         if "net_change" in df.columns and "price" in df.columns:
-            df = df.sort_values(["product_id", "as_of_date"])
-            for pid, grp in df.groupby("product_id"):
+            identity_cols = [
+                col for col in (
+                    "product_id", "contract_root", "hub", "instrument_type",
+                    "delivery_month", "expiry", "right", "strike",
+                )
+                if col in df.columns
+            ]
+            sort_cols = [*identity_cols, "as_of_date"] if identity_cols else ["as_of_date"]
+            df = df.sort_values(sort_cols)
+            group_key = identity_cols[0] if len(identity_cols) == 1 else identity_cols
+            groups = df.groupby(group_key, dropna=False) if identity_cols else [(None, df)]
+            for _, grp in groups:
+                grp = grp.sort_values("as_of_date")
                 price_diff = grp["price"].diff()
                 net_change_diff = (price_diff - grp["net_change"]).abs()
                 # Flag rows where |price.diff() - net_change| > 1 tick
@@ -131,11 +149,6 @@ class SettlementLoader(ProviderBase):
 
         # ── Tag provider ──
         df["provider"] = "settlement"
-
-        # ── Filter to date range ──
-        start_ts = pd.Timestamp(start)
-        end_ts = pd.Timestamp(end)
-        df = df[(df["as_of_date"] >= start_ts) & (df["as_of_date"] <= end_ts)]
 
         # ── Validate schema ──
         return validate_schema(df, RAW_SCHEMA)

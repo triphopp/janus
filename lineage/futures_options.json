@@ -1,0 +1,56 @@
+{
+  "underlying_price": {
+    "inputs": ["price"],
+    "op": "map_underlying_future",
+    "tier": "silver",
+    "lookback_bars": 0
+  },
+  "return_std": {
+    "inputs": ["underlying_price"],
+    "op": "pct_change",
+    "tier": "silver",
+    "lookback_bars": 1
+  },
+  "vol_std": {
+    "inputs": ["return_std"],
+    "op": "rolling_std",
+    "tier": "silver",
+    "lookback_bars": 21
+  },
+  "iv": {
+    "inputs": ["iv_provided"],
+    "op": "provided_or_solved_iv",
+    "tier": "silver",
+    "lookback_bars": 0
+  },
+  "vrp": {
+    "inputs": ["iv", "vol_std"],
+    "op": "iv_minus_realized_vol",
+    "tier": "gold",
+    "lookback_bars": 21
+  },
+  "vol_regime": {
+    "inputs": ["return_std"],
+    "op": "causal_rank",
+    "tier": "gold",
+    "lookback_bars": 21
+  },
+  "term_structure": {
+    "inputs": ["price", "delivery_month"],
+    "op": "front_deferred_slope",
+    "tier": "gold",
+    "lookback_bars": 0
+  },
+  "term_structure_slope": {
+    "inputs": ["price", "delivery_month"],
+    "op": "front_deferred_slope",
+    "tier": "gold",
+    "lookback_bars": 0
+  },
+  "vrp_sign": {
+    "inputs": ["vrp"],
+    "op": "sign_bucket",
+    "tier": "gold",
+    "lookback_bars": 21
+  }
+}

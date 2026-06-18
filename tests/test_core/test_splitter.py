@@ -65,6 +65,29 @@ class TestNoLookAhead:
         assert max_train <= pd.Timestamp("2024-01-01")
         assert val_start == pd.Timestamp("2024-01-03")
 
+    def test_label_end_purge_also_applies_embargo(self):
+        """Expiry-aware purge should still leave the configured embargo gap."""
+        df = pd.DataFrame({
+            "as_of_date": pd.date_range("2024-01-01", periods=8, freq="B"),
+            "expiry": pd.date_range("2024-01-01", periods=8, freq="B"),
+        })
+        cfg = {
+            "n_folds": 1,
+            "date_col": "as_of_date",
+            "label_end_col": "expiry",
+            "purge_bars": 0,
+            "event_embargo_bars": 2,
+        }
+
+        folds = purge_embargo(walk_forward_split(df, cfg), df, cfg)
+
+        tr, va = folds[0]
+        val_start = df.iloc[va]["as_of_date"].min()
+        max_train = df.iloc[tr]["as_of_date"].max()
+        unique_dates = pd.Index(df["as_of_date"].sort_values().unique())
+
+        assert unique_dates.get_loc(val_start) - unique_dates.get_loc(max_train) >= 2
+
 
 class TestDiversityGate:
     """Regime diversity gate — KL + JS."""

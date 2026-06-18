@@ -84,9 +84,13 @@ class FuturesOptionsAdapter(OptionsBase):
         # on option chains where many strikes share (product_id, as_of_date).
         identity_cols = [
             col for col in (
-                "product_id", "contract_root", "hub",
+                "as_of_date", "product_id", "contract_root", "hub",
                 "delivery_month", "expiry", "right", "strike",
             )
+            if col in df.columns
+        ]
+        outlier_identity_cols = [
+            col for col in ("product_id", "contract_root", "hub", "delivery_month", "expiry")
             if col in df.columns
         ]
 
@@ -101,6 +105,7 @@ class FuturesOptionsAdapter(OptionsBase):
             "n_folds": self.cfg.get("n_folds", 8),
             "purge_bars": self.cfg.get("purge_bars", "max_dte"),
             "event_embargo_bars": self.cfg.get("event_embargo_bars", 2),
+            "label_end_col": self.cfg.get("label_end_col", "expiry"),
             "_max_dte": max_dte,
             "regime_axes": regime_axes,
             "event_flags": self.cfg.get("event_calendars", []),
@@ -110,6 +115,7 @@ class FuturesOptionsAdapter(OptionsBase):
             "rf_rate_col": self.cfg.get("rf_rate_col", "sofr"),
             "dte": dte_cfg,
             "identity_cols": identity_cols,
+            "outlier_identity_cols": outlier_identity_cols,
         }
 
         return df, cfg
