@@ -28,7 +28,7 @@ Recent WTI-specific hardening includes:
 
 - expiry-aware option purge through `label_end_col: expiry`
 - embargo support on the expiry-aware purge path
-- option universe filters for DTE and minimum premium
+- option universe filters for DTE, minimum premium, IV cap, and delta bands
 - hash-pinned local file acceptance without `--allow-unversioned-data`
 - settlement `net_change` checks at contract identity grain
 - futures curve outlier checks at delivery-month grain
@@ -115,6 +115,13 @@ The full diagram source and paper-friendly section diagrams live in
 pip install -r requirements.txt
 ```
 
+Optional interactive progress bars use `tqdm` when it is installed. Without it,
+Janus falls back to the existing plain logs:
+
+```bash
+pip install tqdm
+```
+
 Run the full test suite:
 
 ```bash
@@ -124,7 +131,7 @@ python3 -m pytest -q
 Expected current result:
 
 ```text
-236 passed
+239 passed
 ```
 
 ## Quick Start: WTI Settlement Options
@@ -222,6 +229,39 @@ python3 run_pipeline.py \
 If `--data-file` points to a different file than the hash pinned in the config,
 the fixed-input guard fails.
 
+### Runtime Overrides
+
+Large option chains can be narrowed from the CLI without editing instrument YAML:
+
+```bash
+python3 run_pipeline.py \
+  -i wti \
+  --start 2024-09-25 \
+  --end 2024-12-31 \
+  --max-dte 90 \
+  --min-option-price 0.00001 \
+  --iv-cap 2.0 \
+  --min-abs-delta 0.15 \
+  --max-abs-delta 0.80 \
+  --compute-greeks
+```
+
+Supported runtime controls:
+
+- `--compute-greeks` / `--no-compute-greeks`
+- `--metrics-mode auto|diagnostic|buy_and_hold|strategy_required`
+- `--min-dte`, `--max-dte`, `--min-option-price`, `--iv-cap`
+- `--min-abs-delta`, `--max-abs-delta`
+- `--n-folds`, `--embargo-bars`
+- `--progress auto|bar|plain|none`
+
+CLI values override instrument YAML, which overrides family defaults.
+
+Progress bars are additive and write to stderr; existing stage logs remain on
+stdout. `--progress auto` shows bars only for an interactive terminal with
+`tqdm` installed, `plain` keeps the historical logs only, and `none` suppresses
+both bars and stdout logs for batch runs.
+
 ## WTI Options Controls
 
 The WTI example narrows the chain before expensive validation:
@@ -238,6 +278,10 @@ option_universe:
   min_dte_days: 1
   max_dte_days: 730
   min_option_price: 0.00001
+  # max_iv: 2.0
+  # delta_band:
+  #   min_abs_delta: 0.15
+  #   max_abs_delta: 0.80
 ```
 
 Why these defaults exist:
@@ -249,6 +293,12 @@ Why these defaults exist:
 - Provided-IV validation is sampled so large chains remain usable.
 - Greeks and PCP can be enabled after the universe is narrowed or run offline as
   dedicated quality checks.
+
+`--iv-cap` filters against `iv_provided` before pricing when `iv_source:
+provided`; solved-IV runs apply the cap after IV solve. Delta bands use
+`delta_provided` before Greeks when that column is available; otherwise they
+apply after computed Greeks. If Greeks are disabled and no provided delta exists,
+delta-band filters have no row-level value to apply.
 
 ## Futures Options Semantics
 

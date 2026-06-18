@@ -34,6 +34,49 @@ def test_ticker_override_rejects_non_equity_config():
         apply_runtime_overrides(cfg, ticker="MSFT")
 
 
+def test_runtime_overrides_set_nested_and_flat_cli_controls():
+    cfg = {
+        "family": "futures_options",
+        "pricing": {"compute_greeks": False},
+        "cv": {"n_folds": 8, "event_embargo_bars": 2},
+        "option_universe": {"max_dte_days": 730},
+    }
+
+    out = apply_runtime_overrides(
+        cfg,
+        compute_greeks=True,
+        metrics_mode="diagnostic",
+        min_dte=3,
+        max_dte=90,
+        min_option_price=0.05,
+        iv_cap=2.0,
+        min_abs_delta=0.15,
+        max_abs_delta=0.65,
+        n_folds=4,
+        embargo_bars=1,
+        progress="plain",
+    )
+
+    assert out["pricing"]["compute_greeks"] is True
+    assert out["compute_greeks"] is True
+    assert out["metrics_mode"] == "diagnostic"
+    assert out["option_universe"]["min_dte_days"] == 3
+    assert out["option_universe"]["max_dte_days"] == 90
+    assert out["option_universe"]["min_option_price"] == 0.05
+    assert out["option_universe"]["max_iv"] == 2.0
+    assert out["option_universe"]["delta_band"] == {
+        "min_abs_delta": 0.15,
+        "max_abs_delta": 0.65,
+    }
+    assert out["cv"]["n_folds"] == 4
+    assert out["n_folds"] == 4
+    assert out["cv"]["event_embargo_bars"] == 1
+    assert out["event_embargo_bars"] == 1
+    assert out["progress_mode"] == "plain"
+    assert cfg["pricing"]["compute_greeks"] is False
+    assert cfg["cv"]["n_folds"] == 8
+
+
 def test_price_adjustment_summary_flags_blocked_retro_adjustments():
     import pandas as pd
 

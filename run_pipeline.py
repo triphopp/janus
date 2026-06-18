@@ -9,6 +9,7 @@ Flow: ingestion → adapter → core[validators→stability→splitter→metrics
 """
 
 import argparse
+import contextlib
 import hashlib
 import copy
 import json
@@ -62,6 +63,7 @@ from core import diff_report
 from core.quarantine import write_quarantine
 from core.causal import validate_pit_timing
 from core.config import normalize_config
+from core.progress import StageTracker
 
 
 def load_config(instrument_name: str) -> dict:
@@ -97,15 +99,77 @@ def load_config(instrument_name: str) -> dict:
     return normalize_config(cfg)
 
 
-def apply_runtime_overrides(cfg: dict, ticker: str | None = None) -> dict:
+def apply_runtime_overrides(
+    cfg: dict,
+    ticker: str | None = None,
+    *,
+    compute_greeks: bool | None = None,
+    metrics_mode: str | None = None,
+    min_dte: int | None = None,
+    max_dte: int | None = None,
+    min_option_price: float | None = None,
+    iv_cap: float | None = None,
+    min_abs_delta: float | None = None,
+    max_abs_delta: float | None = None,
+    n_folds: int | None = None,
+    embargo_bars: int | None = None,
+    progress: str | None = None,
+) -> dict:
     """Apply CLI overrides that should not require a dedicated YAML file."""
     out = copy.deepcopy(cfg)
+    runtime = out.setdefault("runtime_overrides", {})
     if ticker:
         family = out.get("family", "equity")
         if family != "equity":
             raise ValueError("--ticker override is only supported for equity instruments")
         out.setdefault("symbol", {})["ticker"] = ticker.upper()
-        out.setdefault("runtime_overrides", {})["ticker"] = ticker.upper()
+        runtime["ticker"] = ticker.upper()
+
+    if compute_greeks is not None:
+        out.setdefault("pricing", {})["compute_greeks"] = bool(compute_greeks)
+        out["compute_greeks"] = bool(compute_greeks)
+        runtime["compute_greeks"] = bool(compute_greeks)
+
+    if metrics_mode:
+        out["metrics_mode"] = metrics_mode
+        runtime["metrics_mode"] = metrics_mode
+
+    universe = out.setdefault("option_universe", {})
+    universe_overrides = (
+        (min_dte, "min_dte_days", int),
+        (max_dte, "max_dte_days", int),
+        (min_option_price, "min_option_price", float),
+        (iv_cap, "max_iv", float),
+    )
+    for cli_value, key, caster in universe_overrides:
+        if cli_value is not None:
+            universe[key] = caster(cli_value)
+            runtime[f"option_universe.{key}"] = caster(cli_value)
+
+    if min_abs_delta is not None or max_abs_delta is not None:
+        delta_band = universe.get("delta_band") if isinstance(universe.get("delta_band"), dict) else {}
+        if min_abs_delta is not None:
+            delta_band["min_abs_delta"] = float(min_abs_delta)
+            runtime["option_universe.delta_band.min_abs_delta"] = float(min_abs_delta)
+        if max_abs_delta is not None:
+            delta_band["max_abs_delta"] = float(max_abs_delta)
+            runtime["option_universe.delta_band.max_abs_delta"] = float(max_abs_delta)
+        universe["delta_band"] = delta_band
+
+    if n_folds is not None:
+        out.setdefault("cv", {})["n_folds"] = int(n_folds)
+        out["n_folds"] = int(n_folds)
+        runtime["n_folds"] = int(n_folds)
+
+    if embargo_bars is not None:
+        out.setdefault("cv", {})["event_embargo_bars"] = int(embargo_bars)
+        out["event_embargo_bars"] = int(embargo_bars)
+        runtime["event_embargo_bars"] = int(embargo_bars)
+
+    if progress:
+        out["progress_mode"] = progress
+        runtime["progress"] = progress
+
     return out
 
 
@@ -547,9 +611,16 @@ def _assert_validation_folds(folds: list, df: pd.DataFrame, cfg: dict) -> None:
 
 def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     """Execute full pipeline: ingestion → adapter → core stages → outputs."""
+    if cfg.get("progress_mode") == "none" and not cfg.get("_stdout_suppressed"):
+        quiet_cfg = {**cfg, "_stdout_suppressed": True}
+        with open(os.devnull, "w", encoding="utf-8") as sink:
+            with contextlib.redirect_stdout(sink):
+                return run_pipeline(quiet_cfg, start, end, run_id)
+
     if run_id is None:
         run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_id = _safe_run_id(run_id)
+    stage_tracker = StageTracker(total=8, mode=cfg.get("progress_mode", "auto"))
 
     symbol = cfg.get("symbol", {}).get("ticker") or str(cfg.get("symbol", {}).get("product_id", "unknown"))
 
@@ -586,6 +657,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
                 storage_format=cfg.get("data_storage_format", "parquet"),
             )
     print(f"  Ingestion: {len(raw_df)} rows loaded")
+    stage_tracker.advance("Ingestion")
 
     # Audit: after ingestion
     snap_ingest = aud.snapshot(raw_df, "ingestion", cfg, run_id)
@@ -647,6 +719,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         coverage_gate = {"status": "error", "error": str(exc)}
 
     _assert_family_schema(cfg, raw_df)
+    stage_tracker.advance("Data gates")
 
     # ── Phase 2: Adapter ──
     frame_ingestion = raw_df.copy()  # post-bronze-gate provider input — CDC chain head
@@ -704,6 +777,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
                       f"{n_conflict} needs review")
             else:
                 print(f"  Cross-validate ({_cv_provider}): fetch returned no data — tags unchanged")
+    stage_tracker.advance("Adapter")
 
     # ── Stage 1: Validators ──
     df = validators.logical_bounds_check(df, core_cfg)
@@ -724,6 +798,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         f"  Data quality: {data_quality['status'].upper()} "
         f"(worst={data_quality['worst_dimension']}, enforcement={data_quality['enforcement']})"
     )
+    stage_tracker.advance("Validators")
 
     # Audit: after stage 1
     snap_v1 = aud.snapshot(df, "validators", cfg, run_id)
@@ -774,6 +849,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
             identity_cols=core_cfg.get("identity_cols"),
             reason_maps=reason_maps,
             run_id=run_id,
+            progress=cfg.get("progress_mode", "auto"),
         )
         ledger_path = cdc.write_ledger(cdc_records, run_id)
         cdc_breaks = breaks_mod.raise_breaks(cdc_records, run_id)
@@ -803,6 +879,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
                 breaks_mod.write_breaks(pipeline_breaks, run_id)
             except Exception:
                 pass
+    stage_tracker.advance("CDC")
 
     # ── Auto-purge from lineage (P3, leakage L5) — OPT-IN ──
     # A feature's lookback IS its correct purge window. When enabled, derive purge_bars
@@ -916,6 +993,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     diversity = spl.regime_diversity_gate(folds, regime_labels, core_cfg)
     passed_folds = int(diversity["pass"].sum()) if "pass" in diversity.columns else 0
     print(f"  Stage 3 (splitter): {len(folds)} folds, {passed_folds} passed diversity gate")
+    stage_tracker.advance("Splitter")
 
     # Audit: after stage 3
     snap_v3 = aud.snapshot(df, "splitter", cfg, run_id)
@@ -926,6 +1004,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     metrics_mode = str(core_cfg.get("metrics_mode", cfg.get("metrics_mode", "auto")))
     configured_metrics_col = core_cfg.get("metrics_return_col")
     metrics_skipped_reason = None
+    metrics_uses_strategy = False
     if metrics_mode == "strategy_required" and not strategy_metrics_available:
         metrics_return_col = None
         metrics_input = "strategy_required_missing"
@@ -933,9 +1012,13 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
             "metrics_mode=strategy_required but no strategy/P&L return column is present"
         )
         print(f"  Stage 4: SKIPPED - {metrics_skipped_reason}")
+    elif metrics_mode in {"diagnostic", "market_diagnostic", "buy_and_hold"}:
+        metrics_return_col = configured_metrics_col or return_col
+        metrics_input = "buy_and_hold" if metrics_mode == "buy_and_hold" else "market_diagnostic"
     else:
         metrics_return_col = strategy_return_col or configured_metrics_col or return_col
-        metrics_input = "strategy_pnl" if strategy_metrics_available else "market_diagnostic"
+        metrics_uses_strategy = bool(strategy_return_col and metrics_return_col == strategy_return_col)
+        metrics_input = "strategy_pnl" if metrics_uses_strategy else "market_diagnostic"
 
     if metrics_return_col and metrics_return_col not in df.columns and metrics_return_col != return_col:
         print(f"  Stage 4: metrics_return_col={metrics_return_col!r} missing; falling back to {return_col!r}")
@@ -988,7 +1071,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
             print(f"  Stage 4: SKIPPED - {sample_warning}")
         elif not all_r.empty:
             sr = metrics.risk_adjusted(all_r)["sharpe"] or 0.0
-            if strategy_metrics_available:
+            if metrics_uses_strategy:
                 n_trials = core_cfg.get("n_trials", 40)
                 dsr_result = ovf.deflated_sharpe_ratio(sr, n_trials, len(all_r))
                 print(f"  Stage 4 (strategy metrics): Sharpe={sr:.3f}, "
@@ -1005,6 +1088,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     print(f"  Price adjustments: {_pa.get('status')} ({_pa.get('policy')}) — "
           f"{_pa.get('warning_rows', 0)}/{_pa.get('rows', 0)} warning rows, "
           f"{_pa.get('dividend_days', 0)} dividend day(s) folded into total return")
+    stage_tracker.advance("Metrics")
 
     # ── Write outputs ──
     outputs_root = Path("outputs")
@@ -1137,6 +1221,9 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     if summary.get("html_report"):
         print(f"  HTML report: {summary['html_report']}")
 
+    stage_tracker.advance("Outputs")
+    stage_tracker.close()
+
     return summary
 
 
@@ -1153,13 +1240,58 @@ def main():
                              "cfg.data_file; implies --provider settlement")
     parser.add_argument("--allow-unversioned-data", action="store_true",
                         help="Allow direct provider/source reads for exploratory diagnostics only")
+    parser.add_argument("--compute-greeks", action=argparse.BooleanOptionalAction, default=None,
+                        help="Override pricing.compute_greeks from the instrument YAML")
+    parser.add_argument("--metrics-mode", default=None,
+                        choices=["auto", "diagnostic", "buy_and_hold", "strategy_required"],
+                        help="Override metrics mode for this run")
+    parser.add_argument("--min-dte", type=int, default=None,
+                        help="Minimum option DTE in days")
+    parser.add_argument("--max-dte", type=int, default=None,
+                        help="Maximum option DTE in days")
+    parser.add_argument("--min-option-price", type=float, default=None,
+                        help="Minimum option premium before pricing work")
+    parser.add_argument("--iv-cap", type=float, default=None,
+                        help="Maximum IV for the option universe; solved-IV runs trim after solve")
+    parser.add_argument("--min-abs-delta", type=float, default=None,
+                        help="Minimum absolute delta for option rows")
+    parser.add_argument("--max-abs-delta", type=float, default=None,
+                        help="Maximum absolute delta for option rows")
+    parser.add_argument("--n-folds", type=int, default=None,
+                        help="Override cv.n_folds")
+    parser.add_argument("--embargo-bars", type=int, default=None,
+                        help="Override event_embargo_bars")
+    parser.add_argument("--progress", default="auto", choices=["auto", "bar", "plain", "none"],
+                        help="Progress display mode: auto, bar, plain logs only, or none")
     parser.add_argument("--start", required=True, help="Start date YYYY-MM-DD")
     parser.add_argument("--end", required=True, help="End date YYYY-MM-DD")
     parser.add_argument("--run-id", default=None, help="Custom run ID")
     args = parser.parse_args()
+    if args.min_dte is not None and args.max_dte is not None and args.min_dte > args.max_dte:
+        parser.error("--min-dte must be <= --max-dte")
+    if (
+        args.min_abs_delta is not None
+        and args.max_abs_delta is not None
+        and args.min_abs_delta > args.max_abs_delta
+    ):
+        parser.error("--min-abs-delta must be <= --max-abs-delta")
 
     cfg = load_config(args.instrument)
-    cfg = apply_runtime_overrides(cfg, ticker=args.ticker)
+    cfg = apply_runtime_overrides(
+        cfg,
+        ticker=args.ticker,
+        compute_greeks=args.compute_greeks,
+        metrics_mode=args.metrics_mode,
+        min_dte=args.min_dte,
+        max_dte=args.max_dte,
+        min_option_price=args.min_option_price,
+        iv_cap=args.iv_cap,
+        min_abs_delta=args.min_abs_delta,
+        max_abs_delta=args.max_abs_delta,
+        n_folds=args.n_folds,
+        embargo_bars=args.embargo_bars,
+        progress=args.progress,
+    )
     if args.provider:
         cfg["provider"] = args.provider
     if args.data_file:

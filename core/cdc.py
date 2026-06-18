@@ -24,6 +24,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from core.progress import progress_iter, should_show_progress
+
 UNATTRIBUTED = "UNATTRIBUTED"
 DEFAULT_KEY_ROUND = 6
 DEFAULT_ATOL = 1e-9
@@ -125,6 +127,7 @@ def diff_frames(
     tol: Optional[dict] = None,
     key_round: int = DEFAULT_KEY_ROUND,
     run_id: Optional[str] = None,
+    progress: str | dict | None = None,
 ) -> list[ChangeRecord]:
     """Key-aligned diff of two stage frames → list of ChangeRecords."""
     tol = tol or {}
@@ -170,7 +173,13 @@ def diff_frames(
     if common_keys and shared_cols:
         b_common = bidx.loc[list(common_keys), shared_cols]
         a_common = aidx.loc[list(common_keys), shared_cols]
-        for k in common_keys:
+        key_iter = progress_iter(
+            common_keys,
+            f"CDC {stage_from}->{stage_to}",
+            total=len(common_keys),
+            enabled=should_show_progress(progress or "plain", total=len(common_keys)),
+        )
+        for k in key_iter:
             b_row = b_common.loc[k]
             a_row = a_common.loc[k]
             after_full = aidx.loc[k]
@@ -243,13 +252,24 @@ def diff_run(
     reason_maps: Optional[dict] = None,
     tol: Optional[dict] = None,
     run_id: Optional[str] = None,
+    progress: str | dict | None = None,
 ) -> list[ChangeRecord]:
     """Diff consecutive stages. reason_maps keyed by 'stage_from->stage_to'."""
     reason_maps = reason_maps or {}
     out: list[ChangeRecord] = []
     for (sf, bf), (st, af) in zip(stage_frames, stage_frames[1:]):
         rmap = reason_maps.get(f"{sf}->{st}")
-        out.extend(diff_frames(bf, af, sf, st, identity_cols, rmap, tol, run_id=run_id))
+        out.extend(diff_frames(
+            bf,
+            af,
+            sf,
+            st,
+            identity_cols,
+            rmap,
+            tol,
+            run_id=run_id,
+            progress=progress,
+        ))
     return out
 
 

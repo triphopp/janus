@@ -17,6 +17,7 @@ from .base import AdapterBase
 from core import pricing as _pricing
 from core import greeks as _greeks
 from core import dte as _dte
+from core.progress import progress_iter, should_show_progress
 
 
 class OptionsBase(AdapterBase):
@@ -99,6 +100,64 @@ class OptionsBase(AdapterBase):
                 universe[key] = self.cfg[key]
         return universe
 
+    def _max_iv_cfg(self):
+        return self._option_universe_cfg().get("max_iv")
+
+    def _delta_band_cfg(self) -> dict:
+        universe = self._option_universe_cfg()
+        band = universe.get("delta_band") if isinstance(universe.get("delta_band"), dict) else {}
+        min_abs = band.get("min_abs_delta", band.get("min_abs"))
+        max_abs = band.get("max_abs_delta", band.get("max_abs"))
+        if min_abs is None and max_abs is None:
+            return {}
+        return {
+            "min_abs_delta": float(min_abs) if min_abs is not None else None,
+            "max_abs_delta": float(max_abs) if max_abs is not None else None,
+        }
+
+    def _has_usable_option_values(self, df: pd.DataFrame, col: str) -> bool:
+        if col not in df.columns:
+            return False
+        option_mask = self._option_mask(df)
+        if not option_mask.any():
+            return False
+        values = pd.to_numeric(df.loc[option_mask, col], errors="coerce")
+        return bool(values.notna().any())
+
+    def _filter_max_iv(self, df: pd.DataFrame, iv_col: str) -> pd.DataFrame:
+        """Apply max IV to option rows while retaining underlying rows."""
+        max_iv = self._max_iv_cfg()
+        if max_iv is None or iv_col not in df.columns:
+            return df
+
+        option_mask = self._option_mask(df)
+        if not option_mask.any():
+            return df
+
+        iv = pd.to_numeric(df[iv_col], errors="coerce")
+        keep = (~option_mask) | (iv.notna() & (iv <= float(max_iv)))
+        return df.loc[keep].copy()
+
+    def _filter_delta_band(self, df: pd.DataFrame, delta_col: str) -> pd.DataFrame:
+        """Apply abs(delta) band to option rows while retaining underlying rows."""
+        band = self._delta_band_cfg()
+        if not band or delta_col not in df.columns:
+            return df
+
+        option_mask = self._option_mask(df)
+        if not option_mask.any():
+            return df
+
+        abs_delta = pd.to_numeric(df[delta_col], errors="coerce").abs()
+        keep = pd.Series(True, index=df.index)
+        min_abs = band.get("min_abs_delta")
+        if min_abs is not None:
+            keep &= (~option_mask) | (abs_delta.notna() & (abs_delta >= float(min_abs)))
+        max_abs = band.get("max_abs_delta")
+        if max_abs is not None:
+            keep &= (~option_mask) | (abs_delta.notna() & (abs_delta <= float(max_abs)))
+        return df.loc[keep].copy()
+
     def _filter_option_universe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply configured option-row filters while retaining underlying rows."""
         universe = self._option_universe_cfg()
@@ -126,7 +185,16 @@ class OptionsBase(AdapterBase):
             premium = pd.to_numeric(df[premium_col], errors="coerce")
             keep &= (~option_mask) | (premium >= float(min_price))
 
-        return df.loc[keep].copy()
+        out = df.loc[keep].copy()
+
+        # Provided IV/delta can narrow the universe before expensive pricing loops.
+        # Solved IV and computed delta are filtered after those values exist.
+        if self.cfg.get("iv_source", "solve") == "provided":
+            out = self._filter_max_iv(out, "iv_provided")
+        if self._has_usable_option_values(out, "delta_provided"):
+            out = self._filter_delta_band(out, "delta_provided")
+
+        return out
 
     def _row_underlying_value(self, row: pd.Series) -> float:
         """Pick the model underlying column for one option row."""
@@ -255,7 +323,14 @@ class OptionsBase(AdapterBase):
         elif iv_source == "solve" and option_mask.any():
             # Solve IV for each row
             ivs = pd.Series(np.nan, index=df.index, dtype=float)
-            for idx, row in df.loc[option_mask].iterrows():
+            option_rows = df.loc[option_mask]
+            show_progress = should_show_progress(self.cfg, total=len(option_rows))
+            for idx, row in progress_iter(
+                option_rows.iterrows(),
+                "IV solve",
+                total=len(option_rows),
+                enabled=show_progress,
+            ):
                 if pd.isna(row.get("T")) or row.get("T", 0) <= 0:
                     continue
                 iv = _pricing.solve_iv(
@@ -272,7 +347,7 @@ class OptionsBase(AdapterBase):
                 ivs.loc[idx] = iv
             df["iv"] = ivs
 
-        return df
+        return self._filter_max_iv(df, "iv")
 
     def compute_greeks(self, df: pd.DataFrame) -> pd.DataFrame:
         """Compute Greeks for all option rows.
@@ -294,7 +369,14 @@ class OptionsBase(AdapterBase):
             return df
 
         option_mask = self._option_mask(df)
-        for idx, row in df.loc[option_mask].iterrows():
+        option_rows = df.loc[option_mask]
+        show_progress = should_show_progress(self.cfg, total=len(option_rows))
+        for idx, row in progress_iter(
+            option_rows.iterrows(),
+            "Greeks",
+            total=len(option_rows),
+            enabled=show_progress,
+        ):
             if pd.isna(row.get("T")) or row.get("T", 0) <= 0 or pd.isna(row.get("iv")):
                 continue
 
@@ -310,6 +392,9 @@ class OptionsBase(AdapterBase):
             )
             for col in greeks_cols:
                 df.loc[idx, col] = g[col]
+
+        if not self._has_usable_option_values(df, "delta_provided"):
+            df = self._filter_delta_band(df, "delta")
 
         return df
 

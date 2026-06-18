@@ -24,6 +24,7 @@ def normalize_config(cfg: dict | None) -> dict:
 
     _setdefault_from(out, "pricing_model", pricing, "model")
     for key in (
+        "compute_greeks",
         "div_yield",
         "iv_validate_threshold",
         "iv_solver_bounds",

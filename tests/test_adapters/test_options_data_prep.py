@@ -265,6 +265,62 @@ def test_futures_options_universe_filter_drops_expiry_day_and_long_tail():
     assert (df["instrument_type"] == "future").any()
 
 
+def test_futures_options_universe_filters_provided_iv_and_delta_band():
+    """Provided IV/delta filters should run before expensive solve/Greek loops."""
+    from adapters.futures_options_adapter import FuturesOptionsAdapter
+
+    raw = _mixed_futures_options_fixture()
+    option_idx = raw.index[raw["instrument_type"] == "option"].tolist()
+    raw["delta_provided"] = np.nan
+    raw.loc[option_idx[0], "delta_provided"] = 0.40
+    raw.loc[option_idx[1], "delta_provided"] = 0.90
+    raw.loc[option_idx[1], "iv_provided"] = 2.50
+
+    df, _ = FuturesOptionsAdapter({
+        "pricing_model": "black76",
+        "iv_source": "provided",
+        "compute_greeks": False,
+        "dte": {"basis": "calendar", "day_count": "act_365"},
+        "vol_window": 5,
+        "option_universe": {
+            "max_iv": 1.0,
+            "delta_band": {"min_abs_delta": 0.20, "max_abs_delta": 0.80},
+        },
+    }).prepare(raw)
+
+    options = df[df["instrument_type"] == "option"]
+    assert options["iv"].tolist() == [0.25]
+    assert options["delta_provided"].tolist() == [0.40]
+    assert (df["instrument_type"] == "future").any()
+
+
+def test_delta_band_can_filter_after_computed_greeks():
+    """When no provided delta exists, delta band applies after Greeks are computed."""
+    from adapters.futures_options_adapter import FuturesOptionsAdapter
+
+    df = pd.DataFrame({
+        "as_of_date": pd.to_datetime(["2024-01-01", "2024-01-01"]),
+        "instrument_type": ["option", "option"],
+        "right": ["C", "C"],
+        "strike": [100.0, 200.0],
+        "price": [5.0, 0.1],
+        "option_price": [5.0, 0.1],
+        "underlying_price": [100.0, 100.0],
+        "F": [100.0, 100.0],
+        "T": [0.5, 0.5],
+        "r": [0.0, 0.0],
+        "iv": [0.20, 0.20],
+    })
+
+    out = FuturesOptionsAdapter({
+        "pricing_model": "black76",
+        "option_universe": {"delta_band": {"min_abs_delta": 0.20, "max_abs_delta": 0.80}},
+    }).compute_greeks(df)
+
+    assert out["strike"].tolist() == [100.0]
+    assert out["delta"].between(0.20, 0.80).all()
+
+
 def test_skew_direction_absent_from_futures_options_regime_axes():
     """skew_direction is a placeholder (always 0.0) and must not appear in regime_axes."""
     from adapters.futures_options_adapter import FuturesOptionsAdapter
