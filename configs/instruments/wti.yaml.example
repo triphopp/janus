@@ -19,6 +19,7 @@ iv_source: provided             # use OPTION_VOLATILITY from exchange (validate 
 date_grain: eod
 data_version: sha256:<fill-with-file-sha256>
 data_file_sha256: <fill-with-file-sha256>
+metrics_mode: strategy_required   # require explicit strategy/P&L returns for Stage 4 performance
 
 pricing:
   model: black76                # futures options → Black-76

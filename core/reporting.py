@@ -238,18 +238,25 @@ def metric_cards(
     add("prepared_rows", "data", summary.get("n_rows_prepared", 0), "ok", "big_number")
     add("folds_total", "validation", n_folds, "ok" if n_folds > 0 else "warning", "big_number")
     strategy_metrics_available = bool(summary.get("strategy_metrics_available", False))
+    metrics_input = summary.get("metrics_input", "unknown")
+    metrics_note = ""
+    if not strategy_metrics_available:
+        if metrics_input == "strategy_required_missing":
+            metrics_note = "Stage 4 performance metrics were skipped because strategy returns are required but absent."
+        else:
+            metrics_note = "Stage 4 is reporting market diagnostics, not strategy performance."
     add(
         "strategy_metrics_available",
         "metrics_contract",
         strategy_metrics_available,
         "ok" if strategy_metrics_available else "warning",
         "boolean",
-        "" if strategy_metrics_available else "Stage 4 is reporting market diagnostics, not strategy performance.",
+        metrics_note,
     )
     add(
         "metrics_input",
         "metrics_contract",
-        summary.get("metrics_input", "unknown"),
+        metrics_input,
         "ok" if strategy_metrics_available else "warning",
         "label",
     )
@@ -357,22 +364,35 @@ def calibration_flags(
             "Use a longer date range, review regime labels, or loosen concentration/KL/JS thresholds for early calibration.",
         )
 
+    metrics_input = summary.get("metrics_input")
     if per_fold is not None and per_fold.empty:
+        if metrics_input == "strategy_required_missing":
+            detail = "Stage 4 performance metrics were skipped because strategy returns are required but absent."
+            action = "Add signal, position, and P&L tables, or set metrics_mode to market_diagnostic for diagnostics-only runs."
+        else:
+            detail = "No validation fold survived the diversity gate, so fold-level performance is not calibratable yet."
+            action = "Fix fold diversity first, then compare Sharpe, drawdown, and hit rate by fold."
         add(
             "performance",
             "medium",
             "per-fold performance report is empty",
-            "No validation fold survived the diversity gate, so fold-level performance is not calibratable yet.",
-            "Fix fold diversity first, then compare Sharpe, drawdown, and hit rate by fold.",
+            detail,
+            action,
         )
 
     if not summary.get("strategy_metrics_available", False):
+        if metrics_input == "strategy_required_missing":
+            detail = "Stage 4 performance metrics were skipped because strategy returns are required but absent."
+            action = "Add signal, position, and P&L tables before enabling strategy-required Stage 4 metrics."
+        else:
+            detail = "Sharpe, fold breakdowns, and regime breakdowns are market diagnostics, not strategy performance."
+            action = "Add signal, position, and P&L tables before using Stage 4 as a backtest approval metric."
         add(
             "metrics_contract",
             "high",
             "strategy P&L/return data is absent",
-            "Sharpe, fold breakdowns, and regime breakdowns are market diagnostics, not strategy performance.",
-            "Add signal, position, and P&L tables before using Stage 4 as a backtest approval metric.",
+            detail,
+            action,
         )
 
     if per_regime is not None and not per_regime.empty and "sharpe" in per_regime and (per_regime["sharpe"] < 0).all():
@@ -858,7 +878,7 @@ def _return_distribution_panel(return_stats: dict[str, Any], distribution: dict[
         return '<p class="small">Return distribution graph unavailable because return range is empty.</p>'
 
     width, height = 760, 340
-    left, right, top, bottom = 64, 28, 24, 78
+    left, right, top, bottom = 64, 28, 44, 78
     plot_w = width - left - right
     plot_h = height - top - bottom
     base_y = top + plot_h
@@ -908,14 +928,39 @@ def _return_distribution_panel(return_stats: dict[str, Any], distribution: dict[
             line_points.append(f"{sx(x_val):.2f},{sy(y_val):.2f}")
         normal_line = f'<polyline class="dist-normal" points="{" ".join(line_points)}" />'
 
-    def marker_line(name: str, label: str, class_name: str) -> str:
+    raw_markers = []
+    for name, label, class_name in (
+        ("var_95", "VaR 5", "marker-var"),
+        ("mean", "Mean", "marker-mean"),
+        ("median", "Median", "marker-median"),
+    ):
         value = _as_float(markers.get(name))
-        if value is None or value < lo or value > hi:
-            return ""
-        x = sx(value)
-        return (
-            f'<line class="dist-marker {class_name}" x1="{x:.2f}" y1="{top}" x2="{x:.2f}" y2="{base_y}" />'
-            f'<text class="dist-marker-label {class_name}" x="{x:.2f}" y="{top - 7}" text-anchor="middle">{_h(label)}</text>'
+        if value is not None and lo <= value <= hi:
+            raw_markers.append({"x": sx(value), "label": label, "class": class_name})
+
+    raw_markers.sort(key=lambda m: m["x"])
+    merged_markers = []
+    for marker in raw_markers:
+        if merged_markers and abs(marker["x"] - merged_markers[-1]["x"]) <= 6:
+            merged_markers[-1]["label"] += " / " + marker["label"]
+        else:
+            merged_markers.append(dict(marker))
+
+    lanes = []
+    marker_parts = []
+    for marker in merged_markers:
+        lane = 0
+        while lane < len(lanes) and marker["x"] - lanes[lane] < 46:
+            lane += 1
+        if lane == len(lanes):
+            lanes.append(marker["x"])
+        lanes[lane] = marker["x"]
+        label_y = top - 7 - lane * 13
+        marker_parts.append(
+            f'<line class="dist-marker {marker["class"]}" x1="{marker["x"]:.2f}" y1="{top}" '
+            f'x2="{marker["x"]:.2f}" y2="{base_y}" />'
+            f'<text class="dist-marker-label {marker["class"]}" x="{marker["x"]:.2f}" '
+            f'y="{label_y:.2f}" text-anchor="middle">{_h(marker["label"])}</text>'
         )
 
     zero_x = sx(0.0) if lo <= 0.0 <= hi else None
@@ -930,14 +975,11 @@ def _return_distribution_panel(return_stats: dict[str, Any], distribution: dict[
         if zero_x is not None
         else ""
     )
-    marker_lines = "".join([
-        marker_line("var_95", "VaR 5", "marker-var"),
-        marker_line("mean", "Mean", "marker-mean"),
-        marker_line("median", "Median", "marker-median"),
-    ])
+    marker_lines = "".join(marker_parts)
     source_text = "Empirical daily-return histogram" if payload.get("kind") == "empirical_histogram" else "Moment-fit proxy from summary statistics"
     y_title = "Observations" if has_counts else "Density"
     y_top = _format_axis_value(y_max, has_counts)
+    y_label_y = top + plot_h / 2
     json_payload = _json_script_payload({
         "hasCounts": has_counts,
         "source": source_text,
@@ -959,7 +1001,7 @@ def _return_distribution_panel(return_stats: dict[str, Any], distribution: dict[
   <svg class="dist-svg" viewBox="0 0 {width} {height}" preserveAspectRatio="xMidYMid meet">
     <line class="dist-axis" x1="{left}" y1="{base_y}" x2="{width - right}" y2="{base_y}" />
     <line class="dist-axis" x1="{left}" y1="{top}" x2="{left}" y2="{base_y}" />
-    <text class="dist-text dist-y-label" x="{left - 48}" y="{top + 4}">{_h(y_title)}</text>
+    <text class="dist-text dist-y-label" transform="rotate(-90 14 {y_label_y:.2f})" x="14" y="{y_label_y:.2f}" text-anchor="middle">{_h(y_title)}</text>
     <text class="dist-text dist-y-top" x="{left - 8}" y="{top + 4}" text-anchor="end">{_h(y_top)}</text>
     <text class="dist-text" x="{left - 8}" y="{base_y + 4}" text-anchor="end">0</text>
     {zero_line}
@@ -1084,13 +1126,30 @@ def _render_static_final_report(
     jb = st.get("jarque_bera", {}) or {}
     hurst_obj = st.get("hurst", {}) or {}
     hurst = hurst_obj.get("hurst") if isinstance(hurst_obj, dict) else hurst_obj
-
-    abstract = (
-        "Strategy return data is present; reported metrics are strategy-level outputs."
-        if strategy_ready
-        else "This run is a market diagnostic ledger, not a strategy-performance approval. "
-             "Strategy P&L/return columns are absent, so Stage 4 diagnostics use the market return stream."
+    hurst_memory = hurst_obj.get("memory") if isinstance(hurst_obj, dict) else None
+    hurst_ci = hurst_obj.get("ci95") if isinstance(hurst_obj, dict) else None
+    hurst_reading = (
+        "inconclusive memory"
+        if hurst_memory in (None, "inconclusive_memory")
+        else "persistent trend" if hurst_memory == "persistent_trend"
+        else "anti-persistent"
     )
+    hurst_stat = f'H={_fmt_num(hurst, 3)}'
+    if isinstance(hurst_ci, list) and len(hurst_ci) == 2:
+        hurst_stat += f' (95% CI {_fmt_num(hurst_ci[0], 3)}-{_fmt_num(hurst_ci[1], 3)})'
+
+    if strategy_ready:
+        abstract = "Strategy return data is present; reported metrics are strategy-level outputs."
+    elif metric_input == "strategy_required_missing":
+        abstract = (
+            "Stage 4 performance metrics were skipped because strategy returns are required but absent. "
+            "Data-quality, fold, and stability diagnostics remain available."
+        )
+    else:
+        abstract = (
+            "This run is a market diagnostic ledger, not a strategy-performance approval. "
+            "Strategy P&L/return columns are absent, so Stage 4 diagnostics use the market return stream."
+        )
 
     bill = ''.join([
         _box(3, _metric("raw rows", f"{int(s.get('n_rows_raw', 0)):,}", "provider boundary")),
@@ -1130,7 +1189,7 @@ def _render_static_final_report(
         ["Variance ratio", "random walk", _badge(vr.get("interpretation", "unknown")), f'VR={_fmt_num(vr.get("vr_stat"))}; z={_fmt_num(vr.get("z_stat"), 3)}', _h(vr.get("interpretation", "not measured"))],
         ["Ljung-Box", "autocorrelation", _badge("warning" if str(lb.get("has_autocorr")).lower() == "true" else "pass", "autocorr" if str(lb.get("has_autocorr")).lower() == "true" else "none"), f'p={_fmt_num(lb.get("lb_pval"))}', "review purge/embargo" if str(lb.get("has_autocorr")).lower() == "true" else "no autocorrelation flag"],
         ["Jarque-Bera", "normality", _badge("pass" if str(jb.get("is_normal")).lower() == "true" else "info", "normal" if str(jb.get("is_normal")).lower() == "true" else "fat tails"), f'p={_fmt_num(jb.get("jb_pval"))}; skew={_fmt_num(jb.get("skew"), 3)}; kurt={_fmt_num(jb.get("kurtosis"), 3)}', "prefer tail-aware risk metrics"],
-        ["Hurst exponent", "memory", _badge("pass", _fmt_num(hurst, 3)), f'H={_fmt_num(hurst, 3)}', "near random walk" if hurst is not None and 0.45 <= float(hurst) <= 0.65 else "directional memory present"],
+        ["Hurst exponent", "memory", _badge("pass", _fmt_num(hurst, 3)), hurst_stat, hurst_reading],
     ]
     test_section = _box(12, '<h2>Statistical test ledger</h2>' + _table(["Test", "Question", "Result", "Statistic", "Reading"], [[_h(a), _h(b), c, _h(d), _h(e)] for a, b, c, d, e in tests]))
 
@@ -1156,10 +1215,13 @@ def _render_static_final_report(
         for r in regime_rows[:12]
     ]
     fold_metric_rows = _fold_metric_table_rows(per_fold_rows, diversity_rows)
+    metrics_skipped = metric_input == "strategy_required_missing"
     regime_title = "Regime performance" if strategy_ready else "Regime return diagnostics"
     regime_note = (
         "First 12 regime rows."
         if strategy_ready
+        else "Stage 4 performance metrics were skipped because strategy returns are required."
+        if metrics_skipped
         else "First 12 regime rows from market returns; not strategy P&L."
     )
     fold_title = "Fold diversity gate + performance" if strategy_ready else "Fold diversity gate + return diagnostics"
@@ -1441,6 +1503,8 @@ const arch = st.arch || {};
 const jb = st.jarque_bera || {};
 const hurstObj = (st.hurst && typeof st.hurst === 'object') ? st.hurst : {};
 const hurst = typeof st.hurst === 'number' ? st.hurst : (typeof hurstObj.hurst === 'number' ? hurstObj.hurst : null);
+const hurstMemory = hurstObj.memory || 'inconclusive_memory';
+const hurstCi = Array.isArray(hurstObj.ci95) ? hurstObj.ci95 : null;
 const psiRet = st.psi_returns || {};
 const ivStats = st.iv_stats || {};
 
@@ -1530,7 +1594,8 @@ document.getElementById('kpi-grid').innerHTML = kpis.map(k =>
 
   const hurstVal = hurst != null ? hurst.toFixed(3) : '—';
   const hurstBadge = hurst == null ? 'info' : hurst < 0.45 ? 'info' : hurst > 0.65 ? 'warn' : 'ok';
-  const hurstLabel = hurst == null ? '—' : hurst < 0.45 ? 'mean-reverting' : hurst > 0.65 ? 'trending' : 'near random walk';
+  const hurstLabel = hurst == null ? '—' : hurstMemory === 'persistent_trend' ? 'persistent trend' : hurstMemory === 'anti_persistent' ? 'anti-persistent' : 'inconclusive memory';
+  const hurstCiText = hurstCi ? `95% CI ${hurstCi[0].toFixed(3)}–${hurstCi[1].toFixed(3)}` : '';
 
   const archKnown = arch.has_arch_effects != null;
   const lbKnown = lb.has_autocorr != null;
@@ -1628,9 +1693,10 @@ document.getElementById('kpi-grid').innerHTML = kpis.map(k =>
         ['H', hurstVal + (hurst != null ? ' ' + badge(hurstBadge, hurstLabel) : '')],
       ],
       (hurst != null
-        ? (hurst < 0.45 ? 'H < 0.5 — anti-persistent. Mean-reversion strategies may work.'
-           : hurst > 0.65 ? 'H > 0.65 — persistent trend. Momentum strategies may work.'
-           : '✓ H ≈ 0.5 — return series behaves as random walk')
+        ? (hurstMemory === 'anti_persistent' ? 'Hurst estimate is anti-persistent; verify with complementary diagnostics.'
+           : hurstMemory === 'persistent_trend' ? 'Hurst estimate indicates persistence; verify with complementary diagnostics.'
+           : 'Hurst estimate is inconclusive; finite-sample R/S estimates often sit near 0.5.')
+          + (hurstCiText ? ' ' + hurstCiText : '')
         : 'Hurst not computed') +
         (hurst != null ? `${barWrap(hurst * 100, '#1D9E75', '0 (mean-rev)', '0.5 — 1.0 (trend)')}` : ''),
       hurstBadge
@@ -2085,7 +2151,9 @@ const strategyReady = !!s.strategy_metrics_available;
 const metricInput = s.metrics_input || "unknown";
 document.getElementById("abstract").innerHTML = strategyReady
   ? `<strong>Result status.</strong> Strategy return data is present; reported metrics are strategy-level outputs.`
-  : `<strong>Result status.</strong> This run is a market diagnostic ledger, not a strategy-performance approval. Strategy P&L/return columns are absent, so Stage 4 diagnostics use the market return stream.`;
+  : metricInput === "strategy_required_missing"
+    ? `<strong>Result status.</strong> Stage 4 performance metrics were skipped because strategy returns are required but absent. Data-quality, fold, and stability diagnostics remain available.`
+    : `<strong>Result status.</strong> This run is a market diagnostic ledger, not a strategy-performance approval. Strategy P&L/return columns are absent, so Stage 4 diagnostics use the market return stream.`;
 
 const passRate = s.n_folds ? Number(s.n_folds_passed || 0) / Number(s.n_folds) : null;
 const returnStats = st.return_stats || {};
@@ -2129,13 +2197,17 @@ const lb = st.ljung_box || {};
 const jb = st.jarque_bera || {};
 const hurstObj = (st.hurst && typeof st.hurst === "object") ? st.hurst : {};
 const hurst = typeof st.hurst === "number" ? st.hurst : hurstObj.hurst;
+const hurstMemory = hurstObj.memory || "inconclusive_memory";
+const hurstCi = Array.isArray(hurstObj.ci95) ? hurstObj.ci95 : null;
+const hurstReading = hurstMemory === "persistent_trend" ? "persistent trend" : hurstMemory === "anti_persistent" ? "anti-persistent" : "inconclusive memory";
+const hurstStat = `H=${fmt(hurst, 3)}${hurstCi ? ` (95% CI ${fmt(hurstCi[0], 3)}-${fmt(hurstCi[1], 3)})` : ""}`;
 const stationarityRows = [
   ["ADF + KPSS", "stationarity", badge(adf.consensus || "unknown"), `ADF p=${pval(adf.adf_pval)}; KPSS p=${pval(adf.kpss_pval)}`, adf.consensus === "stationary" ? "series accepted as stationary" : "inspect structural breaks"],
   ["ARCH-LM", "volatility clustering", badge(arch.has_arch_effects ? "warning" : arch.has_arch_effects === false ? "pass" : "unknown", arch.has_arch_effects ? "ARCH present" : arch.has_arch_effects === false ? "none" : "unknown"), `p=${pval(arch.lm_pval)}`, arch.has_arch_effects ? "use vol/regime controls" : "no ARCH flag"],
   ["Variance ratio", "random walk", badge(vr.interpretation || "unknown"), `VR=${fmt(vr.vr_stat, 4)}; z=${fmt(vr.z_stat, 3)}`, vr.interpretation || "not measured"],
   ["Ljung-Box", "autocorrelation", badge(lb.has_autocorr ? "warning" : lb.has_autocorr === false ? "pass" : "unknown", lb.has_autocorr ? "autocorr" : lb.has_autocorr === false ? "none" : "unknown"), `p=${pval(lb.lb_pval)}`, lb.has_autocorr ? "review purge/embargo" : "no autocorrelation flag"],
   ["Jarque-Bera", "normality", badge(jb.is_normal ? "pass" : jb.is_normal === false ? "info" : "unknown", jb.is_normal ? "normal" : jb.is_normal === false ? "fat tails" : "unknown"), `p=${pval(jb.jb_pval)}; skew=${fmt(jb.skew, 3)}; kurt=${fmt(jb.kurtosis, 3)}`, jb.is_normal ? "normal approximation acceptable" : "prefer tail-aware risk metrics"],
-  ["Hurst exponent", "memory", badge(hurst > 0.65 ? "warning" : hurst < 0.45 ? "info" : hurst === undefined ? "unknown" : "pass", hurst === undefined ? "unknown" : fmt(hurst, 3)), `H=${fmt(hurst, 3)}`, hurst > 0.65 ? "persistent trend" : hurst < 0.45 ? "anti-persistent" : "near random walk"],
+  ["Hurst exponent", "memory", badge(hurstMemory === "persistent_trend" ? "warning" : hurstMemory === "anti_persistent" ? "info" : hurst === undefined ? "unknown" : "pass", hurst === undefined ? "unknown" : fmt(hurst, 3)), hurstStat, hurstReading],
 ];
 document.getElementById("tests").innerHTML = [
   box("span-12", sectionTitle("Statistical test ledger") + table(

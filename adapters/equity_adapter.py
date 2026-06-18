@@ -271,6 +271,10 @@ class EquityAdapter(AdapterBase):
         df["_return_outlier_reason"] = ""
         df["_return_outlier_policy"] = action
         df["_return_outlier_evidence"] = ""
+        df["_return_outlier_direction"] = ""
+        df["_return_outlier_zscore"] = np.nan
+        df["_return_outlier_severity"] = ""
+        df["_return_prior_median"] = np.nan
         df["_return_clip_lower"] = np.nan
         df["_return_clip_upper"] = np.nan
         df["_return_validation_status"] = "unreviewed"
@@ -286,6 +290,9 @@ class EquityAdapter(AdapterBase):
 
         for grp_idx in groups:
             idx = list(grp_idx)
+            sort_cols = [c for c in ("symbol", "product_id", "as_of_date") if c in df.columns]
+            if sort_cols:
+                idx = df.loc[idx].sort_values(sort_cols).index.tolist()
             series = df.loc[idx, col].astype(float)
             prior = series.shift(1)
             median = prior.rolling(window=window, min_periods=min_periods).median()
@@ -304,6 +311,26 @@ class EquityAdapter(AdapterBase):
             df.loc[outlier_idx, "_return_outlier_reason"] = "pit_mad_outlier"
             df.loc[outlier_idx, "_return_clip_lower"] = lower.loc[outlier_idx].astype(float)
             df.loc[outlier_idx, "_return_clip_upper"] = upper.loc[outlier_idx].astype(float)
+            scale = (mad * 1.4826).replace(0, np.nan)
+            zscore = (series - median) / scale
+            direction = pd.Series("", index=series.index)
+            direction.loc[series > upper] = "high"
+            direction.loc[series < lower] = "low"
+            abs_z = zscore.abs()
+            severity = pd.Series("", index=series.index)
+            severity.loc[(abs_z >= k) & (abs_z < 2 * k)] = "borderline"
+            severity.loc[(abs_z >= 2 * k) & (abs_z < 4 * k)] = "severe"
+            severity.loc[abs_z >= 4 * k] = "extreme"
+            df.loc[outlier_idx, "_return_outlier_direction"] = direction.loc[outlier_idx]
+            df.loc[outlier_idx, "_return_outlier_zscore"] = zscore.loc[outlier_idx].astype(float)
+            df.loc[outlier_idx, "_return_outlier_severity"] = severity.loc[outlier_idx]
+            df.loc[outlier_idx, "_return_prior_median"] = median.loc[outlier_idx].astype(float)
+            df.loc[outlier_idx, "_return_outlier_evidence"] = [
+                f"return={series.loc[row_idx]:.6g} vs median={median.loc[row_idx]:.6g}, "
+                f"lower={lower.loc[row_idx]:.6g}, upper={upper.loc[row_idx]:.6g}, "
+                f"z={zscore.loc[row_idx]:.3g}, dir={direction.loc[row_idx]}"
+                for row_idx in outlier_idx
+            ]
 
             if action in {"derive_winsorized", "mutate_after_validation"}:
                 df.loc[outlier_idx, derived_col] = [

@@ -22,6 +22,9 @@ export type RunRow = {
   metrics_input?: string | null;
   strategy_metrics_available?: boolean | null;
   sharpe_mean?: number | null;
+  dq_status?: string | null;
+  dq_worst_dimension?: string | null;
+  dq_fail_count?: number | null;
   changes: number;
   unattributed: number;
   breaks_total: number;
@@ -44,6 +47,8 @@ export type FleetSummary = {
   total_changes: number;
   total_unattributed: number;
   total_adjustment_warnings: number;
+  dq_runs_failing?: number;
+  dq_runs_warning?: number;
   breaks_total: number;
   breaks_open: number;
   sev_high: number;
@@ -130,6 +135,27 @@ export type TaggedOutlier = {
   _return_outlier_policy?: string | null;
   _return_validation_status?: string | null;
   _return_outlier_reason?: string | null;
+  _return_outlier_direction?: string | null;
+  _return_outlier_zscore?: number | null;
+  _return_outlier_severity?: string | null;
+  _return_prior_median?: number | null;
+};
+
+export type DataQualityDimension = {
+  name: string;
+  rate: number;
+  n_defect: number;
+  n_total: number;
+  aql: number;
+  ltpd: number;
+  status: string;
+};
+
+export type DataQualityScorecard = {
+  status: string;
+  enforcement: string;
+  worst_dimension: string;
+  dimensions: DataQualityDimension[];
 };
 
 export type RunDetail = RunRow & {
@@ -143,7 +169,10 @@ export type RunDetail = RunRow & {
     by_policy?: Record<string, number>;
     by_status?: Record<string, number>;
     by_reason?: Record<string, number>;
+    by_direction?: Record<string, number>;
+    by_severity?: Record<string, number>;
   };
+  data_quality?: DataQualityScorecard | null;
 };
 
 export type RawRow = Record<string, unknown>;

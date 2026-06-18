@@ -47,6 +47,9 @@ def _blank(rid: str) -> dict:
         "metrics_input": None,
         "strategy_metrics_available": None,
         "sharpe_mean": None,
+        "dq_status": None,
+        "dq_worst_dimension": None,
+        "dq_fail_count": 0,
         "changes": 0,
         "unattributed": 0,
         "breaks_total": 0,
@@ -168,6 +171,10 @@ def scan_runs() -> list[dict]:
         r["strategy_metrics_available"] = s.get("strategy_metrics_available")
         ss = s.get("stability_score") or {}
         r["sharpe_mean"] = ss.get("sharpe_mean")
+        dq = s.get("data_quality") or {}
+        r["dq_status"] = dq.get("status")
+        r["dq_worst_dimension"] = dq.get("worst_dimension")
+        r["dq_fail_count"] = sum(1 for d in dq.get("dimensions", []) if d.get("status") == "fail")
         _apply_price_adjustments(r, s.get("price_adjustments"))
         if r.get("created_at") is None:
             r["created_at"] = s.get("created_at")
@@ -197,7 +204,21 @@ def run_detail(run_id: str) -> Optional[dict]:
             tagged = load_tagged_return_outliers(run_id)
             r["tagged_return_outliers"] = tagged["rows"]
             r["tagged_return_outlier_summary"] = tagged["summary"]
+            summary = _summary_for_run(run_id) or {}
+            r["data_quality"] = summary.get("data_quality")
             return r
+    return None
+
+
+def _summary_for_run(run_id: str) -> Optional[dict]:
+    d = find_run_dir(run_id)
+    candidates = []
+    if d is not None:
+        candidates.append(d / "summary.json")
+    candidates.append(OUTPUTS / f"{run_id}_summary.json")
+    for path in candidates:
+        if path.exists():
+            return _read_json(path)
     return None
 
 
@@ -454,7 +475,8 @@ def load_tagged_return_outliers(run_id: str, limit: int = 200) -> dict:
             "return_raw", "return_std", "return_winsorized",
             "_return_outlier_flag", "_return_outlier_reason", "_return_outlier_policy",
             "_return_outlier_evidence", "_return_clip_lower", "_return_clip_upper",
-            "_return_validation_status",
+            "_return_validation_status", "_return_outlier_direction",
+            "_return_outlier_zscore", "_return_outlier_severity", "_return_prior_median",
         }
         try:
             df = pd.read_csv(csv, usecols=lambda c: c in wanted)
@@ -472,7 +494,10 @@ def load_tagged_return_outliers(run_id: str, limit: int = 200) -> dict:
     if total == 0:
         return {"summary": {"total": 0, "shown": 0}, "rows": []}
 
-    if "return_raw" in tagged.columns:
+    if "_return_outlier_zscore" in tagged.columns:
+        tagged["_abs_z_sort"] = pd.to_numeric(tagged["_return_outlier_zscore"], errors="coerce").abs()
+        tagged = tagged.sort_values("_abs_z_sort", ascending=False, na_position="last")
+    elif "return_raw" in tagged.columns:
         tagged["_abs_return_sort"] = pd.to_numeric(tagged["return_raw"], errors="coerce").abs()
         tagged = tagged.sort_values("_abs_return_sort", ascending=False, na_position="last")
 
@@ -490,6 +515,8 @@ def load_tagged_return_outliers(run_id: str, limit: int = 200) -> dict:
         "return_raw", "return_std", "return_winsorized",
         "_return_outlier_reason", "_return_outlier_policy", "_return_outlier_evidence",
         "_return_clip_lower", "_return_clip_upper", "_return_validation_status",
+        "_return_outlier_direction", "_return_outlier_zscore", "_return_outlier_severity",
+        "_return_prior_median",
     ]
     rows = []
     for _, raw in tagged.head(limit).iterrows():
@@ -519,6 +546,8 @@ def load_tagged_return_outliers(run_id: str, limit: int = 200) -> dict:
             "by_policy": _counts("_return_outlier_policy"),
             "by_status": _counts("_return_validation_status"),
             "by_reason": _counts("_return_outlier_reason"),
+            "by_direction": _counts("_return_outlier_direction"),
+            "by_severity": _counts("_return_outlier_severity"),
         },
         "rows": rows,
     }
@@ -570,6 +599,8 @@ def fleet_summary(rows: list[dict]) -> dict:
         "total_changes": sum(r["changes"] for r in rows),
         "total_unattributed": sum(r["unattributed"] for r in rows),
         "total_adjustment_warnings": sum(r["adjustment_warning_rows"] for r in rows),
+        "dq_runs_failing": sum(1 for r in rows if r.get("dq_status") == "fail"),
+        "dq_runs_warning": sum(1 for r in rows if r.get("dq_status") == "warn"),
         "breaks_total": sum(r["breaks_total"] for r in rows),
         "breaks_open": sum(r["breaks_open"] for r in rows),
         "sev_high": sum(r["sev_high"] for r in rows),

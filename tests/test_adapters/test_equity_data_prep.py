@@ -37,6 +37,10 @@ def test_equity_adapter_preserves_raw_return_and_flags_clip():
     assert df.loc[df.index[-1], "_return_outlier_flag"]
     assert df.loc[df.index[-1], "return_raw"] == df.loc[df.index[-1], "return_std"]
     assert df.loc[df.index[-1], "_return_outlier_policy"] == "tag_only"
+    assert df.loc[df.index[-1], "_return_outlier_direction"] == "high"
+    assert df.loc[df.index[-1], "_return_outlier_severity"] in {"borderline", "severe", "extreme"}
+    assert df.loc[df.index[-1], "_return_outlier_zscore"] > 0
+    assert "dir=high" in df.loc[df.index[-1], "_return_outlier_evidence"]
     assert "return_winsorized" not in df.columns
 
 

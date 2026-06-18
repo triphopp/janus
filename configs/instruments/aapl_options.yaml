@@ -17,6 +17,7 @@ columns:
 price_field: price
 date_grain: eod
 data_version: latest
+metrics_mode: strategy_required   # require explicit strategy/P&L returns for Stage 4 performance
 
 pricing:
   model: bsm

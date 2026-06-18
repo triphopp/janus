@@ -4,8 +4,8 @@ All functions are asset-agnostic: receive DataFrame + cfg dict only.
 No instrument names, no asset-specific logic.
 """
 
-import numpy as np
 import pandas as pd
+import numpy as np
 
 
 def logical_bounds_check(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
@@ -135,13 +135,25 @@ def missing_completeness(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
             df.groupby(series_identity_cols, dropna=False)
             if series_identity_cols else [(None, df)]
         )
+        gap_threshold = int(cfg.get("date_gap_days", cfg.get("max_gap_days", 5)))
+        gap_basis = str(cfg.get("date_gap_basis", "business")).lower()
+        holidays = cfg.get("calendar_holidays", cfg.get("holidays", [])) or []
+        holidays = np.array(pd.to_datetime(holidays, errors="coerce").dropna().date, dtype="datetime64[D]")
+
         for _, grp in groups:
             grp = grp.sort_values("as_of_date")
-            gaps = grp["as_of_date"].diff().dt.days > 5  # 5+ day gap
+            if gap_basis in {"business", "trading"}:
+                dates = pd.to_datetime(grp["as_of_date"]).dt.date.to_numpy(dtype="datetime64[D]")
+                elapsed = pd.Series(0, index=grp.index, dtype=int)
+                if len(dates) > 1:
+                    elapsed.iloc[1:] = np.busday_count(dates[:-1], dates[1:], holidays=holidays)
+                gaps = elapsed > gap_threshold
+            else:
+                gaps = grp["as_of_date"].diff().dt.days > gap_threshold
             if gaps.any():
                 idx = grp.index[gaps]
                 flags.loc[idx] = True
-                reasons.loc[idx] = reasons.loc[idx] + "date_gap>5d;"
+                reasons.loc[idx] = reasons.loc[idx] + f"date_gap>{gap_threshold}{gap_basis[0]}d;"
 
     # Open interest floor
     oi_col = "open_interest"

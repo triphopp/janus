@@ -69,6 +69,29 @@ def test_futures_options_option_only_fails_fast():
         FuturesOptionsAdapter({"pricing_model": "black76", "iv_source": "provided"}).prepare(raw)
 
 
+def test_futures_options_drops_only_rows_missing_underlying_map():
+    """One bad chain date should not fail the whole futures-options run."""
+    from adapters.futures_options_adapter import FuturesOptionsAdapter
+
+    raw = _mixed_futures_options_fixture()
+    bad_future = (
+        (raw["instrument_type"] == "future")
+        & (raw["as_of_date"] == pd.Timestamp("2024-01-02"))
+    )
+    raw = raw.loc[~bad_future].copy()
+
+    df, _ = FuturesOptionsAdapter({
+        "pricing_model": "black76",
+        "iv_source": "provided",
+        "dte": {"basis": "calendar", "day_count": "act_365"},
+        "vol_window": 5,
+    }).prepare(raw)
+
+    options = df[df["instrument_type"] == "option"]
+    assert options["as_of_date"].tolist() == [pd.Timestamp("2024-01-01")]
+    assert options["F"].tolist() == [80.0]
+
+
 def test_pcp_pairs_do_not_cross_dates():
     """Same expiry/strike across dates must not create cross-date PCP flags."""
     from adapters.futures_options_adapter import FuturesOptionsAdapter

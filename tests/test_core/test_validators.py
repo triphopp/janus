@@ -66,7 +66,7 @@ def test_missing_completeness_flags_date_gap_and_low_oi():
     assert out.loc[1, "_missing_flag"]
     assert "OI<100" in out.loc[1, "_missing_reason"]
     assert out.loc[2, "_missing_flag"]
-    assert "date_gap>5d" in out.loc[2, "_missing_reason"]
+    assert "date_gap>5bd" in out.loc[2, "_missing_reason"]
 
 
 def test_missing_completeness_uses_symbol_identity_and_min_volume():
@@ -83,10 +83,26 @@ def test_missing_completeness_uses_symbol_identity_and_min_volume():
     })
 
     assert out.loc[1, "_missing_flag"]
-    assert "date_gap>5d" in out.loc[1, "_missing_reason"]
+    assert "date_gap>5bd" in out.loc[1, "_missing_reason"]
     assert "volume<50000" in out.loc[1, "_missing_reason"]
     assert out.loc[2, "_missing_flag"]
     assert "volume<50000" in out.loc[2, "_missing_reason"]
+
+
+def test_missing_completeness_uses_business_day_gap_with_holidays():
+    """Holiday-heavy calendar gaps should not look like missing trading sessions."""
+    df = pd.DataFrame({
+        "symbol": ["SPY", "SPY"],
+        "as_of_date": pd.to_datetime(["2024-12-24", "2025-01-02"]),
+        "volume": [100_000, 100_000],
+    })
+
+    out = missing_completeness(df, {
+        "identity_cols": ["symbol"],
+        "calendar_holidays": ["2024-12-25", "2025-01-01"],
+    })
+
+    assert not out["_missing_flag"].any()
 
 
 def test_outlier_cap_is_point_in_time_after_warmup():

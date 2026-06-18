@@ -125,6 +125,8 @@ class EquityOptionsAdapter(OptionsBase):
             "n_folds": self.cfg.get("n_folds", 8),
             "event_embargo_bars": self.cfg.get("event_embargo_bars", 2),
             "label_end_col": self.cfg.get("label_end_col", "expiry"),
+            "dte": dte_cfg,
+            "metrics_mode": self.cfg.get("metrics_mode", "strategy_required"),
             # skew_direction omitted: compute_skew returns placeholder 0.0 — dead axis
             "regime_axes": self.cfg.get("regime_axes", ["vol_regime", "vrp_sign"]),
             "identity_cols": identity_cols,
