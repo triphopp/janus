@@ -16,6 +16,7 @@ price_field: settlement         # NOT last-trade
 iv_source: provided             # use OPTION_VOLATILITY from exchange (validate first)
 date_grain: eod                 # date-only; no intraday timestamp
 data_version: latest            # v1.4: latest | YYYY-MM-DD | as_of_backtest_start
+metrics_mode: strategy_required # require explicit strategy/P&L returns for Stage 4 performance
 
 pricing:                        # v1.3: model + IV solver settings
   model: black76                # futures options → Black-76 (NEVER use bs)
