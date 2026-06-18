@@ -37,20 +37,77 @@ Recent WTI-specific hardening includes:
 
 ## Pipeline Shape
 
-```text
-raw provider or settlement data
-  -> cache / pinned input guard
-  -> bronze contract gate + quarantine
-  -> coverage SLA
-  -> family adapter
-  -> validators
-  -> CDC + break ledger
-  -> stability diagnostics
-  -> walk-forward purge / embargo
-  -> diversity gate
-  -> metrics and reports
-  -> manifest and dashboard artifacts
+```mermaid
+stateDiagram-v2
+    direction TB
+
+    [*] --> Config : load_config()
+    Config --> Provider : get_provider(cfg)
+    Provider --> RawData : provider.fetch()
+    RawData --> AuditIngestion : audit.snapshot("ingestion")
+
+    AuditIngestion --> Adapter : get_adapter(cfg)
+    Adapter --> PreparedData : adapter.prepare(raw_df)
+    PreparedData --> AuditAdapter : audit.snapshot("adapter")
+    AuditAdapter --> SchemaGuard : _assert_family_schema()
+
+    SchemaGuard --> Stage1
+    state "Stage 1: Validators" as Stage1 {
+        direction TB
+        [*] --> Bounds : logical_bounds_check()
+        Bounds --> Completeness : missing_completeness()
+        Completeness --> Outliers : outlier_cap()
+        Outliers --> [*]
+    }
+
+    Stage1 --> DataQuality : build_scorecard()
+    DataQuality --> AuditValidators : audit.snapshot("validators")
+    AuditValidators --> WalkForward : walk_forward_split()
+    WalkForward --> PurgedFolds : purge_embargo(label_end_col, event_embargo_bars)
+
+    note right of PurgedFolds
+        Purging removes train rows whose labels
+        overlap validation. Embargo adds a gap
+        before each validation window.
+        PSI and metrics use these same folds.
+    end note
+
+    PurgedFolds --> Stage2 : if return_col exists
+    PurgedFolds --> RegimeLabels : otherwise
+    state "Stage 2: Stability Diagnostics" as Stage2 {
+        direction TB
+        [*] --> ReturnSeries : date-grain return series
+        ReturnSeries --> Stationarity : ADF + KPSS
+        Stationarity --> Volatility : ARCH-LM
+        Volatility --> Distribution : JB + Hurst + VR + Ljung-Box
+        Distribution --> Shift : fold PSI / KS / Wasserstein
+        Shift --> [*]
+    }
+
+    Stage2 --> RegimeLabels : assign_regime_labels()
+    RegimeLabels --> DiversityGate : regime_diversity_gate(folds, labels)
+    DiversityGate --> AuditSplitter : audit.snapshot("splitter")
+
+    AuditSplitter --> Stage4
+    state "Stage 4: Metrics and Overfitting" as Stage4 {
+        direction TB
+        [*] --> AllFoldReturns : validation returns from all purged folds
+        AllFoldReturns --> DiversityAnnotations : attach diversity_pass
+        DiversityAnnotations --> FoldMetrics : per_fold_breakdown()
+        FoldMetrics --> RegimeMetrics : per_regime_breakdown()
+        RegimeMetrics --> StabilityScore : stability_score()
+        StabilityScore --> PassedScore : passed_stability_score()
+        PassedScore --> DSR : deflated_sharpe_ratio()
+        DSR --> [*]
+    }
+
+    Stage4 --> AuditMetrics : audit.snapshot("metrics")
+    AuditMetrics --> Artifacts : reports, manifests, dashboard files
+    Artifacts --> [*]
 ```
+
+The full diagram source and paper-friendly section diagrams live in
+`docs/architecture_diagram.mmd` and `docs/architecture_sections/`.
 
 ## Install
 
@@ -67,7 +124,7 @@ python3 -m pytest -q
 Expected current result:
 
 ```text
-225 passed
+236 passed
 ```
 
 ## Quick Start: WTI Settlement Options

@@ -1,0 +1,18 @@
+flowchart TB
+    %% Single-column friendly data preparation view.
+    classDef box fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef io fill:#f2f2f2,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef audit fill:#ffffff,stroke:#555555,stroke-width:1px,stroke-dasharray:4 3,color:#111111;
+
+    A["YAML Config<br/>instrument + defaults"]:::io
+    B["Fixed Input Guard<br/>cache or pinned CSV"]:::box
+    C["Provider / Cache<br/>raw DataFrame"]:::box
+    D["Bronze Contract<br/>quarantine + coverage"]:::box
+    E["Family Schema Guard<br/>required columns"]:::box
+    F["Adapter<br/>asset/options prep"]:::box
+    H["Prepared DataFrame<br/>+ core_cfg"]:::io
+    G["Audit<br/>ingestion + adapter"]:::audit
+
+    A --> B --> C --> D --> E --> F --> H
+    G -.-> C
+    G -.-> H

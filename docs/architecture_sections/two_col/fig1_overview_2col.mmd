@@ -1,0 +1,13 @@
+flowchart TB
+    %% Single-column friendly overview for two-column papers.
+    classDef box fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef io fill:#f2f2f2,stroke:#111111,stroke-width:1px,color:#111111;
+
+    A["Config"]:::io
+    B["Guarded<br/>Ingestion"]:::box
+    C["Contract<br/>+ Adapter"]:::box
+    D["Validation<br/>DQ + Purged CV"]:::box
+    E["Diagnostics<br/>+ Gate"]:::box
+    F["All-Fold Metrics<br/>+ Reports"]:::io
+
+    A --> B --> C --> D --> E --> F
