@@ -1,0 +1,18 @@
+flowchart TB
+    %% Compact Janus architecture for IEEE-style papers.
+    %% Designed for grayscale export and single-column placement.
+    classDef main fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef io fill:#f2f2f2,stroke:#111111,stroke-width:1px,color:#111111;
+    subgraph GOV["Governance: PIT metadata, audit snapshots, tests"]
+        direction TB
+
+        A["Configuration<br/>instrument + family YAML"]:::io
+        B["Data Ingestion<br/>equity prices / settlement CSV"]:::main
+        C["Adapter Layer<br/>normalization + feature preparation"]:::main
+        D["Core Pipeline<br/>validation -> folds -> stability -> gate -> metrics"]:::main
+        E["Reporting Outputs<br/>HTML / JSON / CSV / prepared data"]:::io
+
+        A --> B --> C --> D --> E
+    end
+
+    style GOV fill:#ffffff,stroke:#555555,stroke-width:1px,stroke-dasharray:4 3,color:#111111

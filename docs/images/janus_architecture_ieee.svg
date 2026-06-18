@@ -1,0 +1,60 @@
+<svg width="360" height="460" viewBox="0 0 360 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Janus compact architecture diagram</title>
+  <desc id="desc">A compact grayscale architecture diagram for an IEEE-style paper.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#111111"/>
+    </marker>
+    <style>
+      .box { fill: #ffffff; stroke: #111111; stroke-width: 1.2; }
+      .io { fill: #f2f2f2; stroke: #111111; stroke-width: 1.2; }
+      .gov { fill: none; stroke: #555555; stroke-width: 1; stroke-dasharray: 5 4; }
+      .arrow { stroke: #111111; stroke-width: 1.2; fill: none; marker-end: url(#arrow); }
+      .label { font: 700 13px Arial, Helvetica, sans-serif; fill: #111111; }
+      .small { font: 10.5px Arial, Helvetica, sans-serif; fill: #333333; }
+      .note { font: 10px Arial, Helvetica, sans-serif; fill: #333333; }
+    </style>
+  </defs>
+
+  <rect class="gov" x="18" y="18" width="324" height="410" rx="7"/>
+
+  <g transform="translate(30 36)">
+    <rect class="io" x="0" y="0" width="300" height="52" rx="4"/>
+    <text class="label" x="150" y="21" text-anchor="middle">Configuration</text>
+    <text class="small" x="150" y="38" text-anchor="middle">instrument and family YAML</text>
+  </g>
+
+  <path class="arrow" d="M 180 88 L 180 112"/>
+
+  <g transform="translate(30 112)">
+    <rect class="box" x="0" y="0" width="300" height="52" rx="4"/>
+    <text class="label" x="150" y="21" text-anchor="middle">Data Ingestion</text>
+    <text class="small" x="150" y="38" text-anchor="middle">equity prices and settlement CSV</text>
+  </g>
+
+  <path class="arrow" d="M 180 164 L 180 188"/>
+
+  <g transform="translate(30 188)">
+    <rect class="box" x="0" y="0" width="300" height="52" rx="4"/>
+    <text class="label" x="150" y="21" text-anchor="middle">Adapter Layer</text>
+    <text class="small" x="150" y="38" text-anchor="middle">normalization and feature preparation</text>
+  </g>
+
+  <path class="arrow" d="M 180 240 L 180 264"/>
+
+  <g transform="translate(30 264)">
+    <rect class="box" x="0" y="0" width="300" height="52" rx="4"/>
+    <text class="label" x="150" y="21" text-anchor="middle">Core Analysis</text>
+    <text class="small" x="150" y="38" text-anchor="middle">validation, folds, stability, gate, metrics</text>
+  </g>
+
+  <path class="arrow" d="M 180 316 L 180 340"/>
+
+  <g transform="translate(30 340)">
+    <rect class="io" x="0" y="0" width="300" height="52" rx="4"/>
+    <text class="label" x="150" y="21" text-anchor="middle">Reporting Outputs</text>
+    <text class="small" x="150" y="38" text-anchor="middle">HTML, JSON, CSV, prepared data</text>
+  </g>
+
+  <text class="note" x="180" y="414" text-anchor="middle">Governance controls: PIT metadata, audit snapshots, tests</text>
+</svg>
