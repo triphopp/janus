@@ -39,6 +39,7 @@ export function RunsTable({
               <th className="num">Unattr.</th>
               <th className="num">Breaks</th>
               <th>Metric src</th>
+              <th>DQ</th>
               <th className="num">Sharpe</th>
               <th>Links</th>
             </tr>
@@ -73,6 +74,14 @@ export function RunsTable({
                   <td>
                     <MetricPill strategyMetricsAvailable={run.strategy_metrics_available} />
                   </td>
+                  <td>
+                    <span
+                      className={`pill ${run.dq_status === "fail" ? "sev-high" : run.dq_status === "warn" ? "sev-medium" : "sev-low"}`}
+                      title={run.dq_worst_dimension || undefined}
+                    >
+                      {run.dq_status || "-"}
+                    </span>
+                  </td>
                   <td className="num">{run.sharpe_mean == null ? <span className="faint">-</span> : fmtNum(run.sharpe_mean)}</td>
                   <td className="run-links-cell" onClick={(event) => event.stopPropagation()}>
                     <span className="run-links">
@@ -92,7 +101,7 @@ export function RunsTable({
               ))
             ) : (
               <tr>
-                <td colSpan={11}>
+                <td colSpan={12}>
                   <div className="empty">
                     <div className="et">No runs yet</div>
                     <div className="ed">Start a pipeline run, then this table fills in automatically.</div>

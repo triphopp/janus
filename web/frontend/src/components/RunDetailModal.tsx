@@ -90,6 +90,7 @@ function RunDetailBody({
   const status = String(pa.status ?? detail.adjustment_status ?? "not_applicable");
   const taggedRows = detail.tagged_return_outliers || [];
   const changes = detail.changes_sample || [];
+  const dq = detail.data_quality;
 
   return (
     <>
@@ -116,6 +117,33 @@ function RunDetailBody({
             </a>
           ) : null}
         </div>
+      </div>
+
+      <div className="block">
+        <div className="bt">Data quality scorecard</div>
+        {dq ? (
+          <>
+            <div className="adjustment-head">
+              <span className={`pill ${dq.status === "fail" ? "sev-high" : dq.status === "warn" ? "sev-medium" : "sev-low"}`}>
+                {dq.status}
+              </span>
+              <span className="muted">worst: {dq.worst_dimension || "-"}</span>
+            </div>
+            <div className="flow adjflow">
+              {(dq.dimensions || []).map((dim) => (
+                <FlowNode
+                  key={dim.name}
+                  label={dim.name}
+                  value={`${pct(dim.rate)} (${dim.n_defect}/${dim.n_total})`}
+                  mono
+                  tone={dim.status === "fail" ? "bad" : dim.status === "warn" ? "warn" : "ok"}
+                />
+              ))}
+            </div>
+          </>
+        ) : (
+          <span className="muted">no data quality scorecard recorded</span>
+        )}
       </div>
 
       <div className="block">
@@ -151,6 +179,7 @@ function RunDetailBody({
           <FlowNode label="shown" value={valueText(tagSummary.shown || 0)} mono />
           <FlowNode label="policy" value={compactCounts(tagSummary.by_policy)} mono />
           <FlowNode label="validation" value={compactCounts(tagSummary.by_status)} mono />
+          <FlowNode label="severity" value={compactCounts(tagSummary.by_severity)} mono />
         </div>
         <div className="card nested-card">
           <table className="tbl">
@@ -163,6 +192,8 @@ function RunDetailBody({
                 <th className="num">Winsorized</th>
                 <th>Policy</th>
                 <th>Status</th>
+                <th>Severity</th>
+                <th className="num">Z</th>
                 <th>Reason</th>
                 <th />
               </tr>
@@ -184,6 +215,8 @@ function RunDetailBody({
                         <td className="num">{pct(row.return_winsorized)}</td>
                         <td className="mono">{row._return_outlier_policy || "-"}</td>
                         <td className="mono">{row._return_validation_status || "-"}</td>
+                        <td className="mono">{row._return_outlier_severity || "-"}</td>
+                        <td className="num">{fmtNum(row._return_outlier_zscore)}</td>
                         <td className="mono">{row._return_outlier_reason || "-"}</td>
                         <td>
                           {symbol && date ? (
@@ -197,13 +230,13 @@ function RunDetailBody({
                           ) : null}
                         </td>
                       </tr>
-                      {rawPanel ? <InlineRawRow colSpan={9} runId={detail.run_id} target={rawPanel} /> : null}
+                      {rawPanel ? <InlineRawRow colSpan={11} runId={detail.run_id} target={rawPanel} /> : null}
                     </Fragment>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={9} className="faint">
+                  <td colSpan={11} className="faint">
                     no tagged return outliers in this run
                   </td>
                 </tr>
@@ -361,7 +394,7 @@ function FlowNode({
   label: string;
   value: string;
   mono?: boolean;
-  tone?: "bad" | "ok";
+  tone?: "bad" | "ok" | "warn";
 }) {
   return (
     <div className="fnode">

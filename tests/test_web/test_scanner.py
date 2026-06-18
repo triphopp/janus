@@ -40,7 +40,12 @@ def test_scan_runs_links_report_in_symbol_grouped_layout(tmp_path, monkeypatch):
           "n_folds_passed": 1,
           "metrics_input": "market_diagnostic",
           "strategy_metrics_available": false,
-          "stability_score": {"sharpe_mean": 0.25}
+          "stability_score": {"sharpe_mean": 0.25},
+          "data_quality": {
+            "status": "warn",
+            "worst_dimension": "coverage_shortfall",
+            "dimensions": [{"name": "coverage_shortfall", "status": "warn"}]
+          }
         }
         """,
         encoding="utf-8",
@@ -57,6 +62,8 @@ def test_scan_runs_links_report_in_symbol_grouped_layout(tmp_path, monkeypatch):
     assert rows[0]["has_report"] is True
     assert rows[0]["metrics_input"] == "market_diagnostic"
     assert rows[0]["strategy_metrics_available"] is False
+    assert rows[0]["dq_status"] == "warn"
+    assert rows[0]["dq_worst_dimension"] == "coverage_shortfall"
 
 
 def test_run_detail_includes_tagged_return_outliers(tmp_path, monkeypatch):
@@ -80,6 +87,10 @@ def test_run_detail_includes_tagged_return_outliers(tmp_path, monkeypatch):
         "_return_validation_status": ["unreviewed", "provider_confirmed"],
         "_return_outlier_reason": ["", "cross_provider_validated"],
         "_return_outlier_evidence": ["", "provider_return=-0.0879"],
+        "_return_outlier_direction": ["", "low"],
+        "_return_outlier_zscore": [None, -8.5],
+        "_return_outlier_severity": ["", "severe"],
+        "_return_prior_median": [None, 0.001],
         "_return_clip_lower": [None, -0.04],
         "_return_clip_upper": [None, 0.04],
     }).to_csv(data_dir / "prepared.csv", index=False)
@@ -93,8 +104,11 @@ def test_run_detail_includes_tagged_return_outliers(tmp_path, monkeypatch):
 
     assert detail["tagged_return_outlier_summary"]["total"] == 1
     assert detail["tagged_return_outlier_summary"]["by_status"] == {"provider_confirmed": 1}
+    assert detail["tagged_return_outlier_summary"]["by_direction"] == {"low": 1}
+    assert detail["tagged_return_outlier_summary"]["by_severity"] == {"severe": 1}
     assert detail["tagged_return_outliers"][0]["symbol"] == "LMT"
     assert detail["tagged_return_outliers"][0]["return_std"] == -0.088
+    assert detail["tagged_return_outliers"][0]["_return_outlier_zscore"] == -8.5
 
 
 def test_dashboard_requires_react_frontend_build(tmp_path, monkeypatch):
@@ -112,10 +126,11 @@ def test_dashboard_requires_react_frontend_build(tmp_path, monkeypatch):
 def test_fleet_summary_includes_adjustment_warnings():
     rows = [
         {"changes": 1, "unattributed": 0, "adjustment_warning_rows": 2, "breaks_total": 0, "breaks_open": 0, "sev_high": 0},
-        {"changes": 3, "unattributed": 1, "adjustment_warning_rows": 4, "breaks_total": 1, "breaks_open": 1, "sev_high": 1},
+        {"changes": 3, "unattributed": 1, "adjustment_warning_rows": 4, "breaks_total": 1, "breaks_open": 1, "sev_high": 1, "dq_status": "fail"},
     ]
 
     out = scanner.fleet_summary(rows)
 
     assert out["total_changes"] == 4
     assert out["total_adjustment_warnings"] == 6
+    assert out["dq_runs_failing"] == 1
