@@ -153,7 +153,7 @@ def test_write_html_report_outputs_academic_final_report(tmp_path):
     assert "return-dist-payload" in html
     assert "Empirical daily-return histogram" in html
     assert "dist-x-label" in html
-    assert "Fold diversity gate + return diagnostics" in html
+    assert "Fold diversity gate And return diagnostics" in html
     assert "not strategy P&amp;L" in html
     assert "2024-01-15 to 2024-02-01" in html
     assert "12.00%" in html
