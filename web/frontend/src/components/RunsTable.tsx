@@ -41,7 +41,7 @@ export function RunsTable({
               <th>Metric src</th>
               <th>DQ</th>
               <th className="num">Sharpe</th>
-              <th>Links</th>
+              <th>Artifacts</th>
             </tr>
           </thead>
           <tbody>

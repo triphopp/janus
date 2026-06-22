@@ -366,6 +366,21 @@ def download_diff_ledger(run_id: str):
     )
 
 
+@app.post("/api/admin/clear-runs")
+def api_clear_runs():
+    """Delete all generated pipeline output (runs, diff, manifest, breaks).
+    Source data and audit logs are untouched."""
+    import shutil
+    cleared: list[str] = []
+    for sub in ("runs", "diff", "manifest", "breaks"):
+        d = scanner.OUTPUTS / sub
+        if d.exists():
+            shutil.rmtree(d)
+            d.mkdir()
+            cleared.append(sub)
+    return {"ok": True, "cleared": cleared}
+
+
 @app.get("/healthz", response_class=PlainTextResponse)
 def healthz():
     return "ok"

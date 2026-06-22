@@ -68,7 +68,11 @@ export function App() {
 
   return (
     <div className="wrap">
-      <AppHeader onHelp={() => setModal({ kind: "help" })} onRefresh={loadAll} />
+      <AppHeader
+        onHelp={() => setModal({ kind: "help" })}
+        onRefresh={loadAll}
+        onClearRuns={async () => { await dashboardApi.clearRuns(); await loadAll(); }}
+      />
       {error ? <div className="top-error">{error}</div> : null}
       <StatsBar summary={summary} />
       <BreakTimeline trend={trend} />

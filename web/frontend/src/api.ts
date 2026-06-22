@@ -34,6 +34,8 @@ export const dashboardApi = {
     api<Record<string, unknown>>(`/api/runs/${encodeURIComponent(runId)}/diff-meta`),
   diffSummary: (runId: string) =>
     api<Record<string, unknown>>(`/api/runs/${encodeURIComponent(runId)}/diff-summary`),
+  clearRuns: () =>
+    api<{ ok: boolean; cleared: string[] }>("/api/admin/clear-runs", { method: "POST" }),
   transitionBreak: (
     runId: string,
     breakId: string,
