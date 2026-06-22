@@ -24,6 +24,11 @@ const METRIC_GRID_SECONDARY = new Set([
   "adj_factor_min", "adj_factor_max",
   "mean_abs_price_std_vs_provider_adjusted",
   "max_abs_price_std_vs_provider_adjusted",
+  // pipeline infra / artifact paths
+  "guard_status", "split_adjustments", "coverage_gate", "data_cache_mode",
+  "attribution", "audit_snapshots", "data_export",
+  "artifacts", "manifest", "manifest_path",
+  "summary_report", "html_report",
 ]);
 
 function MetricGrid({ section }: { section: DashboardSection }) {
