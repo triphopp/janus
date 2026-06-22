@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import type { DashboardSection } from "../types";
 
 type Props = {
@@ -14,8 +14,8 @@ function ScoreStatus({ status }: { status: string | null }) {
   return <span style={{ color, fontWeight: 600 }}>{status ?? "—"}</span>;
 }
 
-// Internal / config keys that add noise without value in the dashboard grid.
-const METRIC_GRID_BLOCKLIST = new Set([
+// Technical/config keys — shown collapsed in a "details" toggle, not in primary grid.
+const METRIC_GRID_SECONDARY = new Set([
   "output_dir", "run_id",
   "passed_stability_score", "fold_metric_scope", "metrics_mode",
   "metrics_return_col", "derived_return_col", "strategy_return_col",
@@ -23,27 +23,61 @@ const METRIC_GRID_BLOCKLIST = new Set([
   "allow_retro_adjusted_prices",
   "adj_factor_min", "adj_factor_max",
   "mean_abs_price_std_vs_provider_adjusted",
+  "max_abs_price_std_vs_provider_adjusted",
 ]);
 
 function MetricGrid({ section }: { section: DashboardSection }) {
+  const [showTech, setShowTech] = useState(false);
   const payload = section.payload as Record<string, unknown> | null;
   if (!payload) {
     return <p style={{ color: "#9ca3af", fontSize: 12 }}>{section.empty_reason ?? "No data"}</p>;
   }
-  const entries = Object.entries(payload).filter(
-    ([k, v]) => !METRIC_GRID_BLOCKLIST.has(k) && (typeof v !== "object" || v === null)
-  );
-  if (entries.length === 0) {
-    return <p style={{ color: "#9ca3af", fontSize: 12 }}>—</p>;
-  }
+
+  const flat = Object.entries(payload).filter(([, v]) => typeof v !== "object" || v === null);
+  const primary   = flat.filter(([k]) => !METRIC_GRID_SECONDARY.has(k));
+  const secondary = flat.filter(([k]) =>  METRIC_GRID_SECONDARY.has(k));
+
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 24px" }}>
-      {entries.map(([k, v]) => (
-        <span key={k} style={{ fontSize: 12, color: "#d1d5db" }}>
-          <span style={{ color: "#9ca3af" }}>{k}:</span>{" "}
-          <strong>{String(v ?? "—")}</strong>
-        </span>
-      ))}
+    <div>
+      {primary.length > 0 ? (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", marginBottom: secondary.length ? 6 : 0 }}>
+          {primary.map(([k, v]) => (
+            <span key={k} style={{ fontSize: 12, color: "#d1d5db" }}>
+              <span style={{ color: "#9ca3af" }}>{k}:</span>{" "}
+              <strong>{String(v ?? "—")}</strong>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {secondary.length > 0 ? (
+        <>
+          <button
+            onClick={() => setShowTech((s) => !s)}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: "#6b7280", fontSize: 10, padding: "2px 0",
+              display: "flex", alignItems: "center", gap: 4,
+            }}
+          >
+            <span style={{ transform: showTech ? "rotate(90deg)" : "none", display: "inline-block", transition: "transform 0.15s" }}>▶</span>
+            {showTech ? "hide" : `${secondary.length} technical fields`}
+          </button>
+          {showTech ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", marginTop: 4, padding: "6px 8px", background: "rgba(0,0,0,.15)", borderRadius: 4 }}>
+              {secondary.map(([k, v]) => (
+                <span key={k} style={{ fontSize: 10, color: "#6b7280", fontFamily: "monospace" }}>
+                  {k}=<span style={{ color: "#9ca3af" }}>{String(v ?? "—")}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {primary.length === 0 && secondary.length === 0 ? (
+        <p style={{ color: "#9ca3af", fontSize: 12 }}>—</p>
+      ) : null}
     </div>
   );
 }
