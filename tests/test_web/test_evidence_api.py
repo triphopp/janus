@@ -387,9 +387,13 @@ class TestCaseStatus:
 
 # ── GET /api/evidence/runs/{run_id}/outliers ──────────────────────────────────
 
+# INTC/20260619_062444 is a real run present in outputs/runs/ with 41 outliers.
+_REAL_RUN_ID = "20260619_062444"
+
+
 class TestRunOutliers:
     def test_returns_outliers_from_real_parquet(self, client):
-        resp = client.get("/api/evidence/runs/20260622_083209/outliers")
+        resp = client.get(f"/api/evidence/runs/{_REAL_RUN_ID}/outliers")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] > 0
@@ -400,7 +404,7 @@ class TestRunOutliers:
         assert first["evidence_status"] == "not_investigated"
 
     def test_outliers_sorted_by_abs_zscore(self, client):
-        resp = client.get("/api/evidence/runs/20260622_083209/outliers")
+        resp = client.get(f"/api/evidence/runs/{_REAL_RUN_ID}/outliers")
         zs = [abs(o["z_score"]) for o in resp.json()["outliers"]]
         assert zs == sorted(zs, reverse=True)
 
@@ -410,16 +414,16 @@ class TestRunOutliers:
 
     def test_evidence_status_reflects_job(self, client):
         from web.evidence_api import _job_set
-        resp = client.get("/api/evidence/runs/20260622_083209/outliers")
+        resp = client.get(f"/api/evidence/runs/{_REAL_RUN_ID}/outliers")
         first = resp.json()["outliers"][0]
         _job_set(first["case_id"], status="done", verdict="supported_event")
-        resp2 = client.get("/api/evidence/runs/20260622_083209/outliers")
+        resp2 = client.get(f"/api/evidence/runs/{_REAL_RUN_ID}/outliers")
         updated = next(o for o in resp2.json()["outliers"] if o["case_id"] == first["case_id"])
         assert updated["evidence_status"] == "done"
         assert updated["verdict"] == "supported_event"
 
     def test_investigate_url_present(self, client):
-        resp = client.get("/api/evidence/runs/20260622_083209/outliers")
+        resp = client.get(f"/api/evidence/runs/{_REAL_RUN_ID}/outliers")
         for o in resp.json()["outliers"]:
             assert o["investigate_url"] == "/api/evidence/run"
 
