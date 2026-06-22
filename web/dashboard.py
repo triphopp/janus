@@ -16,6 +16,7 @@ Start:  python run_dashboard.py            (→ http://127.0.0.1:8800)
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import tempfile
@@ -31,6 +32,9 @@ from web import scanner
 app = FastAPI(title="Janus Data-Ops Dashboard", version="1.1")
 FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 FRONTEND_ASSETS = FRONTEND_DIST / "assets"
+MAX_INLINE_DIFF_BYTES = int(os.environ.get("JANUS_MAX_INLINE_DIFF_BYTES", str(10 * 1024 * 1024)))
+MAX_DIFF_REGEN_LEDGER_BYTES = int(os.environ.get("JANUS_MAX_DIFF_REGEN_LEDGER_BYTES", str(10 * 1024 * 1024)))
+MAX_DIFF_PAGE_LIMIT = int(os.environ.get("JANUS_MAX_DIFF_PAGE_LIMIT", "1000"))
 
 
 # ──────────────────────────── JSON API ────────────────────────────
@@ -46,6 +50,66 @@ def api_run(run_id: str):
     if d is None:
         raise HTTPException(404, f"run not found: {run_id}")
     return d
+
+
+@app.get("/api/runs/{run_id}/diff-meta")
+def api_diff_meta(run_id: str):
+    meta = _diff_meta(run_id)
+    if not meta["has_ledger"] and not meta["has_html"]:
+        raise HTTPException(404, f"no diff artifacts for run: {run_id}")
+    return meta
+
+
+@app.get("/api/runs/{run_id}/diff-records")
+def api_diff_records(
+    run_id: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(200, ge=1),
+    stage: str | None = Query(None),
+    change_type: str | None = Query(None),
+    reason: str | None = Query(None),
+):
+    """Return a bounded page from the JSONL diff ledger.
+
+    This endpoint is intentionally page-based so the dashboard never has to embed
+    a multi-hundred-MB diff payload in an iframe or a self-contained HTML page.
+    """
+    limit = min(limit, MAX_DIFF_PAGE_LIMIT)
+    ledger = scanner.DIFF_DIR / f"{run_id}_changes.jsonl"
+    if not ledger.exists():
+        raise HTTPException(404, f"no diff ledger for run: {run_id}")
+
+    rows = []
+    matched = 0
+    has_more = False
+    for rec in scanner._iter_jsonl(ledger):
+        if stage and f"{rec.get('stage_from')}->{rec.get('stage_to')}" != stage:
+            continue
+        if change_type and rec.get("change_type") != change_type:
+            continue
+        if reason and rec.get("reason") != reason:
+            continue
+
+        if matched < offset:
+            matched += 1
+            continue
+        if len(rows) < limit:
+            rows.append(rec)
+            matched += 1
+            continue
+        has_more = True
+        break
+
+    next_offset = offset + len(rows) if has_more else None
+    return {
+        "run_id": run_id,
+        "offset": offset,
+        "limit": limit,
+        "returned": len(rows),
+        "next_offset": next_offset,
+        "has_more": has_more,
+        "records": rows,
+    }
 
 
 @app.get("/api/breaks")
@@ -144,7 +208,7 @@ def serve_report(run_id: str):
 def serve_diff(run_id: str):
     p = scanner.DIFF_DIR / f"{run_id}_diff.html"
     ledger = scanner.DIFF_DIR / f"{run_id}_changes.jsonl"
-    if ledger.exists():
+    if ledger.exists() and _should_regenerate_diff_html(ledger, p):
         diff_report.write_diff_html(
             list(scanner._iter_jsonl(ledger)),
             scanner.load_breaks(run_id),
@@ -152,8 +216,110 @@ def serve_diff(run_id: str):
             out_dir=scanner.DIFF_DIR,
         )
     if not p.exists():
+        if ledger.exists():
+            return HTMLResponse(_large_diff_html(run_id, _diff_meta(run_id)))
         raise HTTPException(404, f"no diff HTML for run: {run_id}")
-    return HTMLResponse(p.read_text(encoding="utf-8"))
+    if p.stat().st_size > MAX_INLINE_DIFF_BYTES:
+        return HTMLResponse(_large_diff_html(run_id, _diff_meta(run_id)))
+    return FileResponse(p, media_type="text/html")
+
+
+def _should_regenerate_diff_html(ledger: Path, html_path: Path) -> bool:
+    """Regenerate only small ledgers; large ledgers must use paged APIs."""
+    if ledger.stat().st_size > MAX_DIFF_REGEN_LEDGER_BYTES:
+        return False
+    return not html_path.exists() or ledger.stat().st_mtime_ns > html_path.stat().st_mtime_ns
+
+
+def _diff_meta(run_id: str) -> dict:
+    ledger = scanner.DIFF_DIR / f"{run_id}_changes.jsonl"
+    html_path = scanner.DIFF_DIR / f"{run_id}_diff.html"
+    ledger_bytes = ledger.stat().st_size if ledger.exists() else 0
+    html_bytes = html_path.stat().st_size if html_path.exists() else 0
+    too_large = (
+        ledger_bytes > MAX_DIFF_REGEN_LEDGER_BYTES
+        or html_bytes > MAX_INLINE_DIFF_BYTES
+    )
+    return {
+        "run_id": run_id,
+        "has_ledger": ledger.exists(),
+        "has_html": html_path.exists(),
+        "ledger_bytes": ledger_bytes,
+        "html_bytes": html_bytes,
+        "max_inline_diff_bytes": MAX_INLINE_DIFF_BYTES,
+        "max_regen_ledger_bytes": MAX_DIFF_REGEN_LEDGER_BYTES,
+        "render_mode": "paged_required" if too_large else "inline_html",
+        "too_large_for_inline": too_large,
+        "records_api": f"/api/runs/{run_id}/diff-records?limit=200",
+        "download_path": f"/diff/{run_id}/download" if ledger.exists() else None,
+    }
+
+
+def _large_diff_html(run_id: str, meta: dict) -> str:
+    safe_run = html.escape(run_id)
+    records_api = html.escape(meta["records_api"])
+    download = meta.get("download_path")
+    download_link = (
+        f'<a class="btn" href="{html.escape(download)}">Download JSONL ledger</a>'
+        if download else ""
+    )
+    return f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Janus diff too large - {safe_run}</title>
+    <style>
+      body{{margin:0;background:#101217;color:#e7e8ee;font-family:system-ui,-apple-system,Segoe UI,sans-serif}}
+      main{{max-width:780px;margin:10vh auto;padding:0 24px}}
+      h1{{font-size:24px;margin:0 0 10px}}
+      p{{color:#aeb4c0;line-height:1.6}}
+      code{{background:#171b22;border:1px solid #2b3240;border-radius:6px;padding:2px 6px;color:#d7e3ff}}
+      .grid{{display:grid;grid-template-columns:180px 1fr;gap:10px 16px;margin:22px 0}}
+      .k{{color:#8d96a8}} .v{{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
+      .btn{{display:inline-flex;margin-right:10px;margin-top:8px;padding:9px 12px;border:1px solid #3a4558;border-radius:6px;color:#e7e8ee;text-decoration:none;background:#171b22}}
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Diff is too large to render inline</h1>
+      <p>
+        Run <code>{safe_run}</code> has a diff artifact large enough to freeze the browser
+        if loaded as a self-contained iframe. The dashboard blocked inline rendering and
+        exposed a paged API instead.
+      </p>
+      <div class="grid">
+        <div class="k">Ledger size</div><div class="v">{_format_bytes(meta["ledger_bytes"])}</div>
+        <div class="k">HTML size</div><div class="v">{_format_bytes(meta["html_bytes"])}</div>
+        <div class="k">Inline limit</div><div class="v">{_format_bytes(meta["max_inline_diff_bytes"])}</div>
+        <div class="k">Render mode</div><div class="v">{html.escape(meta["render_mode"])}</div>
+      </div>
+      <a class="btn" href="{records_api}">Open first 200 records as JSON</a>
+      {download_link}
+    </main>
+  </body>
+</html>"""
+
+
+def _format_bytes(n: int) -> str:
+    units = ("B", "KB", "MB", "GB")
+    value = float(n)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+        value /= 1024
+
+
+@app.get("/diff/{run_id}/download")
+def download_diff_ledger(run_id: str):
+    ledger = scanner.DIFF_DIR / f"{run_id}_changes.jsonl"
+    if not ledger.exists():
+        raise HTTPException(404, f"no diff ledger for run: {run_id}")
+    return FileResponse(
+        ledger,
+        media_type="application/x-ndjson",
+        filename=f"{run_id}_changes.jsonl",
+    )
 
 
 @app.get("/healthz", response_class=PlainTextResponse)
@@ -213,4 +379,3 @@ def spa_fallback(spa_path: str):
     if spa_path.startswith(("api/", "diff/", "report/", "assets/")):
         raise HTTPException(404, f"not found: {spa_path}")
     return index()
-

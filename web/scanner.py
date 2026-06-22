@@ -78,10 +78,11 @@ def _read_json(p: Path) -> Optional[dict]:
 
 def _iter_jsonl(p: Path):
     try:
-        for line in p.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line:
-                yield json.loads(line)
+        with p.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    yield json.loads(line)
     except Exception:
         return
 
@@ -124,7 +125,10 @@ def scan_runs() -> list[dict]:
                     un += 1
             r["changes"] = ch
             r["unattributed"] = un
-            r["has_diff"] = (DIFF_DIR / f"{rid}_diff.html").exists()
+            r["has_diff"] = True
+            r["diff_ledger_bytes"] = cp.stat().st_size if cp.exists() else 0
+            html_path = DIFF_DIR / f"{rid}_diff.html"
+            r["diff_html_bytes"] = html_path.stat().st_size if html_path.exists() else 0
 
     # 3. break ledgers
     if BREAKS_DIR.exists():
