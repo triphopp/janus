@@ -1,0 +1,22 @@
+{
+  "case_id": "case_conflict_001",
+  "run_id": "fixture_run",
+  "signal_type": "return_outlier",
+  "as_of_date": "2024-06-10",
+  "family": "equity",
+  "instrument": null,
+  "symbol": "CONF",
+  "severity": "moderate",
+  "metric_name": "return_std",
+  "observed_value": 0.091,
+  "baseline_value": 0.010,
+  "z_score": 5.1,
+  "pct_change": 0.091,
+  "local_context": {
+    "direction": "high",
+    "reason": "large positive return with conflicting source explanations"
+  },
+  "protected_columns": [],
+  "candidate_terms": ["rise", "jump", "surge"],
+  "source_hints": ["SEC"]
+}

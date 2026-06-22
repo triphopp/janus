@@ -1,0 +1,83 @@
+{
+  "wti return_outlier 2024-09-25": [
+    {
+      "title": "EIA Weekly Petroleum Status Report - September 25, 2024",
+      "url": "https://www.eia.gov/petroleum/supply/weekly/archive/2024/2024_09_25/pdf/wpsrbef.pdf",
+      "snippet": "U.S. commercial crude oil inventories decreased by 4.5 million barrels from the previous week.",
+      "published_at": "2024-09-25T14:30:00Z",
+      "domain": "eia.gov"
+    }
+  ],
+  "wti price move 2024-09-25": [
+    {
+      "title": "EIA Weekly Petroleum Status Report - September 25, 2024",
+      "url": "https://www.eia.gov/petroleum/supply/weekly/archive/2024/2024_09_25/pdf/wpsrbef.pdf",
+      "snippet": "U.S. commercial crude oil inventories decreased by 4.5 million barrels from the previous week.",
+      "published_at": "2024-09-25T14:30:00Z",
+      "domain": "eia.gov"
+    },
+    {
+      "title": "WTI Crude Rises on Surprise Inventory Draw",
+      "url": "https://www.reuters.com/markets/commodities/oil-prices-wti-inventory-2024-09-25",
+      "snippet": "WTI crude oil futures surged after EIA reported a larger-than-expected draw in crude inventories.",
+      "published_at": "2024-09-25T16:00:00Z",
+      "domain": "reuters.com"
+    }
+  ],
+  "wti futures settlement 2024-09-25": [
+    {
+      "title": "Oil Markets: WTI Crude Jumps on Inventory Data",
+      "url": "https://www.marketwatch.com/story/wti-oil-price-2024-09-25",
+      "snippet": "WTI crude posted its biggest single-day gain in weeks after weekly inventory data showed a sharp drawdown.",
+      "published_at": "2024-09-25T18:00:00Z",
+      "domain": "marketwatch.com"
+    }
+  ],
+  "wti inventory report 2024-09-25": [
+    {
+      "title": "EIA Weekly Petroleum Status Report - September 25, 2024",
+      "url": "https://www.eia.gov/petroleum/supply/weekly/archive/2024/2024_09_25/pdf/wpsrbef.pdf",
+      "snippet": "Commercial crude inventories fell 4.5 million barrels, a larger draw than expected.",
+      "published_at": "2024-09-25T14:30:00Z",
+      "domain": "eia.gov"
+    }
+  ],
+  "eia crude oil inventory 2024-09-25": [
+    {
+      "title": "EIA Weekly Petroleum Status Report - September 25, 2024",
+      "url": "https://www.eia.gov/petroleum/supply/weekly/archive/2024/2024_09_25/pdf/wpsrbef.pdf",
+      "snippet": "This week's EIA petroleum status report shows a surprise drawdown in crude inventories.",
+      "published_at": "2024-09-25T14:30:00Z",
+      "domain": "eia.gov"
+    }
+  ],
+  "opec oil market 2024-09-25": [],
+  "conf stock move 2024-06-10": [
+    {
+      "title": "CONF Shares Surge on Acquisition Report",
+      "url": "https://www.marketwatch.com/story/conf-acquisition-2024-06-10",
+      "snippet": "Shares of CONF rose sharply after reports of an acquisition at a significant premium.",
+      "published_at": "2024-06-10T14:00:00Z",
+      "domain": "marketwatch.com"
+    },
+    {
+      "title": "CONF Stock Move June 10, 2024 - Correction",
+      "url": "https://www.reuters.com/markets/conf-correction-2024-06-10",
+      "snippet": "The company disputed acquisition reports as erroneous and misreported. Correction issued.",
+      "published_at": "2024-06-10T20:00:00Z",
+      "domain": "reuters.com"
+    }
+  ],
+  "conf shares rise 2024-06-10": [
+    {
+      "title": "CONF Shares Surge on Acquisition Report",
+      "url": "https://www.marketwatch.com/story/conf-acquisition-2024-06-10",
+      "snippet": "CONF stock jumped more than 9% in heavy trading volume following acquisition rumors.",
+      "published_at": "2024-06-10T14:00:00Z",
+      "domain": "marketwatch.com"
+    }
+  ],
+  "conf earnings guidance 2024-06-10": [],
+  "conf sec filing 2024-06-10": [],
+  "conf analyst upgrade 2024-06-10": []
+}
