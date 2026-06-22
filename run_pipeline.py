@@ -717,6 +717,9 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
               f"{coverage_gate['expected_trading_days']} trading days "
               f"({coverage_gate['coverage_ratio']:.1%})"
               + ("; " + "; ".join(coverage_gate["reasons"]) if coverage_gate["reasons"] else ""))
+        if coverage_gate.get("lead_gap_bdays", 0) > 0 and coverage_gate.get("first_present"):
+            print(f"  → suggest: --start {coverage_gate['first_present']}"
+                  f"  (data begins {coverage_gate['first_present']})")
     except Exception as exc:  # SLA gate is observability — never break the run
         coverage_gate = {"status": "error", "error": str(exc)}
 
