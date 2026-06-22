@@ -14,14 +14,28 @@ function ScoreStatus({ status }: { status: string | null }) {
   return <span style={{ color, fontWeight: 600 }}>{status ?? "—"}</span>;
 }
 
+// Internal / config keys that add noise without value in the dashboard grid.
+const METRIC_GRID_BLOCKLIST = new Set([
+  "output_dir", "run_id",
+  "passed_stability_score", "fold_metric_scope", "metrics_mode",
+  "metrics_return_col", "derived_return_col", "strategy_return_col",
+  "return_outlier_policy", "metric_warning", "sample_floor_breached",
+  "allow_retro_adjusted_prices",
+  "adj_factor_min", "adj_factor_max",
+  "mean_abs_price_std_vs_provider_adjusted",
+]);
+
 function MetricGrid({ section }: { section: DashboardSection }) {
   const payload = section.payload as Record<string, unknown> | null;
   if (!payload) {
     return <p style={{ color: "#9ca3af", fontSize: 12 }}>{section.empty_reason ?? "No data"}</p>;
   }
   const entries = Object.entries(payload).filter(
-    ([, v]) => typeof v !== "object" || v === null
+    ([k, v]) => !METRIC_GRID_BLOCKLIST.has(k) && (typeof v !== "object" || v === null)
   );
+  if (entries.length === 0) {
+    return <p style={{ color: "#9ca3af", fontSize: 12 }}>—</p>;
+  }
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 24px" }}>
       {entries.map(([k, v]) => (

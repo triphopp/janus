@@ -194,79 +194,13 @@ function RunDetailBody({
         </div>
       </div>
 
-      <div className="block">
-        <div className="bt">Tagged return outliers</div>
-        <div className="flow adjflow">
-          <FlowNode label="tagged rows" value={valueText(tagSummary.total || 0)} mono />
-          <FlowNode label="shown" value={valueText(tagSummary.shown || 0)} mono />
-          <FlowNode label="policy" value={compactCounts(tagSummary.by_policy)} mono />
-          <FlowNode label="validation" value={compactCounts(tagSummary.by_status)} mono />
-          <FlowNode label="severity" value={compactCounts(tagSummary.by_severity)} mono />
-        </div>
-        <div className="card nested-card">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Symbol</th>
-                <th className="num">Raw return</th>
-                <th className="num">Std return</th>
-                <th className="num">Winsorized</th>
-                <th>Policy</th>
-                <th>Status</th>
-                <th>Severity</th>
-                <th className="num">Z</th>
-                <th>Reason</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {taggedRows.length ? (
-                taggedRows.map((row, index) => {
-                  const date = String(row.as_of_date || "").slice(0, 10);
-                  const symbol = row.symbol || "";
-                  const rawKey = `tagged:${symbol}:${date}:${index}`;
-                  const rawPanel = rawPanels[rawKey];
-                  return (
-                    <Fragment key={rawKey}>
-                      <tr>
-                        <td className="mono">{date || "-"}</td>
-                        <td className="mono">{symbol || "-"}</td>
-                        <td className="num bad">{pct(row.return_raw)}</td>
-                        <td className="num">{pct(row.return_std)}</td>
-                        <td className="num">{pct(row.return_winsorized)}</td>
-                        <td className="mono">{row._return_outlier_policy || "-"}</td>
-                        <td className="mono">{row._return_validation_status || "-"}</td>
-                        <td className="mono">{row._return_outlier_severity || "-"}</td>
-                        <td className="num">{fmtNum(row._return_outlier_zscore)}</td>
-                        <td className="mono">{row._return_outlier_reason || "-"}</td>
-                        <td>
-                          {symbol && date ? (
-                            <button
-                              className="ghost tiny"
-                              aria-pressed={Boolean(rawPanel)}
-                              onClick={() => toggleRawPanel(rawKey, { symbol, asOfDate: date, label: `${symbol} ${date}` })}
-                            >
-                              {rawPanel ? "close" : "raw"}
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-                      {rawPanel ? <InlineRawRow colSpan={11} runId={detail.run_id} target={rawPanel} /> : null}
-                    </Fragment>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={11} className="faint">
-                    no tagged return outliers in this run
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <TaggedOutliersBlock
+        taggedRows={taggedRows}
+        tagSummary={tagSummary}
+        runId={detail.run_id}
+        rawPanels={rawPanels}
+        toggleRawPanel={toggleRawPanel}
+      />
 
       {evidenceOutliers.length > 0 ? (
         <EvidenceOutliersBlock
@@ -437,8 +371,158 @@ function InlineRawRow({ colSpan, runId, target }: { colSpan: number; runId: stri
   );
 }
 
+const TAG_PAGE_SIZE = 10;
 const PAGE_SIZE = 10;
 const SEV_ORDER: Record<string, number> = { severe: 0, high: 1, medium: 2, low: 3 };
+
+function TaggedOutliersBlock({
+  taggedRows,
+  tagSummary,
+  runId,
+  rawPanels,
+  toggleRawPanel,
+}: {
+  taggedRows: import("../types").TaggedOutlier[];
+  tagSummary: Record<string, unknown>;
+  runId: string;
+  rawPanels: RawPanels;
+  toggleRawPanel: (key: string, target: RawTarget) => void;
+}) {
+  const [sevFilter, setSevFilter] = useState<"all" | "high">("high");
+  const [page, setPage] = useState(0);
+
+  const filtered = useMemo(() => {
+    let rows = [...taggedRows].sort(
+      (a, b) =>
+        (SEV_ORDER[a._return_outlier_severity ?? ""] ?? 9) -
+        (SEV_ORDER[b._return_outlier_severity ?? ""] ?? 9)
+    );
+    if (sevFilter === "high") {
+      rows = rows.filter(
+        (r) => r._return_outlier_severity === "severe" || r._return_outlier_severity === "high"
+      );
+    }
+    return rows;
+  }, [taggedRows, sevFilter]);
+
+  const pages    = Math.max(1, Math.ceil(filtered.length / TAG_PAGE_SIZE));
+  const safePage = Math.min(page, pages - 1);
+  const visible  = filtered.slice(safePage * TAG_PAGE_SIZE, (safePage + 1) * TAG_PAGE_SIZE);
+
+  return (
+    <div className="block">
+      <div className="bt" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span>Tagged return outliers</span>
+        <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>
+          {filtered.length} / {taggedRows.length}
+        </span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button
+            className={`ghost tiny${sevFilter === "high" ? " active" : ""}`}
+            onClick={() => { setSevFilter("high"); setPage(0); }}
+          >
+            Severe / High
+          </button>
+          <button
+            className={`ghost tiny${sevFilter === "all" ? " active" : ""}`}
+            onClick={() => { setSevFilter("all"); setPage(0); }}
+          >
+            All
+          </button>
+        </div>
+      </div>
+
+      <div className="flow adjflow" style={{ marginBottom: 6 }}>
+        <FlowNode label="total" value={valueText(tagSummary.total || 0)} mono />
+        <FlowNode label="severity" value={compactCounts(tagSummary.by_severity as Record<string,number>)} mono />
+        <FlowNode label="direction" value={compactCounts(tagSummary.by_direction as Record<string,number>)} mono />
+        <FlowNode label="reason" value={compactCounts(tagSummary.by_reason as Record<string,number>)} mono />
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="muted" style={{ padding: "6px 0", fontSize: 12 }}>
+          No severe / high outliers.
+        </div>
+      ) : (
+        <>
+          <div className="card nested-card">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Symbol</th>
+                  <th className="num">Return</th>
+                  <th className="num">Z</th>
+                  <th>Severity</th>
+                  <th>Reason</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((row, index) => {
+                  const date   = String(row.as_of_date || "").slice(0, 10);
+                  const symbol = row.symbol || "";
+                  const rawKey = `tagged:${symbol}:${date}:${safePage * TAG_PAGE_SIZE + index}`;
+                  const rawPanel = rawPanels[rawKey];
+                  return (
+                    <Fragment key={rawKey}>
+                      <tr>
+                        <td className="mono">{date || "-"}</td>
+                        <td className="mono">{symbol || "-"}</td>
+                        <td className="num bad">{pct(row.return_raw)}</td>
+                        <td className="num">{fmtNum(row._return_outlier_zscore)}</td>
+                        <td className="mono">{row._return_outlier_severity || "-"}</td>
+                        <td className="mono">{row._return_outlier_reason || "-"}</td>
+                        <td>
+                          {symbol && date ? (
+                            <button
+                              className="ghost tiny"
+                              aria-pressed={Boolean(rawPanel)}
+                              onClick={() =>
+                                toggleRawPanel(rawKey, { symbol, asOfDate: date, label: `${symbol} ${date}` })
+                              }
+                            >
+                              {rawPanel ? "close" : "raw"}
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                      {rawPanel ? (
+                        <InlineRawRow colSpan={7} runId={runId} target={rawPanel} />
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {pages > 1 ? (
+            <div className="ev-pagination">
+              <button
+                className="ghost tiny"
+                disabled={safePage === 0}
+                onClick={() => setPage(safePage - 1)}
+              >
+                ← prev
+              </button>
+              <span className="muted" style={{ fontSize: 11 }}>
+                page {safePage + 1} / {pages}
+              </span>
+              <button
+                className="ghost tiny"
+                disabled={safePage >= pages - 1}
+                onClick={() => setPage(safePage + 1)}
+              >
+                next →
+              </button>
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
 
 function EvidenceOutliersBlock({
   outliers,
