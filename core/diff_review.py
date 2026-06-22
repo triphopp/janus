@@ -311,9 +311,13 @@ def summarize_ledger(
                 _maybe_add_sample(samples["protected_mutations"], raw, skey, max_ps)
 
         elif ct == "schema_add":
-            if rsn not in ("adapter_universe_filter", "pit_mad_derived", "outlier_cap",
-                           "outlier_policy", "pit_mad_outlier", "pit_mad_threshold",
-                           "return_clip_filter", "validator_or_filter"):
+            # reason=None/empty on schema_add is normal (adapter-derived columns
+            # like iv, delta, price_std, _outlier_flag carry no explicit reason).
+            # Only flag when an explicit non-empty reason is present but unrecognized.
+            if rsn and rsn not in ("adapter_universe_filter", "pit_mad_derived",
+                                   "outlier_cap", "outlier_policy", "pit_mad_outlier",
+                                   "pit_mad_threshold", "return_clip_filter",
+                                   "validator_or_filter"):
                 unknown_schema_add += 1
 
         # ── Numeric materiality ───────────────────────────────────────────────
