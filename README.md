@@ -24,16 +24,24 @@ The actively supported workflows are:
 - WTI futures-options runs using a hash-pinned local settlement file.
 - Contract/quarantine, coverage, CDC, break ledger, reports, and dashboard scan.
 
-Recent WTI-specific hardening includes:
+Recent additions include:
 
 - expiry-aware option purge through `label_end_col: expiry`
 - embargo support on the expiry-aware purge path
-- option universe filters for DTE, minimum premium, IV cap, and delta bands
+- option universe filters for DTE, minimum premium, IV cap, delta bands, and relative spread
 - hash-pinned local file acceptance without `--allow-unversioned-data`
 - settlement `net_change` checks at contract identity grain
 - futures curve outlier checks at delivery-month grain
 - sampled provided-IV validation for large option chains
 - optional Greeks and PCP checks for large chains
+- **option universe exclusion observability**: `summary.json` now explains why each option row
+  was excluded (DTE, premium, IV, delta, spread, missing underlying) rather than reporting a
+  single opaque row-drop count
+- **option quality summary**: `summary.json` includes `option_quality` with IV rates,
+  delta coverage, PCP flags, and universe exclusion reasons — separating research universe
+  choices from hard data defects
+- **equity option price provenance**: `price_source` (mid/last/missing), bid-ask spread, and
+  relative spread columns added to equity option chain output
 
 ## Pipeline Shape
 
@@ -131,7 +139,7 @@ python3 -m pytest -q
 Expected current result:
 
 ```text
-239 passed
+248 passed
 ```
 
 ## Quick Start: WTI Settlement Options
@@ -282,6 +290,7 @@ option_universe:
   # delta_band:
   #   min_abs_delta: 0.15
   #   max_abs_delta: 0.80
+  # max_relative_spread: 0.50   # equity options only
 ```
 
 Why these defaults exist:
@@ -299,6 +308,55 @@ provided`; solved-IV runs apply the cap after IV solve. Delta bands use
 `delta_provided` before Greeks when that column is available; otherwise they
 apply after computed Greeks. If Greeks are disabled and no provided delta exists,
 delta-band filters have no row-level value to apply.
+
+The canonical key for IV universe filtering is `option_universe.max_iv`. The
+legacy top-level key `iv_cap` is still accepted as a deprecated alias when
+`option_universe.max_iv` is absent, but a config warning is recorded in
+`summary.json` under `_config_warnings`.
+
+## Option Universe Exclusion Observability
+
+Every option row excluded by a universe filter is counted by reason rather than
+reported as a single opaque row-drop. Counts appear in `summary.json` under
+`option_quality.universe`:
+
+```json
+{
+  "option_quality": {
+    "option_rows": 1000,
+    "support_future_rows": 120,
+    "universe": {
+      "rows_before": 1500,
+      "rows_after": 1000,
+      "drop_rows": 500,
+      "drop_by_reason": {
+        "dte_below_min": 200,
+        "dte_above_max": 150,
+        "premium_below_min": 100,
+        "iv_above_cap": 40,
+        "iv_missing_or_unsolved": 5,
+        "delta_above_max": 5,
+        "spread_above_max": 0,
+        "missing_underlying_future": 0
+      },
+      "filters": {
+        "min_dte_days": 1,
+        "max_dte_days": 730,
+        "min_option_price": 0.00001
+      }
+    },
+    "iv": {"null_rate": 0.0, "solve_fail_rate": 0.0, "flag_rate": 0.01, "max": 1.9},
+    "delta": {"coverage_rate": 1.0, "bad_sign_count": 0},
+    "pcp": {"flag_rate": 0.0, "pair_missing_rate": 0.12, "duplicate_pair_rate": 0.0},
+    "underlying_map": {"missing_rows": 0, "drop_rate": 0.0}
+  }
+}
+```
+
+Design invariant: a row excluded by DTE, premium, IV cap, delta band, or spread
+is a **research universe choice** and is never quarantined at the bronze gate.
+A row failing a contract structural or PIT rule is still quarantined as before.
+The two counts must never overlap.
 
 ## Futures Options Semantics
 
@@ -409,8 +467,11 @@ janus/
 ├── configs/
 ├── contracts/
 ├── ingestion/
+│   └── equity_options_loader_yf.py   # price_source / spread provenance columns
 ├── adapters/
+│   └── options_base.py               # universe exclusion counting + _option_quality state
 ├── core/
+│   └── options_quality.py            # standalone options quality summarizer
 ├── lineage/
 ├── web/
 │   ├── dashboard.py
@@ -463,10 +524,13 @@ This section tracks feature promises made by the README and what remains.
 | Coverage SLA | Working | Add exchange holiday calendars where business-day approximation is too rough. |
 | WTI futures-options adapter | Working | Validate more historical windows and add a smaller checked-in fixture for end-to-end CI. |
 | Expiry-aware purge/embargo | Working | Add more CPCV coverage if combinatorial purged CV is used for options. |
-| Option universe DTE/price filters | Working | Add moneyness and liquidity filters. |
+| Option universe DTE/price/IV/delta/spread filters | Working | Add moneyness filter. |
+| Option universe exclusion observability | Working | `summary.json` reports per-reason exclusion counts. Wire `options_quality.summarize()` into `run_pipeline.py` to populate `option_quality` in `summary.json`. |
+| Equity option price provenance | Working | `price_source`, `bid_ask_spread`, `relative_spread`, `_wide_spread_flag` columns emitted by `EquityOptionsLoaderYF`. |
 | Provided-IV validation | Partial | Currently supports sampling; add stale-IV detection and break-ledger attribution. |
 | Put-call parity | Partial | Code exists and can be enabled, but WTI config disables it for large chains; add sampled/offline PCP checks that emit clean quality reports. |
 | Greeks | Partial | Correct formulas exist, but WTI disables runtime Greeks for speed; vectorize/cache Greeks before enabling full-chain runs. |
+| Silver quality flags | Not started | Add `_iv_quality_flag`, `_delta_quality_flag`, `_premium_quality_flag` columns after IV/Greeks (Phase 6 of observability plan). Framework and counts are already in `_option_quality`. |
 | Strategy P&L metrics | Partial | Pipeline reports market diagnostics unless `return_net`, `strategy_return`, or `pnl_return` exists. Add signal/position/P&L generation or ingest strategy P&L. |
 | Diversity gate | Partial | WTI Q4 builds folds but passes `0` diversity folds. Tune regime axes/thresholds or use longer history. |
 | Asset context panel | Not started | Surface dividends, split events, coverage, quarantine, and option-universe counts together in `summary.json` and dashboard cards. |
