@@ -410,6 +410,93 @@ Each `summary.json` includes guard status for PIT timing, contract gate,
 coverage SLA, fixed input version, strategy P&L presence, and adjustment
 semantics.
 
+## Evidence Search Harness
+
+The evidence harness investigates return outliers by searching the web, fetching
+pages, extracting claims with an LLM, and writing a verdict to disk. It is an
+optional module wired into the dashboard — outliers in the "Tagged return
+outliers" panel can be investigated in one click.
+
+### Architecture
+
+```text
+core/evidence_harness/
+├── controller.py        # orchestration loop
+├── config.py            # HarnessConfig + load_harness_config()
+├── schema.py            # OutlierCasePackage, EvidenceClaim, SourceRegistryRecord, …
+├── llm/
+│   ├── router.py        # build_llm_client() + three task functions
+│   ├── client.py        # LLMClient base class
+│   └── providers/
+│       ├── mock.py      # deterministic stub — default, no network
+│       ├── ollama.py    # local Ollama (gemma4:26b, llama3, etc.)
+│       └── openai_compat.py  # any OpenAI-compatible endpoint
+web/evidence_api.py      # FastAPI routes: /api/evidence/run, /cases, /runs/{id}/outliers
+```
+
+No model name or provider is hardcoded in Python source. All LLM settings live
+in config only:
+
+| Field | Default | Override |
+|---|---|---|
+| `llm_provider` | `mock` | `ollama` or `openai_compat` |
+| `llm_model` | `mock-v1` | any tag (`gemma4:26b`, `gpt-4o`, …) |
+| `llm_base_url` | `http://localhost:11434` | any endpoint |
+| `llm_api_key` | none | `${ENV_VAR}` interpolation supported |
+| `llm_timeout_sec` | 60 | increase for large local models |
+
+### Running with Ollama
+
+Pull a model once:
+
+```bash
+ollama pull gemma4:26b
+```
+
+Enable in `configs/evidence_search.yaml`:
+
+```yaml
+evidence_search:
+  enabled: true
+  mode: live
+  search_provider: duckduckgo
+  fetch_provider: httpx
+  max_runtime_sec: 300
+  llm_enabled: true
+  llm_provider: ollama
+  llm_model: gemma4:26b
+  llm_timeout_sec: 180
+```
+
+Start the dashboard and click **Investigate** on any outlier row.
+
+### Evidence API routes
+
+| Route | Purpose |
+|---|---|
+| `POST /api/evidence/run` | Submit an outlier case for investigation |
+| `GET /api/evidence/cases/{case_id}/status` | Poll job status, sources, claims |
+| `GET /api/evidence/runs/{run_id}/outliers` | List all outlier cases for a run |
+
+### Providers
+
+| `llm_provider` | Requirement | Notes |
+|---|---|---|
+| `mock` | none | Deterministic stub, safe for CI |
+| `ollama` | `ollama` running locally | `gemma4:26b` tested; any pulled model works |
+| `openai_compat` | API key | Works with OpenAI, Together, Fireworks, etc. |
+
+Artifacts are written to `outputs/evidence/harness/{run_id}/{case_id}/{harness_run_id}/`:
+
+```text
+verdict.json
+claims.jsonl
+sources.jsonl
+summary.json
+```
+
+Status endpoint reads artifacts from disk — results survive server restarts.
+
 ## Dashboard
 
 Build the frontend once:

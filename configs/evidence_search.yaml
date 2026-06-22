@@ -12,7 +12,7 @@ evidence_search:
   max_results_per_query: 10
   max_fetches: 20
   max_iterations: 4
-  max_runtime_sec: 120
+  max_runtime_sec: 300
   max_page_bytes: 2000000
   request_timeout_sec: 15
   min_delay_ms_per_domain: 1000
@@ -23,6 +23,11 @@ evidence_search:
   deny_domains: []
 
   llm_enabled: false
+  # llm_provider: ollama              # mock | ollama | openai_compat
+  # llm_model: gemma4:26b             # any model tag Ollama has pulled
+  # llm_base_url: http://localhost:11434
+  # llm_timeout_sec: 180              # increase for large local models
+  # llm_api_key: ${OPENAI_API_KEY}    # env-var interpolation supported
 
   source_tiers:
     tier1_official:
