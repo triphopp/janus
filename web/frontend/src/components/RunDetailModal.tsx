@@ -3,13 +3,15 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { dashboardApi } from "../api";
 import { compactCounts, fmtNum, h8, isNum, pct, valueText } from "../format";
-import type { ChangeRecord, DashboardRunDetail, DashboardSection, RunDetail } from "../types";
+import type { ChangeRecord, DashboardRunDetail, DashboardSection, EvidenceOutlier, RunDetail } from "../types";
+import { EvidencePanel } from "./EvidencePanel";
 import { Modal } from "./Modal";
 import { RawSourcePanel } from "./RawSourcePanel";
 import { SectionPanel } from "./SectionPanel";
 
 type RawTarget = { symbol: string; asOfDate: string; label: string };
 type RawPanels = Record<string, RawTarget>;
+type EvidencePanels = Record<string, boolean>;
 
 export function RunDetailModal({
   runId,
@@ -23,16 +25,24 @@ export function RunDetailModal({
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rawPanels, setRawPanels] = useState<RawPanels>({});
+  const [evidenceOutliers, setEvidenceOutliers] = useState<EvidenceOutlier[]>([]);
+  const [evidencePanels, setEvidencePanels] = useState<EvidencePanels>({});
 
   useEffect(() => {
     let active = true;
     setDetail(null);
     setError(null);
     setRawPanels({});
+    setEvidenceOutliers([]);
+    setEvidencePanels({});
     dashboardApi
       .runDetail(runId)
       .then((data) => active && setDetail(data))
       .catch((err: Error) => active && setError(err.message));
+    dashboardApi
+      .evidenceOutliers(runId)
+      .then((data) => active && setEvidenceOutliers(data.outliers))
+      .catch(() => { /* evidence endpoint optional — silently skip */ });
     return () => {
       active = false;
     };
@@ -65,6 +75,11 @@ export function RunDetailModal({
           rawPanels={rawPanels}
           toggleRawPanel={toggleRawPanel}
           onOpenDiff={onOpenDiff}
+          evidenceOutliers={evidenceOutliers}
+          evidencePanels={evidencePanels}
+          toggleEvidencePanel={(caseId) =>
+            setEvidencePanels((prev) => ({ ...prev, [caseId]: !prev[caseId] }))
+          }
         />
       ) : null}
     </Modal>
@@ -75,12 +90,18 @@ function RunDetailBody({
   detail,
   rawPanels,
   toggleRawPanel,
-  onOpenDiff
+  onOpenDiff,
+  evidenceOutliers,
+  evidencePanels,
+  toggleEvidencePanel,
 }: {
   detail: RunDetail;
   rawPanels: RawPanels;
   toggleRawPanel: (key: string, target: RawTarget) => void;
   onOpenDiff: (runId: string) => void;
+  evidenceOutliers: EvidenceOutlier[];
+  evidencePanels: EvidencePanels;
+  toggleEvidencePanel: (caseId: string) => void;
 }) {
   const pa = (detail.price_adjustments || {}) as Record<string, unknown>;
   const metricSrc = detail.strategy_metrics_available ? "strategy return stream" : "market return diagnostic";
@@ -247,6 +268,67 @@ function RunDetailBody({
         </div>
       </div>
 
+      {evidenceOutliers.length > 0 ? (
+        <div className="block">
+          <div className="bt">Evidence investigation ({evidenceOutliers.length} outliers)</div>
+          <div className="card nested-card">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Symbol</th>
+                  <th className="num">Z</th>
+                  <th>Severity</th>
+                  <th>Dir</th>
+                  <th>Status</th>
+                  <th>Verdict</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {evidenceOutliers.map((o) => (
+                  <Fragment key={o.case_id}>
+                    <tr>
+                      <td className="mono">{o.as_of_date}</td>
+                      <td className="mono">{o.symbol || "-"}</td>
+                      <td className={`num ${Number(o.z_score) < 0 ? "bad" : "ok"}`}>
+                        {o.z_score != null ? o.z_score.toFixed(2) : "-"}
+                      </td>
+                      <td className="mono">{o.severity || "-"}</td>
+                      <td className="mono">{o.direction || "-"}</td>
+                      <td>
+                        <span className={`pill ${evidenceStatusClass(o.evidence_status)}`}>
+                          {o.evidence_status}
+                        </span>
+                      </td>
+                      <td className={o.verdict ? verdictTdClass(o.verdict) : "muted"}>
+                        {o.verdict ?? "-"}
+                      </td>
+                      <td>
+                        <button
+                          className="ghost tiny"
+                          aria-pressed={Boolean(evidencePanels[o.case_id])}
+                          onClick={() => toggleEvidencePanel(o.case_id)}
+                        >
+                          {evidencePanels[o.case_id] ? "close" : "details"}
+                        </button>
+                      </td>
+                    </tr>
+                    {evidencePanels[o.case_id] ? (
+                      <tr>
+                        <td colSpan={8}>
+                          <EvidencePanel outlier={o} runId={detail.run_id} />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
       <AdditionalSections detail={detail} />
 
       <StagePipeline detail={detail} />
@@ -405,6 +487,20 @@ function InlineRawRow({ colSpan, runId, target }: { colSpan: number; runId: stri
       </td>
     </tr>
   );
+}
+
+function evidenceStatusClass(status: string) {
+  if (status === "done") return "sev-low";
+  if (status === "running") return "sev-medium";
+  if (status === "error") return "sev-high";
+  return "";
+}
+
+function verdictTdClass(verdict: string) {
+  if (verdict === "supported_event") return "ok";
+  if (verdict === "contradicted") return "bad";
+  if (verdict === "failed" || verdict === "error") return "bad";
+  return "warn";
 }
 
 function FlowNode({

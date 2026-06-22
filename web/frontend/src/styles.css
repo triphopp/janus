@@ -989,3 +989,49 @@ section {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Evidence panel ─────────────────────────────────────────────────────── */
+.evidence-panel {
+  padding: 8px 10px;
+  background: var(--surface2, rgba(0,0,0,.04));
+  border-left: 3px solid var(--accent);
+  margin: 2px 0;
+}
+.evidence-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.evidence-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.evidence-status { font-size: 10px; }
+.evidence-conf   { font-size: 11px; }
+.evidence-spinning {
+  font-size: 11px;
+  animation: evidence-pulse 1.2s ease-in-out infinite;
+}
+@keyframes evidence-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .4; }
+}
+.evidence-summary {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fg);
+  margin: 6px 0 4px;
+}
+.evidence-findings {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.evidence-findings li { margin-bottom: 2px; }
