@@ -27,6 +27,7 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 
 from core import breaks as bk
 from core import diff_report
+from core import diff_review
 from web import scanner
 
 app = FastAPI(title="Janus Data-Ops Dashboard", version="1.1")
@@ -58,6 +59,32 @@ def api_diff_meta(run_id: str):
     if not meta["has_ledger"] and not meta["has_html"]:
         raise HTTPException(404, f"no diff artifacts for run: {run_id}")
     return meta
+
+
+@app.get("/api/runs/{run_id}/diff-summary")
+def api_diff_summary(run_id: str, regenerate: bool = False):
+    """Return the policy summary for a diff ledger.
+
+    If the summary file is missing or stale, generate it on demand
+    (unless the ledger is too large and regeneration would block the request).
+    """
+    ledger = scanner.DIFF_DIR / f"{run_id}_changes.jsonl"
+    summary_path = scanner.DIFF_DIR / f"{run_id}_summary.json"
+    if not ledger.exists() and not summary_path.exists():
+        raise HTTPException(404, f"no diff artifacts for run: {run_id}")
+    if regenerate or not diff_review.is_summary_fresh(ledger, summary_path):
+        if ledger.exists() and ledger.stat().st_size <= MAX_DIFF_REGEN_LEDGER_BYTES:
+            try:
+                diff_review.write_diff_summary(ledger, run_id=run_id,
+                                               out_dir=scanner.DIFF_DIR)
+            except Exception as exc:
+                raise HTTPException(500, f"summary generation failed: {exc}") from exc
+    if not summary_path.exists():
+        raise HTTPException(404, f"no diff summary for run: {run_id}")
+    try:
+        return json.loads(summary_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise HTTPException(500, f"failed to read summary: {exc}") from exc
 
 
 @app.get("/api/runs/{run_id}/diff-records")
@@ -234,16 +261,29 @@ def _should_regenerate_diff_html(ledger: Path, html_path: Path) -> bool:
 def _diff_meta(run_id: str) -> dict:
     ledger = scanner.DIFF_DIR / f"{run_id}_changes.jsonl"
     html_path = scanner.DIFF_DIR / f"{run_id}_diff.html"
+    summary_path = scanner.DIFF_DIR / f"{run_id}_summary.json"
     ledger_bytes = ledger.stat().st_size if ledger.exists() else 0
     html_bytes = html_path.stat().st_size if html_path.exists() else 0
     too_large = (
         ledger_bytes > MAX_DIFF_REGEN_LEDGER_BYTES
         or html_bytes > MAX_INLINE_DIFF_BYTES
     )
+    review_status = None
+    findings_count = 0
+    top_findings: list = []
+    if summary_path.exists():
+        try:
+            sm = json.loads(summary_path.read_text(encoding="utf-8"))
+            review_status = sm.get("status")
+            findings_count = len(sm.get("findings", []))
+            top_findings = sm.get("findings", [])[:5]
+        except Exception:
+            review_status = "degraded"
     return {
         "run_id": run_id,
         "has_ledger": ledger.exists(),
         "has_html": html_path.exists(),
+        "has_summary": summary_path.exists(),
         "ledger_bytes": ledger_bytes,
         "html_bytes": html_bytes,
         "max_inline_diff_bytes": MAX_INLINE_DIFF_BYTES,
@@ -252,6 +292,10 @@ def _diff_meta(run_id: str) -> dict:
         "too_large_for_inline": too_large,
         "records_api": f"/api/runs/{run_id}/diff-records?limit=200",
         "download_path": f"/diff/{run_id}/download" if ledger.exists() else None,
+        "summary_path": f"/api/runs/{run_id}/diff-summary" if summary_path.exists() else None,
+        "review_status": review_status,
+        "findings_count": findings_count,
+        "top_findings": top_findings,
     }
 
 

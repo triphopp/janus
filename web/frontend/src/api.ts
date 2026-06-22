@@ -30,6 +30,10 @@ export const dashboardApi = {
     const qs = new URLSearchParams({ symbol, as_of_date: asOfDate });
     return api<RawRow>(`/api/runs/${encodeURIComponent(runId)}/raw-row?${qs.toString()}`);
   },
+  diffMeta: (runId: string) =>
+    api<Record<string, unknown>>(`/api/runs/${encodeURIComponent(runId)}/diff-meta`),
+  diffSummary: (runId: string) =>
+    api<Record<string, unknown>>(`/api/runs/${encodeURIComponent(runId)}/diff-summary`),
   transitionBreak: (
     runId: string,
     breakId: string,

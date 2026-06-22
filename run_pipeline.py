@@ -61,6 +61,7 @@ from core import breaks as breaks_mod
 from core import coverage as coverage_mod
 from core import lineage
 from core import diff_report
+from core import diff_review
 from core.quarantine import write_quarantine
 from core.causal import validate_pit_timing
 from core.config import normalize_config
@@ -853,6 +854,18 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
             progress=cfg.get("progress_mode", "auto"),
         )
         ledger_path = cdc.write_ledger(cdc_records, run_id)
+        try:
+            diff_summary_path = diff_review.write_diff_summary(
+                Path(ledger_path),
+                run_id=run_id,
+                context={
+                    "family": core_cfg.get("family", cfg.get("family")),
+                    "rows_after": len(df),
+                },
+            )
+        except Exception as _ds_exc:
+            diff_summary_path = None
+            print(f"  diff_review: summary write failed ({_ds_exc})")
         cdc_breaks = breaks_mod.raise_breaks(cdc_records, run_id)
         # one ledger per run: coverage-SLA breaks join CDC breaks
         pipeline_breaks.extend(cdc_breaks)
@@ -866,6 +879,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
             "breaks": breaks_mod.summarize(pipeline_breaks),
             "breaks_ledger": breaks_path,
             "diff_html": diff_html_path,
+            "diff_summary": diff_summary_path,
         }
         unattributed = sum(1 for r in cdc_records if r.reason == cdc.UNATTRIBUTED
                            and r.change_type == "cell_mod")
