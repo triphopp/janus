@@ -19,6 +19,7 @@ from typing import Optional
 import pandas as pd
 
 from core import cdc as _cdc
+from web import view_model as _vm
 
 OUTPUTS = Path("outputs")
 MANIFEST_DIR = OUTPUTS / "manifest"
@@ -161,20 +162,26 @@ def scan_runs() -> list[dict]:
             continue
         rid = s.get("run_id") or sp.parent.name.split("__")[0]
         r = runs.setdefault(rid, _blank(rid))
-        r["instrument"] = s.get("instrument")
-        r["family"] = s.get("family")
-        r["date_range"] = s.get("date_range")
-        r["n_rows"] = s.get("n_rows_prepared") or s.get("n_rows_raw")
-        r["n_folds"] = s.get("n_folds")
-        r["n_folds_passed"] = s.get("n_folds_passed")
-        r["metrics_input"] = s.get("metrics_input")
-        r["strategy_metrics_available"] = s.get("strategy_metrics_available")
-        ss = s.get("stability_score") or {}
-        r["sharpe_mean"] = ss.get("sharpe_mean")
-        dq = s.get("data_quality") or {}
-        r["dq_status"] = dq.get("status")
-        r["dq_worst_dimension"] = dq.get("worst_dimension")
-        r["dq_fail_count"] = sum(1 for d in dq.get("dimensions", []) if d.get("status") == "fail")
+
+        # Delegate summary interpretation to view_model; merge stable fields in
+        artifacts_for_vm = {
+            "run_id": rid,
+            "summary": s,
+            "summary_path": str(sp),
+            "price_adjustments": s.get("price_adjustments"),
+        }
+        vm_row = _vm.build_run_row_v1(artifacts_for_vm)
+        # Apply view-model fields — existing scanner fields (changes, breaks, etc.)
+        # take priority when already set; summary-derived fields are applied here
+        for key in (
+            "instrument", "family", "date_range", "n_rows", "n_folds", "n_folds_passed",
+            "metrics_input", "strategy_metrics_available", "sharpe_mean",
+            "dq_status", "dq_worst_dimension", "dq_fail_count",
+            "schema_version", "identity", "metrics", "status", "artifacts",
+            "sections_summary", "source_schema", "extensions",
+        ):
+            r[key] = vm_row.get(key)
+        # Price adjustments via view_model (keeps _apply_price_adjustments logic intact)
         _apply_price_adjustments(r, s.get("price_adjustments"))
         if r.get("created_at") is None:
             r["created_at"] = s.get("created_at")
@@ -197,16 +204,30 @@ def scan_runs() -> list[dict]:
 def run_detail(run_id: str) -> Optional[dict]:
     for r in scan_runs():
         if r["run_id"] == run_id:
-            r = dict(r)
-            r["breaks"] = load_breaks(run_id)
-            r["changes_sample"] = _changes_sample(run_id)
-            r["stage_hops"] = _stage_hops(run_id)
-            tagged = load_tagged_return_outliers(run_id)
-            r["tagged_return_outliers"] = tagged["rows"]
-            r["tagged_return_outlier_summary"] = tagged["summary"]
             summary = _summary_for_run(run_id) or {}
-            r["data_quality"] = summary.get("data_quality")
-            return r
+            run_dir = find_run_dir(run_id)
+            tagged = load_tagged_return_outliers(run_id)
+            artifacts = {
+                "run_id": run_id,
+                "summary": summary,
+                "summary_path": str(run_dir / "summary.json") if run_dir else None,
+                "has_diff": r.get("has_diff", False),
+                "has_report": r.get("has_report", False),
+                "breaks_open": r.get("breaks_open", 0),
+                "unattributed": r.get("unattributed", 0),
+                "breaks": load_breaks(run_id),
+                "changes_sample": _changes_sample(run_id),
+                "stage_hops": _stage_hops(run_id),
+                "tagged_return_outliers": tagged,
+                "price_adjustments": r.get("price_adjustments"),
+                "vol_surface_summary": _vm.load_vol_surface_summary(run_dir) if run_dir else None,
+            }
+            detail = _vm.build_run_detail_v1(artifacts)
+            # Carry over scanner-side fields not in summary (provenance, CDC counts, etc.)
+            for k, v in r.items():
+                if k not in detail:
+                    detail[k] = v
+            return detail
     return None
 
 

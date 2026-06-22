@@ -1,0 +1,22 @@
+{
+  "run_id": "legacy1",
+  "instrument": "MSFT",
+  "symbol": "MSFT",
+  "family": "equity",
+  "date_range": ["2020-01-01", "2024-12-31"],
+  "n_rows_prepared": 100,
+  "n_rows_raw": 110,
+  "n_folds": 8,
+  "n_folds_passed": 7,
+  "metrics_input": "market_diagnostic",
+  "strategy_metrics_available": false,
+  "stability_score": {"sharpe_mean": 0.25},
+  "data_quality": {
+    "status": "warn",
+    "worst_dimension": "coverage_shortfall",
+    "enforcement": "advisory",
+    "dimensions": [
+      {"name": "coverage_shortfall", "rate": 0.12, "n_defect": 12, "n_total": 100, "aql": 0.05, "ltpd": 0.15, "status": "warn"}
+    ]
+  }
+}

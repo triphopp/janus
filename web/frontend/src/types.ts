@@ -176,3 +176,61 @@ export type RunDetail = RunRow & {
 };
 
 export type RawRow = Record<string, unknown>;
+
+// ── Dashboard view-model types (stable, schema-versioned) ─────────────────────
+
+export type DashboardMetric = {
+  id: string;
+  label: string;
+  value: number | string | null;
+  format: "integer" | "number" | "text" | string;
+  status?: string | null;
+};
+
+export type DashboardSection = {
+  id: string;
+  title: string;
+  kind: "scorecard" | "metric_grid" | "artifact_link" | "raw_json" | string;
+  status: string | null;
+  metrics: DashboardMetric[];
+  payload: unknown;
+  source_artifacts: string[];
+  empty_reason: string | null;
+};
+
+export type DashboardIdentity = {
+  symbol?: string | null;
+  instrument?: string | null;
+  family?: string | null;
+  date_range?: [string, string] | string[] | null;
+};
+
+export type DashboardSourceSchema = {
+  summary_schema_version: number;
+  dashboard_adapter: string;
+};
+
+export type DashboardArtifacts = {
+  has_diff: boolean;
+  has_report: boolean;
+  has_vol_surface: boolean;
+};
+
+// Extends RunDetail with the stable view-model fields returned by build_run_detail_v1
+export type DashboardRunDetail = RunDetail & {
+  schema_version: string;
+  identity: DashboardIdentity;
+  metrics: DashboardMetric[];
+  status: {
+    data_quality: { status: string | null; worst_dimension: string | null };
+    breaks_open: number;
+    unattributed: number;
+    normalization: string;
+  };
+  artifacts: DashboardArtifacts;
+  sections: DashboardSection[];
+  sections_summary: unknown[];
+  source_schema: DashboardSourceSchema;
+  extensions: Record<string, unknown>;
+  raw_artifact_refs: Record<string, string | null>;
+};

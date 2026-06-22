@@ -1,0 +1,21 @@
+{
+  "summary_schema_version": 2,
+  "run_id": "future1",
+  "instrument": "wti",
+  "symbol": "WTI",
+  "family": "futures_options",
+  "date_range": ["2024-09-25", "2024-12-31"],
+  "n_rows_prepared": 12000,
+  "n_folds": 8,
+  "n_folds_passed": 8,
+  "metrics_input": "strategy_required",
+  "strategy_metrics_available": true,
+  "stability_score": {"sharpe_mean": 0.88},
+  "data_quality": {"status": "pass", "worst_dimension": null, "enforcement": "strict", "dimensions": []},
+  "option_quality": {
+    "option_rows": 12000,
+    "universe": {"drop_rows": 160000, "drop_by_reason": {"dte_above_max": 150000}}
+  },
+  "vol_surface_ref": {"heatmap_count": 4, "interactive_html": "vol_surface/surface.html", "latest_as_of": "2024-12-31"},
+  "new_vendor_block": {"vendor": "acme", "version": "2.1"}
+}

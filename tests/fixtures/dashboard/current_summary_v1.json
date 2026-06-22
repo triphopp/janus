@@ -1,0 +1,26 @@
+{
+  "summary_schema_version": 1,
+  "run_id": "current1",
+  "instrument": "BZ",
+  "symbol": "BZ",
+  "family": "futures",
+  "date_range": ["2023-01-01", "2024-12-31"],
+  "n_rows_prepared": 500,
+  "n_folds": 8,
+  "n_folds_passed": 8,
+  "metrics_input": "market_diagnostic",
+  "strategy_metrics_available": false,
+  "stability_score": {"sharpe_mean": 0.42},
+  "data_quality": {
+    "status": "warn",
+    "worst_dimension": "null_rate",
+    "enforcement": "strict",
+    "dimensions": []
+  },
+  "price_adjustments": {
+    "status": "pass",
+    "policy": "no_provider_adjustments",
+    "factor_rows": 0,
+    "warning_rows": 0
+  }
+}

@@ -3,9 +3,10 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { dashboardApi } from "../api";
 import { compactCounts, fmtNum, h8, isNum, pct, valueText } from "../format";
-import type { ChangeRecord, RunDetail } from "../types";
+import type { ChangeRecord, DashboardRunDetail, DashboardSection, RunDetail } from "../types";
 import { Modal } from "./Modal";
 import { RawSourcePanel } from "./RawSourcePanel";
+import { SectionPanel } from "./SectionPanel";
 
 type RawTarget = { symbol: string; asOfDate: string; label: string };
 type RawPanels = Record<string, RawTarget>;
@@ -246,6 +247,8 @@ function RunDetailBody({
         </div>
       </div>
 
+      <AdditionalSections detail={detail} />
+
       <StagePipeline detail={detail} />
 
       <div className="block">
@@ -285,6 +288,25 @@ function RunDetailBody({
           </table>
         </div>
       </div>
+    </>
+  );
+}
+
+// IDs that are already rendered by hardcoded blocks above — don't double-render
+const HARDCODED_SECTION_IDS = new Set(["data_quality", "price_adjustments"]);
+
+function AdditionalSections({ detail }: { detail: RunDetail }) {
+  const sections = (detail as DashboardRunDetail).sections;
+  if (!sections || sections.length === 0) return null;
+  const extra = sections.filter((s: DashboardSection) => !HARDCODED_SECTION_IDS.has(s.id));
+  if (extra.length === 0) return null;
+  return (
+    <>
+      {extra.map((section: DashboardSection) => (
+        <div key={section.id} className="block">
+          <SectionPanel section={section} />
+        </div>
+      ))}
     </>
   );
 }
