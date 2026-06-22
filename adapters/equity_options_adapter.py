@@ -131,6 +131,8 @@ class EquityOptionsAdapter(OptionsBase):
             "regime_axes": self.cfg.get("regime_axes", ["vol_regime", "vrp_sign"]),
             "identity_cols": identity_cols,
             "outlier_identity_cols": outlier_identity_cols,
+            "option_quality": self._option_quality,
+            "_config_warnings": self._config_warnings,
         }
 
         return df, cfg

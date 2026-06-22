@@ -24,11 +24,7 @@ from .base import ProviderBase
 from .versioned_cache import add_availability_columns
 
 
-def _mid(bid: float, ask: float, last: float) -> float:
-    """Mid price when a two-sided market exists, else last trade."""
-    if bid is not None and ask is not None and bid > 0 and ask > 0 and ask >= bid:
-        return (bid + ask) / 2.0
-    return last
+_WIDE_SPREAD_THRESHOLD = 0.5
 
 
 class EquityOptionsLoaderYF(ProviderBase):
@@ -81,20 +77,26 @@ class EquityOptionsLoaderYF(ProviderBase):
 
         chain = pd.concat(frames, ignore_index=True)
         out = pd.DataFrame({
-            "as_of_date":       as_of,
-            "symbol":           symbol,
-            "expiry":           pd.to_datetime(chain["expiry"]),
-            "right":            chain["right"].astype("string"),
-            "strike":           chain["strike"].astype("float64"),
-            "price":            chain["price"].astype("float64"),
-            "underlying_price": float(spot),
-            "raw_close":        float(spot),     # adapter builds underlying from raw_close
-            "adj_factor":       1.0,
-            "iv_provided":      chain["iv"].astype("float64"),
-            "volume":           chain["volume"].fillna(0).astype("int64"),
-            "open_interest":    chain["open_interest"].fillna(0).astype("int64"),
-            "instrument_type":  "option",
-            "provider":         "yfinance",
+            "as_of_date":        as_of,
+            "symbol":            symbol,
+            "expiry":            pd.to_datetime(chain["expiry"]),
+            "right":             chain["right"].astype("string"),
+            "strike":            chain["strike"].astype("float64"),
+            "price":             chain["price"].astype("float64"),
+            "price_source":      chain["price_source"].astype("string"),
+            "bid":               chain["bid"].astype("float64"),
+            "ask":               chain["ask"].astype("float64"),
+            "bid_ask_spread":    chain["bid_ask_spread"].astype("float64"),
+            "relative_spread":   chain["relative_spread"].astype("float64"),
+            "_wide_spread_flag": chain["_wide_spread_flag"].astype(bool),
+            "underlying_price":  float(spot),
+            "raw_close":         float(spot),
+            "adj_factor":        1.0,
+            "iv_provided":       chain["iv"].astype("float64"),
+            "volume":            chain["volume"].fillna(0).astype("int64"),
+            "open_interest":     chain["open_interest"].fillna(0).astype("int64"),
+            "instrument_type":   "option",
+            "provider":          "yfinance",
         })
         # drop unpriced rows (no bid/ask and no last) — they cannot be validated
         out = out[out["price"].notna() & (out["price"] >= 0)].reset_index(drop=True)
@@ -128,26 +130,53 @@ class EquityOptionsLoaderYF(ProviderBase):
 
     @staticmethod
     def _leg_frame(leg: pd.DataFrame, right: str, exp) -> pd.DataFrame:
-        bid = leg.get("bid")
-        ask = leg.get("ask")
-        last = leg.get("lastPrice")
-        price = [
-            _mid(
-                float(b) if pd.notna(b) else None,
-                float(a) if pd.notna(a) else None,
-                float(l) if pd.notna(l) else np.nan,
-            )
-            for b, a, l in zip(
-                bid if bid is not None else [None] * len(leg),
-                ask if ask is not None else [None] * len(leg),
-                last if last is not None else [np.nan] * len(leg),
-            )
-        ]
+        n = len(leg)
+        bid_col = leg["bid"] if "bid" in leg.columns else [None] * n
+        ask_col = leg["ask"] if "ask" in leg.columns else [None] * n
+        last_col = leg["lastPrice"] if "lastPrice" in leg.columns else [np.nan] * n
+
+        prices, sources, bids_out, asks_out, spreads, rel_spreads, wide_flags = (
+            [], [], [], [], [], [], []
+        )
+        for b, a, l in zip(bid_col, ask_col, last_col):
+            b_f = float(b) if pd.notna(b) else None
+            a_f = float(a) if pd.notna(a) else None
+            l_f = float(l) if pd.notna(l) else np.nan
+            bids_out.append(b_f if b_f is not None else np.nan)
+            asks_out.append(a_f if a_f is not None else np.nan)
+            if b_f is not None and a_f is not None and b_f > 0 and a_f > 0 and a_f >= b_f:
+                mid = (b_f + a_f) / 2.0
+                sprd = a_f - b_f
+                rel = sprd / mid if mid > 0 else np.nan
+                prices.append(mid)
+                sources.append("mid")
+                spreads.append(sprd)
+                rel_spreads.append(rel)
+                wide_flags.append(not np.isnan(rel) and rel >= _WIDE_SPREAD_THRESHOLD)
+            elif not np.isnan(l_f):
+                prices.append(l_f)
+                sources.append("last")
+                spreads.append(np.nan)
+                rel_spreads.append(np.nan)
+                wide_flags.append(False)
+            else:
+                prices.append(np.nan)
+                sources.append("missing")
+                spreads.append(np.nan)
+                rel_spreads.append(np.nan)
+                wide_flags.append(False)
+
         return pd.DataFrame({
             "expiry": exp,
             "right": right,
             "strike": leg["strike"].to_numpy(),
-            "price": price,
+            "price": prices,
+            "price_source": pd.array(sources, dtype="string"),
+            "bid": bids_out,
+            "ask": asks_out,
+            "bid_ask_spread": spreads,
+            "relative_spread": rel_spreads,
+            "_wide_spread_flag": wide_flags,
             "iv": leg["impliedVolatility"].to_numpy() if "impliedVolatility" in leg else np.nan,
             "volume": leg["volume"].to_numpy() if "volume" in leg else 0,
             "open_interest": leg["openInterest"].to_numpy() if "openInterest" in leg else 0,

@@ -53,6 +53,7 @@ from core import metrics, overfitting as ovf, regime, audit as aud
 from core import attribution as attr
 from core import reporting
 from core import data_quality as dq
+from core import options_quality as opt_quality
 from core import contracts as contracts_mod
 from core import manifest as manifest_mod
 from core import cdc
@@ -1161,6 +1162,11 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "coverage_gate": coverage_gate,
         "quarantine": quarantine_summary,
         "data_quality": data_quality,
+        "option_quality": (
+            opt_quality.summarize(df, core_cfg, core_cfg.get("option_quality"))
+            if core_cfg.get("family", cfg.get("family", "equity")).endswith("_options")
+            else {}
+        ),
         "cdc": cdc_summary,
         "lineage_purge": lineage_purge,
         "data_cache_mode": cache_mode,
@@ -1228,44 +1234,121 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Quant Pipeline Framework v1.3")
+    parser = argparse.ArgumentParser(
+        description="Quant Pipeline Framework v1.3",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Universe filters narrow which option rows enter pricing and metrics.
+Excluded rows are NOT bad data — they are research universe choices and are
+counted by reason in summary.json → option_quality.universe.drop_by_reason.
+
+Example (WTI Q4 2024, near-term liquid options + Greeks):
+  python3 run_pipeline.py --instrument wti \\
+    --start 2024-09-25 --end 2024-12-31 \\
+    --max-dte 90 --min-abs-delta 0.10 --max-abs-delta 0.90 \\
+    --compute-greeks --run-id wti_q4
+""",
+    )
+
+    # ── Identity ──────────────────────────────────────────────────────────────
     parser.add_argument("--instrument", "-i", required=True,
-                        help="Instrument name (e.g. bz, spx, aapl)")
+                        help="Instrument config name, e.g. wti, bz, spx, aapl "
+                             "(maps to configs/instruments/<name>.yaml)")
+    parser.add_argument("--start", required=True,
+                        help="Backtest window start date (YYYY-MM-DD, inclusive)")
+    parser.add_argument("--end", required=True,
+                        help="Backtest window end date (YYYY-MM-DD, inclusive)")
+    parser.add_argument("--run-id", default=None,
+                        help="Label for this run; output goes to "
+                             "outputs/runs/<instrument>/<run-id>/. "
+                             "Defaults to a UTC timestamp if omitted.")
+
+    # ── Data source ───────────────────────────────────────────────────────────
     parser.add_argument("--ticker", default=None,
-                        help="Override equity ticker without creating a new instrument YAML (e.g. MSFT)")
+                        help="(equity only) Override the ticker symbol without "
+                             "editing the YAML, e.g. --ticker MSFT")
     parser.add_argument("--provider", default=None, choices=["settlement", "yfinance"],
-                        help="Override data provider (config default used if omitted)")
+                        help="Override data provider (config default used if omitted). "
+                             "settlement = pipe-delimited CME/EIA file; "
+                             "yfinance = live snapshot from Yahoo Finance.")
     parser.add_argument("--data-file", default=None,
-                        help="Import an external settlement file (pipe-delimited) — overrides "
-                             "cfg.data_file; implies --provider settlement")
+                        help="Path to a local settlement CSV/pipe file. "
+                             "Overrides cfg.data_file; implies --provider settlement. "
+                             "File must match the SHA-256 hash pinned in the instrument YAML.")
     parser.add_argument("--allow-unversioned-data", action="store_true",
-                        help="Allow direct provider/source reads for exploratory diagnostics only")
+                        help="Skip the SHA-256 hash check and allow live provider pulls. "
+                             "For exploratory diagnostics only — results are NOT reproducible.")
+
+    # ── Greeks ────────────────────────────────────────────────────────────────
     parser.add_argument("--compute-greeks", action=argparse.BooleanOptionalAction, default=None,
-                        help="Override pricing.compute_greeks from the instrument YAML")
+                        help="Compute Black-76/BS-Merton Greeks (delta, gamma, vega, theta, rho) "
+                             "for every option row that survives universe filtering. "
+                             "Required before --min-abs-delta / --max-abs-delta can filter by delta. "
+                             "WARNING: uses a row-by-row loop — narrow the universe first with "
+                             "--max-dte and price/IV filters to keep runtimes manageable. "
+                             "Overrides pricing.compute_greeks in the instrument YAML.")
+
+    # ── Option universe filters ───────────────────────────────────────────────
+    _uni = parser.add_argument_group(
+        "option universe filters",
+        "Narrow which option rows enter pricing and metrics. Each filter is a "
+        "RESEARCH UNIVERSE CHOICE, not a data-quality gate — rows excluded here "
+        "are counted (not quarantined) in summary.json → option_quality.universe.drop_by_reason.",
+    )
+    _uni.add_argument("--min-dte", type=int, default=None,
+                      help="Drop options with fewer than N days to expiry. "
+                           "Default 1 (drops expiry-day rows). "
+                           "Overrides option_universe.min_dte_days in the instrument YAML.")
+    _uni.add_argument("--max-dte", type=int, default=None,
+                      help="Drop options with more than N days to expiry. "
+                           "Example: --max-dte 90 keeps only the front 3 months of the vol surface. "
+                           "CAUTION: long-dated options are excluded from all metrics — "
+                           "results reflect near-term universe only. "
+                           "Overrides option_universe.max_dte_days in the instrument YAML.")
+    _uni.add_argument("--min-option-price", type=float, default=None,
+                      help="Drop options whose mid/last price is below this threshold. "
+                           "Removes near-zero-premium rows that can distort IV and VRP calculations. "
+                           "Overrides option_universe.min_option_price in the instrument YAML.")
+    _uni.add_argument("--iv-cap", type=float, default=None,
+                      help="Drop options whose implied volatility exceeds this level (e.g. 5.0 = 500%%). "
+                           "Targets data errors (e.g. IV=50 from a stale bid), not extreme-skew options. "
+                           "CAUTION: a tight cap (e.g. 2.0) will exclude legitimate deep OTM options "
+                           "during high-vol events. "
+                           "Overrides option_universe.max_iv (preferred) or validation.iv_cap (deprecated).")
+    _uni.add_argument("--min-abs-delta", type=float, default=None,
+                      help="Drop options whose |delta| is below this threshold. "
+                           "Example: 0.10 drops deep OTM options (tail-risk carriers). "
+                           "Requires --compute-greeks (or compute_greeks: true in YAML). "
+                           "CAUTION: excludes crash/spike events captured by deep OTM options. "
+                           "Overrides option_universe.delta_band.min_abs_delta in the instrument YAML.")
+    _uni.add_argument("--max-abs-delta", type=float, default=None,
+                      help="Drop options whose |delta| exceeds this threshold. "
+                           "Example: 0.90 drops deep ITM options (trade like the underlying, "
+                           "add little vol-surface signal). "
+                           "Requires --compute-greeks. "
+                           "Overrides option_universe.delta_band.max_abs_delta in the instrument YAML.")
+
+    # ── Walk-forward CV ───────────────────────────────────────────────────────
+    parser.add_argument("--n-folds", type=int, default=None,
+                        help="Number of walk-forward CV folds. "
+                             "More folds = narrower training windows and longer total runtime. "
+                             "Overrides cv.n_folds in the instrument YAML.")
+    parser.add_argument("--embargo-bars", type=int, default=None,
+                        help="Gap (in bars) between the end of a training fold and the start of "
+                             "its validation window, preventing label leakage across the boundary. "
+                             "Overrides cv.event_embargo_bars in the instrument YAML.")
+
+    # ── Misc ──────────────────────────────────────────────────────────────────
     parser.add_argument("--metrics-mode", default=None,
                         choices=["auto", "diagnostic", "buy_and_hold", "strategy_required"],
-                        help="Override metrics mode for this run")
-    parser.add_argument("--min-dte", type=int, default=None,
-                        help="Minimum option DTE in days")
-    parser.add_argument("--max-dte", type=int, default=None,
-                        help="Maximum option DTE in days")
-    parser.add_argument("--min-option-price", type=float, default=None,
-                        help="Minimum option premium before pricing work")
-    parser.add_argument("--iv-cap", type=float, default=None,
-                        help="Maximum IV for the option universe; solved-IV runs trim after solve")
-    parser.add_argument("--min-abs-delta", type=float, default=None,
-                        help="Minimum absolute delta for option rows")
-    parser.add_argument("--max-abs-delta", type=float, default=None,
-                        help="Maximum absolute delta for option rows")
-    parser.add_argument("--n-folds", type=int, default=None,
-                        help="Override cv.n_folds")
-    parser.add_argument("--embargo-bars", type=int, default=None,
-                        help="Override event_embargo_bars")
+                        help="Override metrics mode for this run. "
+                             "auto = infer from config; diagnostic = data checks only, no Sharpe/DSR; "
+                             "buy_and_hold = passive benchmark metrics; "
+                             "strategy_required = fail if no strategy signal is present.")
     parser.add_argument("--progress", default="auto", choices=["auto", "bar", "plain", "none"],
-                        help="Progress display mode: auto, bar, plain logs only, or none")
-    parser.add_argument("--start", required=True, help="Start date YYYY-MM-DD")
-    parser.add_argument("--end", required=True, help="End date YYYY-MM-DD")
-    parser.add_argument("--run-id", default=None, help="Custom run ID")
+                        help="Progress display mode. "
+                             "auto = tqdm bar in TTY, plain log lines in CI; "
+                             "bar = force tqdm; plain = log lines only; none = silent.")
     args = parser.parse_args()
     if args.min_dte is not None and args.max_dte is not None and args.min_dte > args.max_dte:
         parser.error("--min-dte must be <= --max-dte")

@@ -28,6 +28,14 @@ class OptionsBase(AdapterBase):
 
     OPTION_REQUIRED_COLUMNS = ("as_of_date", "expiry", "right", "strike", "price")
 
+    def __init__(self, cfg: dict):
+        super().__init__(cfg)
+        self._config_warnings: list = []
+        self._option_quality: dict = {
+            "universe_drop_rows": 0,
+            "universe_drop_by_reason": {},
+        }
+
     def _normalize_option_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Normalize option-chain dtypes used by shared math."""
         df = df.copy()
@@ -98,7 +106,26 @@ class OptionsBase(AdapterBase):
         for key in ("min_dte_days", "max_dte_days", "min_option_price"):
             if key in self.cfg and key not in universe:
                 universe[key] = self.cfg[key]
+        # Accept deprecated iv_cap as alias only when canonical key is absent.
+        if "max_iv" not in universe:
+            legacy = self.cfg.get("iv_cap")
+            if legacy is not None:
+                universe["max_iv"] = legacy
+                warning = (
+                    "validation.iv_cap is deprecated for option universe filtering; "
+                    "use option_universe.max_iv"
+                )
+                if warning not in self._config_warnings:
+                    self._config_warnings.append(warning)
         return universe
+
+    def _count_option_drop(
+        self, reason: str, mask: pd.Series, option_mask: pd.Series
+    ) -> None:
+        n = int((mask & option_mask).sum())
+        if n:
+            by_reason = self._option_quality["universe_drop_by_reason"]
+            by_reason[reason] = by_reason.get(reason, 0) + n
 
     def _max_iv_cfg(self):
         return self._option_universe_cfg().get("max_iv")
@@ -135,6 +162,12 @@ class OptionsBase(AdapterBase):
             return df
 
         iv = pd.to_numeric(df[iv_col], errors="coerce")
+        above_cap = option_mask & iv.notna() & (iv > float(max_iv))
+        missing_iv = option_mask & iv.isna()
+        self._count_option_drop("iv_above_cap", above_cap, option_mask)
+        self._count_option_drop("iv_missing_or_unsolved", missing_iv, option_mask)
+        dropped = int((above_cap | missing_iv).sum())
+        self._option_quality["universe_drop_rows"] += dropped
         keep = (~option_mask) | (iv.notna() & (iv <= float(max_iv)))
         return df.loc[keep].copy()
 
@@ -152,10 +185,16 @@ class OptionsBase(AdapterBase):
         keep = pd.Series(True, index=df.index)
         min_abs = band.get("min_abs_delta")
         if min_abs is not None:
-            keep &= (~option_mask) | (abs_delta.notna() & (abs_delta >= float(min_abs)))
+            passes = (~option_mask) | (abs_delta.notna() & (abs_delta >= float(min_abs)))
+            self._count_option_drop("delta_below_min", option_mask & ~passes, option_mask)
+            keep &= passes
         max_abs = band.get("max_abs_delta")
         if max_abs is not None:
-            keep &= (~option_mask) | (abs_delta.notna() & (abs_delta <= float(max_abs)))
+            passes_max = (~option_mask) | (abs_delta.notna() & (abs_delta <= float(max_abs)))
+            self._count_option_drop("delta_above_max", keep & ~passes_max, option_mask)
+            keep &= passes_max
+        dropped = int((option_mask & ~keep).sum())
+        self._option_quality["universe_drop_rows"] += dropped
         return df.loc[keep].copy()
 
     def _filter_option_universe(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -173,17 +212,33 @@ class OptionsBase(AdapterBase):
 
         min_dte = universe.get("min_dte_days")
         if min_dte is not None and dte_days is not None:
-            keep &= (~option_mask) | (dte_days.notna() & (dte_days >= int(min_dte)))
+            passes = (~option_mask) | (dte_days.notna() & (dte_days >= int(min_dte)))
+            self._count_option_drop("dte_below_min", option_mask & ~passes, option_mask)
+            keep &= passes
 
         max_dte = universe.get("max_dte_days")
         if max_dte is not None and dte_days is not None:
-            keep &= (~option_mask) | (dte_days.notna() & (dte_days <= int(max_dte)))
+            passes = (~option_mask) | (dte_days.notna() & (dte_days <= int(max_dte)))
+            self._count_option_drop("dte_above_max", option_mask & ~passes, option_mask)
+            keep &= passes
 
         min_price = universe.get("min_option_price")
         if min_price is not None:
             premium_col = "option_price" if "option_price" in df.columns else "price"
             premium = pd.to_numeric(df[premium_col], errors="coerce")
-            keep &= (~option_mask) | (premium >= float(min_price))
+            passes = (~option_mask) | (premium >= float(min_price))
+            self._count_option_drop("premium_below_min", option_mask & ~passes, option_mask)
+            keep &= passes
+
+        max_spread = universe.get("max_relative_spread")
+        if max_spread is not None and "relative_spread" in df.columns:
+            spread = pd.to_numeric(df["relative_spread"], errors="coerce")
+            passes = (~option_mask) | (spread.notna() & (spread <= float(max_spread)))
+            self._count_option_drop("spread_above_max", option_mask & ~passes, option_mask)
+            keep &= passes
+
+        dropped_here = int((option_mask & ~keep).sum())
+        self._option_quality["universe_drop_rows"] += dropped_here
 
         out = df.loc[keep].copy()
 

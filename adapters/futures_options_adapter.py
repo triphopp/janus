@@ -117,6 +117,8 @@ class FuturesOptionsAdapter(OptionsBase):
             "metrics_mode": self.cfg.get("metrics_mode", "strategy_required"),
             "identity_cols": identity_cols,
             "outlier_identity_cols": outlier_identity_cols,
+            "option_quality": self._option_quality,
+            "_config_warnings": self._config_warnings,
         }
 
         return df, cfg
@@ -161,17 +163,26 @@ class FuturesOptionsAdapter(OptionsBase):
 
         missing = option_mask & df["underlying_price"].isna()
         if missing.any():
+            n_missing = int(missing.sum())
+            total_options = int(option_mask.sum())
             examples = df.loc[missing, join_keys].drop_duplicates().head(3).to_dict("records")
+            self._option_quality["underlying_map"] = {
+                "missing_rows": n_missing,
+                "drop_rate": n_missing / total_options if total_options > 0 else 0.0,
+                "examples": examples,
+            }
+            self._count_option_drop("missing_underlying_future", missing, option_mask)
+            self._option_quality["universe_drop_rows"] += n_missing
             if bool(self.cfg.get("strict_underlying_map", False)) or bool(missing.loc[option_mask].all()):
                 raise ValueError(
                     "Unable to map options to underlying future rows for "
-                    f"{int(missing.sum())} option rows; examples: {examples}"
+                    f"{n_missing} option rows; examples: {examples}"
                 )
             df.loc[missing, "_underlying_map_flag"] = True
             df.loc[missing, "_underlying_map_reason"] = "missing_underlying_future"
             print(
                 "  Futures options: dropped "
-                f"{int(missing.sum())} option rows without underlying future map; "
+                f"{n_missing} option rows without underlying future map; "
                 f"examples: {examples}"
             )
             df = df.loc[~missing].copy()
