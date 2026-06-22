@@ -251,6 +251,86 @@ class OptionsBase(AdapterBase):
 
         return out
 
+    def _flag_option_quality(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add silver-level quality flag columns. Rows are never dropped."""
+        df = df.copy()
+        opt = self._option_mask(df)
+
+        hard_iv_cap = (self.cfg.get("option_quality") or {}).get("hard_iv_cap")
+        iv_diff_threshold = float(
+            (self.cfg.get("option_quality") or {}).get("iv_diff_threshold", 0.10)
+        )
+
+        df["_iv_quality_flag"] = False
+        df["_iv_quality_reason"] = ""
+        df["_delta_quality_flag"] = False
+        df["_delta_quality_reason"] = ""
+        df["_premium_quality_flag"] = False
+        df["_premium_quality_reason"] = ""
+
+        if not opt.any():
+            return df
+
+        # ── IV ───────────────────────────────────────────────────────────────
+        if "iv" in df.columns:
+            iv = pd.to_numeric(df["iv"], errors="coerce")
+
+            mask = opt & iv.notna() & (iv <= 0)
+            df.loc[mask, "_iv_quality_flag"] = True
+            df.loc[mask, "_iv_quality_reason"] += "iv_non_positive;"
+
+            if hard_iv_cap is not None:
+                mask = opt & iv.notna() & (iv > float(hard_iv_cap))
+                df.loc[mask, "_iv_quality_flag"] = True
+                df.loc[mask, "_iv_quality_reason"] += "iv_above_hard_cap;"
+
+            mask = opt & iv.isna()
+            df.loc[mask, "_iv_quality_flag"] = True
+            df.loc[mask, "_iv_quality_reason"] += "iv_unsolved;"
+
+            if "iv_solved" in df.columns:
+                iv_solved = pd.to_numeric(df["iv_solved"], errors="coerce")
+                diff = (iv - iv_solved).abs()
+                mask = opt & diff.notna() & (diff > iv_diff_threshold)
+                df.loc[mask, "_iv_quality_flag"] = True
+                df.loc[mask, "_iv_quality_reason"] += "provided_iv_diff_above_threshold;"
+
+        # ── Delta ─────────────────────────────────────────────────────────────
+        if "delta" in df.columns and "right" in df.columns:
+            delta = pd.to_numeric(df["delta"], errors="coerce")
+            right = df["right"].astype("string").str.upper()
+
+            mask = opt & right.eq("C") & delta.notna() & (delta < 0)
+            df.loc[mask, "_delta_quality_flag"] = True
+            df.loc[mask, "_delta_quality_reason"] += "call_delta_negative;"
+
+            mask = opt & right.eq("P") & delta.notna() & (delta > 0)
+            df.loc[mask, "_delta_quality_flag"] = True
+            df.loc[mask, "_delta_quality_reason"] += "put_delta_positive;"
+
+            mask = opt & delta.notna() & (delta.abs() > 1)
+            df.loc[mask, "_delta_quality_flag"] = True
+            df.loc[mask, "_delta_quality_reason"] += "abs_delta_gt_one;"
+
+        # ── Premium ───────────────────────────────────────────────────────────
+        if "price" in df.columns and "strike" in df.columns and "right" in df.columns:
+            price = pd.to_numeric(df["price"], errors="coerce")
+            K = pd.to_numeric(df["strike"], errors="coerce")
+            right = df["right"].astype("string").str.upper()
+            underlying_col = next(
+                (c for c in ("F", "underlying_price", "spot") if c in df.columns), None
+            )
+            if underlying_col is not None:
+                F = pd.to_numeric(df[underlying_col], errors="coerce")
+                below = (
+                    (opt & right.eq("C") & price.notna() & (price < (F - K).clip(lower=0) - 0.001))
+                    | (opt & right.eq("P") & price.notna() & (price < (K - F).clip(lower=0) - 0.001))
+                )
+                df.loc[below, "_premium_quality_flag"] = True
+                df.loc[below, "_premium_quality_reason"] += "premium_below_intrinsic;"
+
+        return df
+
     def _row_underlying_value(self, row: pd.Series) -> float:
         """Pick the model underlying column for one option row."""
         for col in ("underlying_price", "S", "F", "price_std"):

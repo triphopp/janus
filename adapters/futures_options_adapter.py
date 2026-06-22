@@ -121,6 +121,7 @@ class FuturesOptionsAdapter(OptionsBase):
             "_config_warnings": self._config_warnings,
         }
 
+        df = self._flag_option_quality(df)
         return df, cfg
 
     def _attach_underlying_futures(self, df: pd.DataFrame) -> pd.DataFrame:

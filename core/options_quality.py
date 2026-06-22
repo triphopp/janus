@@ -93,6 +93,35 @@ def summarize(
             adapter_summary.get("universe_drop_by_reason") or {}
         )
 
+    # ── Silver quality flags ──────────────────────────────────────────────────
+    def _flag_rate(col_name: str) -> float | None:
+        if col_name not in options.columns or n_options == 0:
+            return None
+        return float(options[col_name].fillna(False).astype(bool).sum() / n_options)
+
+    def _reason_counts(col_name: str) -> dict:
+        if col_name not in options.columns:
+            return {}
+        counts: dict = {}
+        for val in options[col_name]:
+            for reason in str(val).split(";"):
+                reason = reason.strip()
+                if reason:
+                    counts[reason] = counts.get(reason, 0) + 1
+        return counts
+
+    by_reason: dict = {}
+    for rc in ("_iv_quality_reason", "_delta_quality_reason", "_premium_quality_reason"):
+        for reason, count in _reason_counts(rc).items():
+            by_reason[reason] = by_reason.get(reason, 0) + count
+
+    silver_flags = {
+        "iv_quality_flag_rate": _flag_rate("_iv_quality_flag"),
+        "delta_quality_flag_rate": _flag_rate("_delta_quality_flag"),
+        "premium_quality_flag_rate": _flag_rate("_premium_quality_flag"),
+        "by_reason": by_reason,
+    }
+
     return {
         "option_rows": n_options,
         "support_future_rows": n_futures,
@@ -112,4 +141,5 @@ def summarize(
             "duplicate_pair_rate": _rate("pcp_duplicate_pair"),
         },
         "universe": universe_out,
+        "silver_flags": silver_flags,
     }

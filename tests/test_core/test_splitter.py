@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from core.splitter import walk_forward_split, purge_embargo, regime_diversity_gate
+from run_pipeline import _assert_validation_folds
 
 
 class TestNoLookAhead:
@@ -102,6 +103,30 @@ class TestNoLookAhead:
         folds = purge_embargo(walk_forward_split(df, cfg), df, cfg)
 
         assert folds
+
+    def test_label_end_col_expiry_path_uses_label_overlap_not_max_dte_gap(self):
+        """When label_end_col=expiry, purge uses overlap logic, not max_dte date-gap."""
+        df = pd.DataFrame({
+            "as_of_date": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"]),
+            "expiry":     pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"]),
+        })
+        folds = [(np.array([0, 1]), np.array([2, 3]))]
+        out = purge_embargo(folds, df, {
+            "purge_bars": "max_dte",
+            "_max_dte": 999,
+            "event_embargo_bars": 0,
+            "label_end_col": "expiry",
+        })
+        assert len(out) == 1
+        train_idx, val_idx = out[0]
+        assert list(val_idx) == [2, 3]
+        assert all(df["expiry"].iloc[train_idx] < df["as_of_date"].iloc[val_idx].min())
+
+    def test_assert_validation_folds_mentions_resolved_max_dte(self):
+        """Error message must show resolved numeric purge_bars, not the string sentinel."""
+        df = pd.DataFrame({"as_of_date": pd.date_range("2024-01-01", periods=3)})
+        with pytest.raises(ValueError, match="purge_bars=365"):
+            _assert_validation_folds([], df, {"purge_bars": "max_dte", "_max_dte": 365})
 
 
 class TestDiversityGate:
