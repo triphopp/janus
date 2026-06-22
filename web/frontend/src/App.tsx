@@ -5,6 +5,7 @@ import { AppHeader } from "./components/AppHeader";
 import { BreakDetailModal } from "./components/BreakDetailModal";
 import { BreakTimeline } from "./components/BreakTimeline";
 import { BreaksList } from "./components/BreaksList";
+import { ClearRunsModal } from "./components/ClearRunsModal";
 import { DiffModal } from "./components/DiffModal";
 import { HelpModal } from "./components/HelpModal";
 import { RunDetailModal } from "./components/RunDetailModal";
@@ -15,6 +16,7 @@ import type { BreakRow, FleetSummary, RunRow, TrendDay } from "./types";
 type ModalState =
   | { kind: "none" }
   | { kind: "help" }
+  | { kind: "clear" }
   | { kind: "run"; runId: string }
   | { kind: "diff"; runId: string; backRunId?: string }
   | { kind: "break"; breakRow: BreakRow };
@@ -71,7 +73,7 @@ export function App() {
       <AppHeader
         onHelp={() => setModal({ kind: "help" })}
         onRefresh={loadAll}
-        onClearRuns={async () => { await dashboardApi.clearRuns(); await loadAll(); }}
+        onRequestClear={() => setModal({ kind: "clear" })}
       />
       {error ? <div className="top-error">{error}</div> : null}
       <StatsBar summary={summary} />
@@ -91,6 +93,16 @@ export function App() {
       />
 
       {modal.kind === "help" ? <HelpModal onClose={() => setModal({ kind: "none" })} /> : null}
+      {modal.kind === "clear" ? (
+        <ClearRunsModal
+          onClose={() => setModal({ kind: "none" })}
+          onConfirm={async () => {
+            await dashboardApi.clearRuns();
+            setModal({ kind: "none" });
+            await loadAll();
+          }}
+        />
+      ) : null}
       {modal.kind === "run" ? (
         <RunDetailModal
           runId={modal.runId}
