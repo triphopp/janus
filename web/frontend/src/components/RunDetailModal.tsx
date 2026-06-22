@@ -269,64 +269,12 @@ function RunDetailBody({
       </div>
 
       {evidenceOutliers.length > 0 ? (
-        <div className="block">
-          <div className="bt">Evidence investigation ({evidenceOutliers.length} outliers)</div>
-          <div className="card nested-card">
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Symbol</th>
-                  <th className="num">Z</th>
-                  <th>Severity</th>
-                  <th>Dir</th>
-                  <th>Status</th>
-                  <th>Verdict</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {evidenceOutliers.map((o) => (
-                  <Fragment key={o.case_id}>
-                    <tr>
-                      <td className="mono">{o.as_of_date}</td>
-                      <td className="mono">{o.symbol || "-"}</td>
-                      <td className={`num ${Number(o.z_score) < 0 ? "bad" : "ok"}`}>
-                        {o.z_score != null ? o.z_score.toFixed(2) : "-"}
-                      </td>
-                      <td className="mono">{o.severity || "-"}</td>
-                      <td className="mono">{o.direction || "-"}</td>
-                      <td>
-                        <span className={`pill ${evidenceStatusClass(o.evidence_status)}`}>
-                          {o.evidence_status}
-                        </span>
-                      </td>
-                      <td className={o.verdict ? verdictTdClass(o.verdict) : "muted"}>
-                        {o.verdict ?? "-"}
-                      </td>
-                      <td>
-                        <button
-                          className="ghost tiny"
-                          aria-pressed={Boolean(evidencePanels[o.case_id])}
-                          onClick={() => toggleEvidencePanel(o.case_id)}
-                        >
-                          {evidencePanels[o.case_id] ? "close" : "details"}
-                        </button>
-                      </td>
-                    </tr>
-                    {evidencePanels[o.case_id] ? (
-                      <tr>
-                        <td colSpan={8}>
-                          <EvidencePanel outlier={o} runId={detail.run_id} />
-                        </td>
-                      </tr>
-                    ) : null}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <EvidenceOutliersBlock
+          outliers={evidenceOutliers}
+          runId={detail.run_id}
+          evidencePanels={evidencePanels}
+          toggleEvidencePanel={toggleEvidencePanel}
+        />
       ) : null}
 
       <AdditionalSections detail={detail} />
@@ -486,6 +434,149 @@ function InlineRawRow({ colSpan, runId, target }: { colSpan: number; runId: stri
         </div>
       </td>
     </tr>
+  );
+}
+
+const PAGE_SIZE = 10;
+const SEV_ORDER: Record<string, number> = { severe: 0, high: 1, medium: 2, low: 3 };
+
+function EvidenceOutliersBlock({
+  outliers,
+  runId,
+  evidencePanels,
+  toggleEvidencePanel,
+}: {
+  outliers: EvidenceOutlier[];
+  runId: string;
+  evidencePanels: EvidencePanels;
+  toggleEvidencePanel: (caseId: string) => void;
+}) {
+  const [sevFilter, setSevFilter] = useState<"all" | "high">("high");
+  const [page, setPage] = useState(0);
+
+  const filtered = useMemo(() => {
+    let rows = [...outliers].sort(
+      (a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9)
+    );
+    if (sevFilter === "high") {
+      rows = rows.filter((o) => o.severity === "severe" || o.severity === "high");
+    }
+    return rows;
+  }, [outliers, sevFilter]);
+
+  const pages    = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pages - 1);
+  const visible  = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+
+  return (
+    <div className="block">
+      <div className="bt" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span>Evidence investigation</span>
+        <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>
+          {filtered.length} / {outliers.length} outliers
+        </span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button
+            className={`ghost tiny${sevFilter === "high" ? " active" : ""}`}
+            onClick={() => { setSevFilter("high"); setPage(0); }}
+          >
+            Severe / High
+          </button>
+          <button
+            className={`ghost tiny${sevFilter === "all" ? " active" : ""}`}
+            onClick={() => { setSevFilter("all"); setPage(0); }}
+          >
+            All
+          </button>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="muted" style={{ padding: "8px 0", fontSize: 12 }}>
+          No severe / high outliers in this run.
+        </div>
+      ) : (
+        <>
+          <div className="card nested-card">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Symbol</th>
+                  <th className="num">Z-score</th>
+                  <th>Severity</th>
+                  <th>Direction</th>
+                  <th>Status</th>
+                  <th>Verdict</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((o) => (
+                  <Fragment key={o.case_id}>
+                    <tr>
+                      <td className="mono">{o.as_of_date}</td>
+                      <td className="mono">{o.symbol || "-"}</td>
+                      <td className={`num ${Number(o.z_score) < 0 ? "bad" : "ok"}`}>
+                        {o.z_score != null ? o.z_score.toFixed(2) : "-"}
+                      </td>
+                      <td className="mono">{o.severity || "-"}</td>
+                      <td className="mono">{o.direction || "-"}</td>
+                      <td>
+                        <span className={`pill ${evidenceStatusClass(o.evidence_status)}`}>
+                          {o.evidence_status}
+                        </span>
+                      </td>
+                      <td className={o.verdict ? verdictTdClass(o.verdict) : "muted"}>
+                        {o.verdict ?? "-"}
+                      </td>
+                      <td>
+                        <button
+                          className="ghost tiny"
+                          aria-pressed={Boolean(evidencePanels[o.case_id])}
+                          onClick={() => toggleEvidencePanel(o.case_id)}
+                        >
+                          {evidencePanels[o.case_id] ? "close" : "details"}
+                        </button>
+                      </td>
+                    </tr>
+                    {evidencePanels[o.case_id] ? (
+                      <tr>
+                        <td colSpan={8} style={{ padding: 0 }}>
+                          <EvidencePanel outlier={o} runId={runId} />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {pages > 1 ? (
+            <div className="ev-pagination">
+              <button
+                className="ghost tiny"
+                disabled={safePage === 0}
+                onClick={() => setPage(safePage - 1)}
+              >
+                ← prev
+              </button>
+              <span className="muted" style={{ fontSize: 11 }}>
+                page {safePage + 1} / {pages}
+              </span>
+              <button
+                className="ghost tiny"
+                disabled={safePage >= pages - 1}
+                onClick={() => setPage(safePage + 1)}
+              >
+                next →
+              </button>
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
   );
 }
 

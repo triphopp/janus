@@ -326,57 +326,125 @@ def list_run_outliers(run_id: str):
     return {"run_id": run_id, "outliers": outliers, "total": len(outliers)}
 
 
+def _artifact_base() -> Path:
+    return Path(os.environ.get("JANUS_EVIDENCE_ARTIFACT_DIR", "outputs/evidence/harness"))
+
+
+def _latest_harness_run(case_id: str) -> Path | None:
+    """Return the path to the most recent harness run folder for this case."""
+    base = _artifact_base()
+    best: tuple[float, Path] | None = None
+    try:
+        for verdict_path in base.rglob(f"*/{case_id}/*/verdict.json"):
+            mtime = verdict_path.stat().st_mtime
+            if best is None or mtime > best[0]:
+                best = (mtime, verdict_path.parent)
+    except Exception:
+        pass
+    return best[1] if best else None
+
+
+def _read_jsonl(path: Path, limit: int = 50) -> list[dict]:
+    rows: list[dict] = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    rows.append(json.loads(line))
+                    if len(rows) >= limit:
+                        break
+    except Exception:
+        pass
+    return rows
+
+
 @router.get("/cases/{case_id}/status")
 def get_case_status(case_id: str):
-    """Combined status: in-memory job tracker + DB record."""
+    """Combined status: in-memory job tracker + harness artifact files."""
     job = _job_get(case_id)
-    db_record = None
 
+    # Enrich from harness artifact (verdict.json + sources.jsonl + claims.jsonl)
+    artifact: dict[str, Any] = {}
+    run_dir = _latest_harness_run(case_id)
+    if run_dir:
+        verdict_path = run_dir / "verdict.json"
+        if verdict_path.exists():
+            try:
+                with open(verdict_path, encoding="utf-8") as f:
+                    v = json.load(f)
+                artifact["verdict"] = v.get("verdict")
+                artifact["confidence"] = v.get("confidence")
+                artifact["llm_summary"] = v.get("llm_summary")
+                artifact["llm_key_findings"] = v.get("llm_key_findings") or []
+                artifact["limitations"] = v.get("limitations") or []
+                artifact["started_at"] = v.get("started_at")
+                artifact["finished_at"] = v.get("finished_at")
+            except Exception:
+                pass
+
+        raw_sources = _read_jsonl(run_dir / "sources.jsonl")
+        artifact["sources"] = [
+            {
+                "url": s.get("url", ""),
+                "title": s.get("title") or _domain(s.get("url", "")),
+                "source_tier": s.get("source_tier", ""),
+                "document_id": s.get("document_id", ""),
+            }
+            for s in raw_sources
+            if s.get("url")
+        ]
+
+        raw_claims = _read_jsonl(run_dir / "claims.jsonl")
+        artifact["claims"] = [
+            {
+                "claim_text": c.get("claim_text", ""),
+                "claim_type": c.get("claim_type", ""),
+                "support_score": c.get("support_score"),
+                "confidence": c.get("confidence", ""),
+                "event_type": c.get("event_type"),
+            }
+            for c in raw_claims
+            if c.get("claim_text")
+        ]
+
+    # Merge: job tracker wins for status/verdict (live); artifact fills the rest
+    merged_job = dict(job or {"status": "not_investigated"})
+    for k in ("verdict", "confidence", "llm_summary", "llm_key_findings",
+               "limitations", "sources", "claims", "started_at", "finished_at"):
+        if k not in merged_job and k in artifact:
+            merged_job[k] = artifact[k]
+        elif k in artifact and not merged_job.get(k):
+            merged_job[k] = artifact[k]
+
+    # Postgres DB fallback (optional)
     if os.environ.get("JANUS_EVIDENCE_DATABASE_URL"):
         try:
             store = _get_store()
             graph = store.load_case_graph(case_id)
-            if graph:
-                db_record = {
-                    "status": graph.get("case", {}).get("status"),
-                    "verdict": graph.get("case", {}).get("verdict"),
-                    "confidence": graph.get("case", {}).get("confidence"),
-                }
-        except Exception:
-            pass
-
-    # JSON snapshot — use path from job tracker if available, else scan graph_dir
-    json_record = None
-    graph_path = (job or {}).get("graph_path", "")
-    if not graph_path:
-        # Scan for any snapshot with this case_id (written as <run_id>/<case_id>.json)
-        try:
-            for p in _graph_dir().rglob(f"{case_id}.json"):
-                graph_path = str(p)
-                break
-        except Exception:
-            pass
-    if graph_path and Path(graph_path).exists():
-        try:
-            with open(graph_path) as f:
-                snap = json.load(f)
-            case_data = snap.get("case") or {}
-            json_record = {
-                "verdict": snap.get("verdict") or case_data.get("verdict"),
-                "confidence": snap.get("confidence") or case_data.get("confidence"),
-                "graph_path": graph_path,
-            }
+            if graph and not merged_job.get("sources"):
+                merged_job["sources"] = [
+                    {"url": n.get("url", ""), "title": n.get("title") or _domain(n.get("url", "")),
+                     "source_tier": n.get("source_tier", ""), "document_id": n.get("node_id", "")}
+                    for n in graph.get("nodes", [])
+                    if n.get("node_type") not in ("outlier", None) and n.get("url")
+                ]
         except Exception:
             pass
 
     return {
         "case_id": case_id,
-        "job": job or {"status": "not_investigated"},
-        "db": db_record,
-        "snapshot": json_record,
-        "result_url": f"/api/evidence/cases/{case_id}" if (db_record or json_record) else None,
-        "graph_path": (db_record or json_record or {}).get("graph_path"),
+        "job": merged_job,
     }
+
+
+def _domain(url: str) -> str:
+    try:
+        from urllib.parse import urlparse
+        h = urlparse(url).hostname or ""
+        return h.removeprefix("www.")
+    except Exception:
+        return url[:40]
 
 
 @router.get("/cases")

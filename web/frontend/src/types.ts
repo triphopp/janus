@@ -221,6 +221,21 @@ export type EvidenceInvestigateRequest = {
   candidate_terms: string[];
 };
 
+export type EvidenceSource = {
+  url: string;
+  title: string;
+  source_tier: string;
+  document_id: string;
+};
+
+export type EvidenceClaim = {
+  claim_text: string;
+  claim_type: string;
+  support_score: number | null;
+  confidence: string;
+  event_type: string | null;
+};
+
 export type EvidenceJobStatus = {
   status: EvidenceStatus;
   started_at?: string | null;
@@ -230,6 +245,9 @@ export type EvidenceJobStatus = {
   error?: string | null;
   llm_summary?: string | null;
   llm_key_findings?: string[];
+  limitations?: string[];
+  sources?: EvidenceSource[];
+  claims?: EvidenceClaim[];
 };
 
 export type EvidenceCaseStatus = {
