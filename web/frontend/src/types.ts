@@ -177,6 +177,84 @@ export type RunDetail = RunRow & {
 
 export type RawRow = Record<string, unknown>;
 
+// ── Evidence harness types ────────────────────────────────────────────────────
+
+export type EvidenceStatus =
+  | "not_investigated"
+  | "running"
+  | "done"
+  | "error"
+  | string;
+
+export type EvidenceOutlier = {
+  case_id: string;
+  run_id: string;
+  symbol: string;
+  as_of_date: string;
+  return_price: number | null;
+  z_score: number | null;
+  severity: string;
+  direction: string;
+  evidence: string;
+  evidence_status: EvidenceStatus;
+  verdict: string | null;
+  investigate_url: string;
+};
+
+export type EvidenceRunOutliersResponse = {
+  run_id: string;
+  outliers: EvidenceOutlier[];
+  total: number;
+};
+
+export type EvidenceInvestigateRequest = {
+  run_id: string;
+  case_id: string;
+  instrument: string;
+  family: string;
+  symbol: string;
+  as_of_date: string;
+  signal_type: string;
+  z_score: number | null;
+  severity: string | null;
+  pct_change: number | null;
+  candidate_terms: string[];
+};
+
+export type EvidenceSource = {
+  url: string;
+  title: string;
+  source_tier: string;
+  document_id: string;
+};
+
+export type EvidenceClaim = {
+  claim_text: string;
+  claim_type: string;
+  support_score: number | null;
+  confidence: string;
+  event_type: string | null;
+};
+
+export type EvidenceJobStatus = {
+  status: EvidenceStatus;
+  started_at?: string | null;
+  finished_at?: string | null;
+  verdict?: string | null;
+  confidence?: string | null;
+  error?: string | null;
+  llm_summary?: string | null;
+  llm_key_findings?: string[];
+  limitations?: string[];
+  sources?: EvidenceSource[];
+  claims?: EvidenceClaim[];
+};
+
+export type EvidenceCaseStatus = {
+  case_id: string;
+  job: EvidenceJobStatus;
+};
+
 // ── Dashboard view-model types (stable, schema-versioned) ─────────────────────
 
 export type DashboardMetric = {

@@ -1,0 +1,23 @@
+{
+  "case_id": "case_wti_fixture_001",
+  "run_id": "fixture_run",
+  "signal_type": "return_outlier",
+  "as_of_date": "2024-09-25",
+  "family": "futures",
+  "instrument": "WTI",
+  "symbol": "WTI",
+  "severity": "severe",
+  "metric_name": "return_std",
+  "observed_value": 0.082,
+  "baseline_value": 0.012,
+  "z_score": 7.4,
+  "pct_change": 0.082,
+  "local_context": {
+    "identity_key": "WTI_futures_2024-09-25",
+    "direction": "high",
+    "reason": "large positive daily return"
+  },
+  "protected_columns": [],
+  "candidate_terms": ["rise", "surge", "inventory"],
+  "source_hints": ["EIA", "OPEC", "CME"]
+}

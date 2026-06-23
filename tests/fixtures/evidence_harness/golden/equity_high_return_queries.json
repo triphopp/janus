@@ -1,0 +1,62 @@
+[
+  {
+    "query_id": "query_ab80c5ddf3f9b0e0",
+    "case_id": "case_d10a461e5f7f7d03",
+    "text": "AAPL stock move 2024-05-03",
+    "date_start": "2024-05-01",
+    "date_end": "2024-05-05",
+    "domains": [],
+    "reason": "seed query (equity.return_outlier.neutral.v1)",
+    "priority": 100,
+    "template_id": "equity.return_outlier.neutral.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_692093c29c968825",
+    "case_id": "case_d10a461e5f7f7d03",
+    "text": "AAPL shares rise 2024-05-03",
+    "date_start": "2024-05-01",
+    "date_end": "2024-05-05",
+    "domains": [],
+    "reason": "seed query (equity.return_outlier.directional.v1)",
+    "priority": 99,
+    "template_id": "equity.return_outlier.directional.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_2a6340ef3f61d60d",
+    "case_id": "case_d10a461e5f7f7d03",
+    "text": "AAPL earnings guidance 2024-05-03",
+    "date_start": "2024-05-01",
+    "date_end": "2024-05-05",
+    "domains": [],
+    "reason": "seed query (equity.return_outlier.event.v1)",
+    "priority": 98,
+    "template_id": "equity.return_outlier.event.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_1089ae19a01ba993",
+    "case_id": "case_d10a461e5f7f7d03",
+    "text": "AAPL SEC filing 2024-05-03",
+    "date_start": "2024-05-01",
+    "date_end": "2024-05-05",
+    "domains": [],
+    "reason": "seed query (equity.return_outlier.official.v1)",
+    "priority": 97,
+    "template_id": "equity.return_outlier.official.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_de607683cc33795d",
+    "case_id": "case_d10a461e5f7f7d03",
+    "text": "AAPL analyst upgrade 2024-05-03",
+    "date_start": "2024-05-01",
+    "date_end": "2024-05-05",
+    "domains": [],
+    "reason": "seed query (equity.return_outlier.analyst.v1)",
+    "priority": 96,
+    "template_id": "equity.return_outlier.analyst.v1",
+    "evidence_goal": "explain_price_move"
+  }
+]

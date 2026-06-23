@@ -29,8 +29,10 @@ from core import breaks as bk
 from core import diff_report
 from core import diff_review
 from web import scanner
+from web.evidence_api import router as evidence_router
 
 app = FastAPI(title="Janus Data-Ops Dashboard", version="1.1")
+app.include_router(evidence_router)
 FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 FRONTEND_ASSETS = FRONTEND_DIST / "assets"
 MAX_INLINE_DIFF_BYTES = int(os.environ.get("JANUS_MAX_INLINE_DIFF_BYTES", str(10 * 1024 * 1024)))

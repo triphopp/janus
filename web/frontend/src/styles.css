@@ -989,3 +989,81 @@ section {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Evidence panel ─────────────────────────────────────────────────────── */
+.evidence-panel {
+  padding: 8px 10px;
+  background: var(--surface2, rgba(0,0,0,.04));
+  border-left: 3px solid var(--accent);
+  margin: 2px 0;
+}
+.evidence-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.evidence-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.evidence-status { font-size: 10px; }
+.evidence-conf   { font-size: 11px; }
+.evidence-spinning {
+  font-size: 11px;
+  animation: evidence-pulse 1.2s ease-in-out infinite;
+}
+@keyframes evidence-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .4; }
+}
+.evidence-summary {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fg);
+  margin: 6px 0 4px;
+}
+.evidence-findings {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.evidence-findings li { margin-bottom: 2px; }
+.evidence-limits { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.ev-limit { font-size: 10px; }
+
+/* tabs */
+.ev-tabs { display: flex; gap: 2px; margin: 8px 0 0; border-bottom: 1px solid var(--rule); }
+.ev-tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  padding: 4px 10px; font-size: 12px; cursor: pointer; color: var(--muted);
+  margin-bottom: -1px;
+}
+.ev-tab:hover { color: var(--fg); }
+.ev-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+/* sources */
+.ev-sources { margin: 6px 0 0; padding: 0; list-style: none; }
+.ev-source-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--rule); font-size: 12px; }
+.ev-source-row:last-child { border-bottom: none; }
+.ev-tier { font-size: 9px; min-width: 24px; text-align: center; }
+.ev-source-link { color: var(--accent); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
+.ev-source-link:hover { text-decoration: underline; }
+
+/* claims */
+.ev-claims { margin: 6px 0 0; padding: 0; list-style: none; }
+.ev-claim-row { padding: 5px 0; border-bottom: 1px solid var(--rule); }
+.ev-claim-row:last-child { border-bottom: none; }
+.ev-claim-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.ev-claim-type { font-size: 10px; }
+.ev-claim-text { margin: 0; font-size: 12px; line-height: 1.5; color: var(--fg); }
+
+/* pagination */
+.ev-pagination { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.ghost.tiny.active { border-color: var(--accent); color: var(--accent); }

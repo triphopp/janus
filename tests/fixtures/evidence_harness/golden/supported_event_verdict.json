@@ -1,0 +1,9 @@
+{
+  "verdict": "supported_event",
+  "confidence": "high",
+  "citation_status": "pass",
+  "llm_summary_valid": false,
+  "supporting_document_ids": [
+    "doc_aaa111"
+  ]
+}

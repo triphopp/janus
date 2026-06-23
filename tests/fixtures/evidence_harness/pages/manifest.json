@@ -1,0 +1,7 @@
+{
+  "https://www.eia.gov/petroleum/supply/weekly/archive/2024/2024_09_25/pdf/wpsrbef.pdf": "eia_inventory_release.html",
+  "https://www.reuters.com/markets/commodities/oil-prices-wti-inventory-2024-09-25": "news_followup.html",
+  "https://www.marketwatch.com/story/wti-oil-price-2024-09-25": "news_followup.html",
+  "https://www.marketwatch.com/story/conf-acquisition-2024-06-10": "conf_acquisition_news.html",
+  "https://www.reuters.com/markets/conf-correction-2024-06-10": "contradiction_article.html"
+}

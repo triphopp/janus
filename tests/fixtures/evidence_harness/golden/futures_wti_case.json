@@ -1,0 +1,17 @@
+{
+  "case_id": "case_4415c733f00bcf1c",
+  "run_id": "run_001",
+  "signal_type": "return_outlier",
+  "as_of_date": "2024-09-25",
+  "family": "futures",
+  "instrument": "WTI",
+  "metric_name": "return_std",
+  "local_context": {},
+  "protected_columns": [],
+  "candidate_terms": [],
+  "source_hints": [
+    "EIA",
+    "OPEC",
+    "CME"
+  ]
+}

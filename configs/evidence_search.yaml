@@ -1,0 +1,75 @@
+evidence_search:
+  enabled: false
+  mode: mock
+  search_provider: fixture
+  fetch_provider: fixture
+  extractor: readability
+
+  artifact_dir: outputs/evidence/harness
+  cache_dir: outputs/evidence/cache
+
+  max_queries: 8
+  max_results_per_query: 10
+  max_fetches: 20
+  max_iterations: 4
+  max_runtime_sec: 300
+  max_page_bytes: 2000000
+  request_timeout_sec: 15
+  min_delay_ms_per_domain: 1000
+
+  allowed_schemes:
+    - https
+  allow_domains: []
+  deny_domains: []
+
+  llm_enabled: false
+  # llm_provider: ollama              # mock | ollama | openai_compat
+  # llm_model: gemma4:26b             # any model tag Ollama has pulled
+  # llm_base_url: http://localhost:11434
+  # llm_timeout_sec: 180              # increase for large local models
+  # llm_api_key: ${OPENAI_API_KEY}    # env-var interpolation supported
+
+  source_tiers:
+    tier1_official:
+      - sec.gov
+      - eia.gov
+      - cmegroup.com
+      - nasdaqtrader.com
+      - federalreserve.gov
+    tier2_reputable:
+      - reuters.com
+      - bloomberg.com
+      - wsj.com
+      - marketwatch.com
+      - ft.com
+    tier4_social:
+      - reddit.com
+      - x.com
+      - twitter.com
+
+  query_terms:
+    return_outlier:
+      high:
+        - rise
+        - jump
+        - surge
+        - rally
+        - beat
+        - upgrade
+        - approval
+        - merger
+      low:
+        - fall
+        - drop
+        - plunge
+        - selloff
+        - miss
+        - downgrade
+        - guidance cut
+        - investigation
+    vol_surface_cluster:
+      high:
+        - implied volatility spike
+        - options volume
+        - skew
+        - event volatility

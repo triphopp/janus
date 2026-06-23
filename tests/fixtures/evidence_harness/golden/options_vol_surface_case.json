@@ -1,0 +1,13 @@
+{
+  "case_id": "case_3c30b5176f2ae9d0",
+  "run_id": "run_001",
+  "signal_type": "vol_surface_cluster",
+  "as_of_date": "2024-01-25",
+  "family": "equity_options",
+  "symbol": "TSLA",
+  "metric_name": "iv_surface_z",
+  "local_context": {},
+  "protected_columns": [],
+  "candidate_terms": [],
+  "source_hints": []
+}

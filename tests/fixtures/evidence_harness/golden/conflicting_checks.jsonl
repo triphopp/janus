@@ -1,0 +1,6 @@
+{"name": "query_budget", "status": "pass", "score": 1.0, "rationale": "ok"}
+{"name": "fetch_budget", "status": "pass", "score": 1.0, "rationale": "ok"}
+{"name": "source_quality", "status": "pass", "score": 0.7, "rationale": "mixed"}
+{"name": "temporal_consistency", "status": "pass", "score": 0.8, "rationale": "ok"}
+{"name": "instrument_relevance", "status": "pass", "score": 0.8, "rationale": "ok"}
+{"name": "contradiction_detection", "status": "warn", "score": 0.4, "rationale": "contradicting sources"}

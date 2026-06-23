@@ -676,6 +676,47 @@ def _fold_window(value: Any) -> str:
     return text or "-"
 
 
+# Default gate thresholds — mirror core.splitter.regime_diversity_gate defaults.
+# Used only to colour cells and explain the verdict in the report; the actual
+# pass/fail comes from the `pass` field computed upstream with the run's cfg.
+_GATE_MAX_CONC = 0.80
+_GATE_KL_THRESH = 0.5
+_GATE_JS_THRESH = 0.3
+
+
+def _gate_verdict_cell(row: dict[str, Any]) -> str:
+    """Render the Gate cell: pass badge, or fail badge listing which rules broke."""
+    if "pass" not in row:
+        return _badge("unknown")
+    if row.get("pass"):
+        return _badge("pass", "✓ pass")
+
+    reasons: list[str] = []
+    unseen = row.get("unseen")
+    if unseen:  # non-empty set/list/str => regime in val never seen in train
+        reasons.append("unseen regime")
+    conc = _as_float(row.get("conc"))
+    if conc is not None and conc > _GATE_MAX_CONC:
+        reasons.append(f"1 regime {conc * 100:.0f}%")
+    kl = _as_float(row.get("kl"))
+    if kl is not None and kl > _GATE_KL_THRESH:
+        reasons.append("KL shift")
+    js = _as_float(row.get("js"))
+    if js is not None and js > _GATE_JS_THRESH:
+        reasons.append("JS distance")
+
+    label = "✗ " + ", ".join(reasons) if reasons else "✗ fail"
+    return _badge("fail", label)
+
+
+def _threshold_num(value: Any, threshold: float, fmt: str = "num") -> str:
+    """Numeric cell tinted red when it breaches the gate threshold."""
+    num = _as_float(value)
+    rendered = _fmt_pct(value, 1) if fmt == "pct" else _fmt_num(value, 3)
+    cls = "num fail" if num is not None and num > threshold else "num"
+    return f'<span class="{cls}">{rendered}</span>'
+
+
 def _fold_metric_table_rows(
     per_fold_rows: list[dict[str, Any]],
     diversity_rows: list[dict[str, Any]],
@@ -705,11 +746,11 @@ def _fold_metric_table_rows(
     return [
         [
             f'<span class="num">{_h(row.get("fold"))}</span>',
-            _badge("pass" if row.get("pass") else "fail") if "pass" in row else _badge("unknown"),
+            _gate_verdict_cell(row),
             _h(_fold_window(row.get("date_range"))),
-            f'<span class="num">{_fmt_num(row.get("conc"), 3)}</span>',
-            f'<span class="num">{_fmt_num(row.get("kl"), 3)}</span>',
-            f'<span class="num">{_fmt_num(row.get("js"), 3)}</span>',
+            _threshold_num(row.get("conc"), _GATE_MAX_CONC),
+            _threshold_num(row.get("kl"), _GATE_KL_THRESH),
+            _threshold_num(row.get("js"), _GATE_JS_THRESH),
             f'<span class="num">{_fmt_pct(row.get("total_return"), 2)}</span>',
             f'<span class="num">{_fmt_num(row.get("sharpe"), 3)}</span>',
             f'<span class="num">{_fmt_num(row.get("sortino"), 3)}</span>',
@@ -1224,11 +1265,37 @@ def _render_static_final_report(
         if metrics_skipped
         else "First 12 regime rows from market returns; not strategy P&L."
     )
-    fold_title = "Fold diversity gate + performance" if strategy_ready else "Fold diversity gate + return diagnostics"
+    fold_title = "Fold diversity gate And performance" if strategy_ready else "Fold diversity gate And return diagnostics"
     fold_note = (
         "Validation-period strategy metrics by fold. Blank metric cells mean the fold failed the gate or had no usable return series."
         if strategy_ready
         else "Validation-period market-return diagnostics by fold. Blank metric cells mean the fold failed the gate or had no usable return series."
+    )
+    # Plain-language explainer so a first-time reader knows what the gate judges.
+    fold_legend = (
+        '<div class="gate-legend">'
+        '<p class="gate-legend-lead">The <strong>gate</strong> asks one question per fold: '
+        '<em>was the test period a fair test of what the model trained on?</em> '
+        'A fold must pass <strong>all four</strong> checks, or its return metrics are hidden '
+        '(blank cells) because they would mislead.</p>'
+        '<div class="gate-rules">'
+        '<div><span class="status fail">Unseen regime</span>'
+        '<p>Test period contains a market mood (e.g. high-volatility) that the training period never had. '
+        'Judging on the unseen is extrapolation, not skill.</p></div>'
+        f'<div><span class="status fail">Conc &gt; {_GATE_MAX_CONC:.0%}</span>'
+        '<p>One mood fills more than 80% of the test period, so the score really only measures that single mood — '
+        'not overall robustness.</p></div>'
+        f'<div><span class="status fail">KL &gt; {_GATE_KL_THRESH}</span>'
+        '<p>Train vs test mood-mix differs in a severe, one-sided way '
+        '(e.g. rare-in-train crisis becomes common-in-test).</p></div>'
+        f'<div><span class="status fail">JS &gt; {_GATE_JS_THRESH}</span>'
+        '<p>Overall distance between the two mood-mixes is too large — the primary, fold-comparable measure '
+        '(0 = identical, higher = more different).</p></div>'
+        '</div>'
+        '<p class="small gate-legend-foot">Red <span class="num fail">numbers</span> mark the value that broke a rule. '
+        'A green gate means train and test saw a comparable mix of market conditions, so the fold’s '
+        'Sharpe / Max&nbsp;DD can be trusted.</p>'
+        '</div>'
     )
     distribution = ''.join([
         _box(5, '<h2>Distribution shift</h2>' + _kv([
@@ -1243,7 +1310,8 @@ def _render_static_final_report(
             12,
             f'<h2>{_h(fold_title)}</h2>'
             f'<p class="small">{_h(fold_note)}</p>'
-            '<div class="table-scroll fold-metrics">'
+            + fold_legend
+            + '<div class="table-scroll fold-metrics">'
             + _table(
                 ["Fold", "Gate", "Window", "Conc", "KL", "JS", "Total Ret", "Sharpe", "Sortino", "Max DD", "CVaR 95", "Hit Rate", "Worst Day"],
                 fold_metric_rows,
@@ -1301,6 +1369,16 @@ def _render_static_final_report(
   .ledger div:nth-child(odd) { color:var(--muted); font-family:var(--sans); font-size:11px; }
   .status { display:inline-block; font-family:var(--sans); font-size:10px; font-weight:700; border:1px solid currentColor; padding:1px 6px; border-radius:2px; white-space:nowrap; }
   .ok{color:var(--ok)}.warn{color:var(--warn)}.fail{color:var(--fail)}.info{color:var(--info)}
+  .gate-legend { margin:8px 0 12px; padding:10px 12px; border:1px solid var(--rule); background:rgba(255,255,255,.4); }
+  .gate-legend-lead { margin:0 0 9px; font-size:12px; line-height:1.5; }
+  .gate-rules { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; }
+  .gate-rules > div { min-width:0; }
+  .gate-rules .status { margin-bottom:4px; }
+  .gate-rules p { margin:0; font-size:11px; line-height:1.45; color:var(--muted); }
+  .gate-legend-foot { margin:9px 0 0; }
+  @media(max-width:820px){ .gate-rules { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  .fold-metrics .status { white-space:normal; line-height:1.35; }
+  .fold-metrics td:nth-child(2) { min-width:130px; }
   .dist-figure { margin-top:3px; }
   .dist-toolbar { display:flex; align-items:center; gap:10px; justify-content:space-between; flex-wrap:wrap; margin:2px 0 8px; }
   .dist-controls { display:flex; gap:6px; }

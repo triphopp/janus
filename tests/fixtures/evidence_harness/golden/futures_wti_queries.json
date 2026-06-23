@@ -1,0 +1,74 @@
+[
+  {
+    "query_id": "query_b9f58f6d83ece785",
+    "case_id": "case_4415c733f00bcf1c",
+    "text": "WTI price move 2024-09-25",
+    "date_start": "2024-09-23",
+    "date_end": "2024-09-27",
+    "domains": [],
+    "reason": "seed query (futures.return_outlier.neutral.v1)",
+    "priority": 100,
+    "template_id": "futures.return_outlier.neutral.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_dd3ad0d71392775b",
+    "case_id": "case_4415c733f00bcf1c",
+    "text": "WTI futures settlement 2024-09-25",
+    "date_start": "2024-09-23",
+    "date_end": "2024-09-27",
+    "domains": [],
+    "reason": "seed query (futures.return_outlier.settlement.v1)",
+    "priority": 99,
+    "template_id": "futures.return_outlier.settlement.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_cf1aa1bf193fe14d",
+    "case_id": "case_4415c733f00bcf1c",
+    "text": "WTI inventory report 2024-09-25",
+    "date_start": "2024-09-23",
+    "date_end": "2024-09-27",
+    "domains": [],
+    "reason": "seed query (futures.return_outlier.inventory.v1)",
+    "priority": 98,
+    "template_id": "futures.return_outlier.inventory.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_b888a3c0c56b8b9f",
+    "case_id": "case_4415c733f00bcf1c",
+    "text": "EIA crude oil inventory 2024-09-25",
+    "date_start": "2024-09-23",
+    "date_end": "2024-09-27",
+    "domains": [],
+    "reason": "seed query (futures.return_outlier.eia.v1)",
+    "priority": 97,
+    "template_id": "futures.return_outlier.eia.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_bed565683174733f",
+    "case_id": "case_4415c733f00bcf1c",
+    "text": "OPEC oil market 2024-09-25",
+    "date_start": "2024-09-23",
+    "date_end": "2024-09-27",
+    "domains": [],
+    "reason": "seed query (futures.return_outlier.opec.v1)",
+    "priority": 96,
+    "template_id": "futures.return_outlier.opec.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_641854f1323c0a2d",
+    "case_id": "case_4415c733f00bcf1c",
+    "text": "CME WTI contract notice 2024-09-25",
+    "date_start": "2024-09-23",
+    "date_end": "2024-09-27",
+    "domains": [],
+    "reason": "seed query (futures.return_outlier.cme.v1)",
+    "priority": 95,
+    "template_id": "futures.return_outlier.cme.v1",
+    "evidence_goal": "explain_price_move"
+  }
+]

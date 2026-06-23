@@ -1,0 +1,62 @@
+[
+  {
+    "query_id": "query_62e59ce4b773acc2",
+    "case_id": "case_7765b887d4587614",
+    "text": "TSLA stock move 2024-01-25",
+    "date_start": "2024-01-23",
+    "date_end": "2024-01-27",
+    "domains": [],
+    "reason": "seed query (equity.return_outlier.neutral.v1)",
+    "priority": 100,
+    "template_id": "equity.return_outlier.neutral.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_13e0657150051878",
+    "case_id": "case_7765b887d4587614",
+    "text": "TSLA shares fall 2024-01-25",
+    "date_start": "2024-01-23",
+    "date_end": "2024-01-27",
+    "domains": [],
+    "reason": "seed query (equity.return_outlier.directional.v1)",
+    "priority": 99,
+    "template_id": "equity.return_outlier.directional.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_3614056cc974876c",
+    "case_id": "case_7765b887d4587614",
+    "text": "TSLA earnings guidance 2024-01-25",
+    "date_start": "2024-01-23",
+    "date_end": "2024-01-27",
+    "domains": [],
+    "reason": "seed query (equity.return_outlier.event.v1)",
+    "priority": 98,
+    "template_id": "equity.return_outlier.event.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_89ef899d97a98016",
+    "case_id": "case_7765b887d4587614",
+    "text": "TSLA SEC filing 2024-01-25",
+    "date_start": "2024-01-23",
+    "date_end": "2024-01-27",
+    "domains": [],
+    "reason": "seed query (equity.return_outlier.official.v1)",
+    "priority": 97,
+    "template_id": "equity.return_outlier.official.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_79c90a1dd7cf5518",
+    "case_id": "case_7765b887d4587614",
+    "text": "TSLA analyst downgrade 2024-01-25",
+    "date_start": "2024-01-23",
+    "date_end": "2024-01-27",
+    "domains": [],
+    "reason": "seed query (equity.return_outlier.analyst.v1)",
+    "priority": 96,
+    "template_id": "equity.return_outlier.analyst.v1",
+    "evidence_goal": "explain_price_move"
+  }
+]

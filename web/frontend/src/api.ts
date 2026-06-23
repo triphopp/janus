@@ -1,4 +1,13 @@
-import type { BreaksResponse, RawRow, RunDetail, RunsResponse, TrendDay } from "./types";
+import type {
+  BreaksResponse,
+  EvidenceCaseStatus,
+  EvidenceInvestigateRequest,
+  EvidenceRunOutliersResponse,
+  RawRow,
+  RunDetail,
+  RunsResponse,
+  TrendDay,
+} from "./types";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -50,6 +59,21 @@ export const dashboardApi = {
     api<{ ok: boolean }>(`/api/breaks/${encodeURIComponent(runId)}/${encodeURIComponent(breakId)}/transition`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    })
+      body: JSON.stringify(body),
+    }),
+  evidenceOutliers: (runId: string) =>
+    api<EvidenceRunOutliersResponse>(`/api/evidence/runs/${encodeURIComponent(runId)}/outliers`),
+  investigateOutlier: (req: EvidenceInvestigateRequest) =>
+    api<{ case_id: string; run_id: string; status: string }>(
+      `/api/evidence/runs/${encodeURIComponent(req.run_id)}/cases/${encodeURIComponent(req.case_id)}/investigate`,
+      {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+      }
+    ),
+  evidenceCaseStatus: (runId: string, caseId: string) =>
+    api<EvidenceCaseStatus>(
+      `/api/evidence/runs/${encodeURIComponent(runId)}/cases/${encodeURIComponent(caseId)}/status`
+    ),
 };
