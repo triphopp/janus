@@ -144,9 +144,9 @@ def missing_completeness(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
             grp = grp.sort_values("as_of_date")
             if gap_basis in {"business", "trading"}:
                 dates = pd.to_datetime(grp["as_of_date"]).dt.date.to_numpy(dtype="datetime64[D]")
-                elapsed = pd.Series(0, index=grp.index, dtype=int)
+                elapsed = pd.Series(0, index=grp.index, dtype="int64")
                 if len(dates) > 1:
-                    elapsed.iloc[1:] = np.busday_count(dates[:-1], dates[1:], holidays=holidays)
+                    elapsed.iloc[1:] = np.busday_count(dates[:-1], dates[1:], holidays=holidays).astype("int64")
                 gaps = elapsed > gap_threshold
             else:
                 gaps = grp["as_of_date"].diff().dt.days > gap_threshold

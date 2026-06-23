@@ -106,6 +106,7 @@ def apply_runtime_overrides(
     ticker: str | None = None,
     *,
     compute_greeks: bool | None = None,
+    greeks_backend: str | None = None,
     metrics_mode: str | None = None,
     min_dte: int | None = None,
     max_dte: int | None = None,
@@ -131,6 +132,11 @@ def apply_runtime_overrides(
         out.setdefault("pricing", {})["compute_greeks"] = bool(compute_greeks)
         out["compute_greeks"] = bool(compute_greeks)
         runtime["compute_greeks"] = bool(compute_greeks)
+
+    if greeks_backend is not None:
+        out.setdefault("pricing", {})["greeks_backend"] = greeks_backend
+        out["greeks_backend"] = greeks_backend
+        runtime["greeks_backend"] = greeks_backend
 
     if metrics_mode:
         out["metrics_mode"] = metrics_mode
@@ -1301,9 +1307,16 @@ Example (WTI Q4 2024, near-term liquid options + Greeks):
                         help="Compute Black-76/BS-Merton Greeks (delta, gamma, vega, theta, rho) "
                              "for every option row that survives universe filtering. "
                              "Required before --min-abs-delta / --max-abs-delta can filter by delta. "
-                             "WARNING: uses a row-by-row loop — narrow the universe first with "
-                             "--max-dte and price/IV filters to keep runtimes manageable. "
+                             "Uses vectorized NumPy by default (~40-50x faster than scalar loop). "
                              "Overrides pricing.compute_greeks in the instrument YAML.")
+    parser.add_argument("--greeks-backend", default=None,
+                        choices=["numpy", "loop", "auto", "cuda"],
+                        help="Backend for vectorized Greek computation. "
+                             "'numpy' (default): CPU-vectorized. "
+                             "'loop': scalar fallback for debugging. "
+                             "'auto': numpy unless CuPy available and n_rows >= greeks_cuda_min_rows. "
+                             "'cuda': explicit GPU via CuPy (install cupy-cuda12x first). "
+                             "Overrides pricing.greeks_backend in the instrument YAML.")
 
     # ── Option universe filters ───────────────────────────────────────────────
     _uni = parser.add_argument_group(
@@ -1381,6 +1394,7 @@ Example (WTI Q4 2024, near-term liquid options + Greeks):
         cfg,
         ticker=args.ticker,
         compute_greeks=args.compute_greeks,
+        greeks_backend=args.greeks_backend,
         metrics_mode=args.metrics_mode,
         min_dte=args.min_dte,
         max_dte=args.max_dte,

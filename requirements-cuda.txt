@@ -1,0 +1,17 @@
+# Optional CUDA dependencies for Greek compute acceleration (Level 3)
+# Install ONLY if you have a compatible NVIDIA GPU and CUDA toolkit.
+#
+# Choose the package matching your local CUDA runtime:
+#   CUDA 11.x:  cupy-cuda11x
+#   CUDA 12.x:  cupy-cuda12x
+#   Conda:      conda install -c conda-forge cupy
+#
+# Verify your CUDA version: nvcc --version  or  nvidia-smi
+#
+# Example install:
+#   pip install cupy-cuda12x
+#
+# After installing, backend='auto' will use GPU when n_rows >= greeks_cuda_min_rows (default 1_000_000).
+# All non-GPU machines continue to use backend='numpy' with no config change.
+
+cupy-cuda12x
