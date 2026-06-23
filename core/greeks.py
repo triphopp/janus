@@ -14,6 +14,7 @@ from statistics import NormalDist
 from typing import Optional
 
 import numpy as np
+from scipy.special import ndtr as _ndtr
 
 _NORMAL = NormalDist()
 
@@ -24,6 +25,10 @@ def _norm_pdf(x: float) -> float:
 
 def _norm_cdf(x: float) -> float:
     return _NORMAL.cdf(float(x))
+
+
+def _norm_pdf_vec(x: np.ndarray) -> np.ndarray:
+    return np.exp(-0.5 * x ** 2) / np.sqrt(2 * np.pi)
 
 
 @dataclass
@@ -129,6 +134,359 @@ def single_leg_greeks(
         "theta": theta,
         "rho": rho_val,
     }
+
+
+def _cuda_device_count() -> int:
+    try:
+        import cupy as cp
+        return cp.cuda.runtime.getDeviceCount()
+    except Exception:
+        return 0
+
+
+def _cupy_available() -> bool:
+    return _cuda_device_count() > 0
+
+
+def _resolve_greeks_backend(backend: str, n_rows: int, cuda_min_rows: int | None = None) -> str:
+    """Return the concrete backend name for this request."""
+    if backend in ("loop", "numpy"):
+        return backend
+    if backend == "auto":
+        if _cupy_available():
+            threshold = cuda_min_rows if cuda_min_rows is not None else 1_000_000
+            if n_rows >= threshold:
+                return "cuda"
+        return "numpy"
+    if backend == "cuda":
+        if not _cupy_available():
+            raise RuntimeError(
+                "CUDA backend requested but CuPy is not available or no GPU device found. "
+                "Install CuPy matching your CUDA runtime (see requirements-cuda.txt) "
+                "or use backend='numpy'."
+            )
+        return "cuda"
+    raise ValueError(f"Unknown greeks backend: {backend!r}. Choose 'loop', 'numpy', 'auto', or 'cuda'.")
+
+
+def _batch_greeks_numpy(
+    model: str,
+    S_or_F: np.ndarray,
+    K: np.ndarray,
+    T: np.ndarray,
+    r: np.ndarray,
+    sigma: np.ndarray,
+    right: np.ndarray,
+    q: float,
+    dtype: str,
+) -> dict[str, np.ndarray]:
+    n = len(S_or_F)
+    out = {g: np.full(n, np.nan, dtype=dtype) for g in ("delta", "gamma", "vega", "theta", "rho")}
+
+    right_str = np.asarray(right, dtype=object)
+    call_mask = right_str == "C"
+    put_mask = right_str == "P"
+    valid = (
+        (T > 0) & np.isfinite(T)
+        & (S_or_F > 0) & np.isfinite(S_or_F)
+        & (K > 0) & np.isfinite(K)
+        & (sigma > 0) & np.isfinite(sigma)
+        & np.isfinite(r)
+        & (call_mask | put_mask)
+    )
+
+    if not valid.any():
+        return out
+
+    Sv = S_or_F[valid]
+    Kv = K[valid]
+    Tv = T[valid]
+    rv = r[valid]
+    sv = sigma[valid]
+    cv = call_mask[valid]
+
+    sqrt_T = np.sqrt(Tv)
+
+    if model == "black76":
+        d1 = (np.log(Sv / Kv) + 0.5 * sv ** 2 * Tv) / (sv * sqrt_T)
+        d2 = d1 - sv * sqrt_T
+        disc = np.exp(-rv * Tv)
+        phi_d1 = _norm_pdf_vec(d1)
+        Phi_d1 = _ndtr(d1)
+        Phi_d2 = _ndtr(d2)
+        Phi_nd1 = _ndtr(-d1)
+        Phi_nd2 = _ndtr(-d2)
+
+        delta = np.where(cv, disc * Phi_d1, -disc * Phi_nd1)
+        gamma = disc * phi_d1 / (Sv * sv * sqrt_T)
+        vega = disc * Sv * phi_d1 * sqrt_T
+        theta_c = -Sv * phi_d1 * sv / (2 * sqrt_T) - rv * Kv * disc * Phi_d2 + rv * Sv * disc * Phi_d1
+        theta_p = -Sv * phi_d1 * sv / (2 * sqrt_T) + rv * Kv * disc * Phi_nd2 - rv * Sv * disc * Phi_nd1
+        theta = np.where(cv, theta_c, theta_p)
+        rho_c = -Tv * disc * (Sv * Phi_d1 - Kv * Phi_d2)
+        rho_p = -Tv * disc * (Kv * Phi_nd2 - Sv * Phi_nd1)
+        rho = np.where(cv, rho_c, rho_p)
+
+    elif model in ("bs", "bsm"):
+        d1 = (np.log(Sv / Kv) + (rv - q + 0.5 * sv ** 2) * Tv) / (sv * sqrt_T)
+        d2 = d1 - sv * sqrt_T
+        disc_r = np.exp(-rv * Tv)
+        disc_q = np.exp(-q * Tv)
+        phi_d1 = _norm_pdf_vec(d1)
+        Phi_d1 = _ndtr(d1)
+        Phi_d2 = _ndtr(d2)
+        Phi_nd1 = _ndtr(-d1)
+        Phi_nd2 = _ndtr(-d2)
+
+        delta = np.where(cv, disc_q * Phi_d1, -disc_q * Phi_nd1)
+        gamma = disc_q * phi_d1 / (Sv * sv * sqrt_T)
+        vega = disc_q * Sv * phi_d1 * sqrt_T
+        theta_c = -Sv * phi_d1 * sv * disc_q / (2 * sqrt_T) - rv * Kv * disc_r * Phi_d2 + q * Sv * disc_q * Phi_d1
+        theta_p = -Sv * phi_d1 * sv * disc_q / (2 * sqrt_T) + rv * Kv * disc_r * Phi_nd2 - q * Sv * disc_q * Phi_nd1
+        theta = np.where(cv, theta_c, theta_p)
+        rho_c = Kv * Tv * disc_r * Phi_d2
+        rho_p = -Kv * Tv * disc_r * Phi_nd2
+        rho = np.where(cv, rho_c, rho_p)
+
+    else:
+        raise ValueError(f"Unknown pricing model: {model}")
+
+    out["delta"][valid] = delta
+    out["gamma"][valid] = gamma
+    out["vega"][valid] = vega
+    out["theta"][valid] = theta
+    out["rho"][valid] = rho
+
+    return out
+
+
+def _batch_greeks_loop(
+    model: str,
+    S_or_F: np.ndarray,
+    K: np.ndarray,
+    T: np.ndarray,
+    r: np.ndarray,
+    sigma: np.ndarray,
+    right: np.ndarray,
+    q: float,
+    dtype: str,
+) -> dict[str, np.ndarray]:
+    n = len(S_or_F)
+    out = {g: np.full(n, np.nan, dtype=dtype) for g in ("delta", "gamma", "vega", "theta", "rho")}
+    right_arr = np.asarray(right, dtype=object)
+
+    for i in range(n):
+        ri = str(right_arr[i])
+        Ti = float(T[i])
+        Si = float(S_or_F[i])
+        Ki = float(K[i])
+        si = float(sigma[i])
+        ri_r = float(r[i])
+
+        if (
+            not np.isfinite(Ti) or Ti <= 0
+            or not np.isfinite(Si) or Si <= 0
+            or not np.isfinite(Ki) or Ki <= 0
+            or not np.isfinite(si) or si <= 0
+            or not np.isfinite(ri_r)
+            or ri not in ("C", "P")
+        ):
+            continue
+
+        g = single_leg_greeks(model=model, S_or_F=Si, K=Ki, T=Ti, r=ri_r, sigma=si, right=ri, q=q)
+        for key in ("delta", "gamma", "vega", "theta", "rho"):
+            out[key][i] = g[key]
+
+    return out
+
+
+def _ndtr_gpu(x, cp):
+    """Normal CDF on GPU: prefer cupyx.scipy.special.ndtr, fall back to erfc."""
+    try:
+        from cupyx.scipy.special import ndtr
+        return ndtr(x)
+    except (ImportError, AttributeError):
+        return 0.5 * cp.erfc(-x / cp.sqrt(cp.array(2.0, dtype=x.dtype)))
+
+
+def _batch_greeks_cuda(
+    model: str,
+    S_or_F: np.ndarray,
+    K: np.ndarray,
+    T: np.ndarray,
+    r: np.ndarray,
+    sigma: np.ndarray,
+    right: np.ndarray,
+    q: float,
+    dtype: str,
+) -> dict[str, np.ndarray]:
+    import cupy as cp
+
+    n = len(S_or_F)
+    out = {g: np.full(n, np.nan, dtype=dtype) for g in ("delta", "gamma", "vega", "theta", "rho")}
+
+    # Validity mask on CPU (avoids GPU string ops)
+    right_str = np.asarray(right, dtype=object)
+    call_mask_cpu = right_str == "C"
+    put_mask_cpu = right_str == "P"
+    valid_cpu = (
+        (T > 0) & np.isfinite(T)
+        & (S_or_F > 0) & np.isfinite(S_or_F)
+        & (K > 0) & np.isfinite(K)
+        & (sigma > 0) & np.isfinite(sigma)
+        & np.isfinite(r)
+        & (call_mask_cpu | put_mask_cpu)
+    )
+
+    if not valid_cpu.any():
+        return out
+
+    # Transfer only valid rows to GPU
+    Sv = cp.asarray(S_or_F[valid_cpu], dtype=dtype)
+    Kv = cp.asarray(K[valid_cpu], dtype=dtype)
+    Tv = cp.asarray(T[valid_cpu], dtype=dtype)
+    rv = cp.asarray(r[valid_cpu], dtype=dtype)
+    sv = cp.asarray(sigma[valid_cpu], dtype=dtype)
+    cv = cp.asarray(call_mask_cpu[valid_cpu])
+
+    sqrt_T = cp.sqrt(Tv)
+
+    if model == "black76":
+        d1 = (cp.log(Sv / Kv) + 0.5 * sv ** 2 * Tv) / (sv * sqrt_T)
+        d2 = d1 - sv * sqrt_T
+        disc = cp.exp(-rv * Tv)
+        phi_d1 = cp.exp(-0.5 * d1 ** 2) / cp.sqrt(cp.array(2.0 * np.pi, dtype=dtype))
+        Phi_d1 = _ndtr_gpu(d1, cp)
+        Phi_d2 = _ndtr_gpu(d2, cp)
+        Phi_nd1 = _ndtr_gpu(-d1, cp)
+        Phi_nd2 = _ndtr_gpu(-d2, cp)
+
+        delta = cp.where(cv, disc * Phi_d1, -disc * Phi_nd1)
+        gamma = disc * phi_d1 / (Sv * sv * sqrt_T)
+        vega = disc * Sv * phi_d1 * sqrt_T
+        theta_c = -Sv * phi_d1 * sv / (2 * sqrt_T) - rv * Kv * disc * Phi_d2 + rv * Sv * disc * Phi_d1
+        theta_p = -Sv * phi_d1 * sv / (2 * sqrt_T) + rv * Kv * disc * Phi_nd2 - rv * Sv * disc * Phi_nd1
+        theta = cp.where(cv, theta_c, theta_p)
+        rho_c = -Tv * disc * (Sv * Phi_d1 - Kv * Phi_d2)
+        rho_p = -Tv * disc * (Kv * Phi_nd2 - Sv * Phi_nd1)
+        rho = cp.where(cv, rho_c, rho_p)
+
+    elif model in ("bs", "bsm"):
+        d1 = (cp.log(Sv / Kv) + (rv - q + 0.5 * sv ** 2) * Tv) / (sv * sqrt_T)
+        d2 = d1 - sv * sqrt_T
+        disc_r = cp.exp(-rv * Tv)
+        disc_q = cp.exp(-q * Tv)
+        phi_d1 = cp.exp(-0.5 * d1 ** 2) / cp.sqrt(cp.array(2.0 * np.pi, dtype=dtype))
+        Phi_d1 = _ndtr_gpu(d1, cp)
+        Phi_d2 = _ndtr_gpu(d2, cp)
+        Phi_nd1 = _ndtr_gpu(-d1, cp)
+        Phi_nd2 = _ndtr_gpu(-d2, cp)
+
+        delta = cp.where(cv, disc_q * Phi_d1, -disc_q * Phi_nd1)
+        gamma = disc_q * phi_d1 / (Sv * sv * sqrt_T)
+        vega = disc_q * Sv * phi_d1 * sqrt_T
+        theta_c = -Sv * phi_d1 * sv * disc_q / (2 * sqrt_T) - rv * Kv * disc_r * Phi_d2 + q * Sv * disc_q * Phi_d1
+        theta_p = -Sv * phi_d1 * sv * disc_q / (2 * sqrt_T) + rv * Kv * disc_r * Phi_nd2 - q * Sv * disc_q * Phi_nd1
+        theta = cp.where(cv, theta_c, theta_p)
+        rho_c = Kv * Tv * disc_r * Phi_d2
+        rho_p = -Kv * Tv * disc_r * Phi_nd2
+        rho = cp.where(cv, rho_c, rho_p)
+
+    else:
+        raise ValueError(f"Unknown pricing model: {model}")
+
+    # Transfer results back to CPU
+    out["delta"][valid_cpu] = cp.asnumpy(delta)
+    out["gamma"][valid_cpu] = cp.asnumpy(gamma)
+    out["vega"][valid_cpu] = cp.asnumpy(vega)
+    out["theta"][valid_cpu] = cp.asnumpy(theta)
+    out["rho"][valid_cpu] = cp.asnumpy(rho)
+
+    # Release GPU memory
+    del Sv, Kv, Tv, rv, sv, cv, sqrt_T, d1, d2, phi_d1, delta, gamma, vega, theta, rho
+
+    return out
+
+
+def _dispatch_greeks_backend(
+    resolved: str,
+    model: str,
+    S_or_F: np.ndarray,
+    K: np.ndarray,
+    T: np.ndarray,
+    r: np.ndarray,
+    sigma: np.ndarray,
+    right: np.ndarray,
+    q: float,
+    dtype: str,
+) -> dict[str, np.ndarray]:
+    if resolved == "numpy":
+        return _batch_greeks_numpy(model, S_or_F, K, T, r, sigma, right, q, dtype)
+    if resolved == "loop":
+        return _batch_greeks_loop(model, S_or_F, K, T, r, sigma, right, q, dtype)
+    if resolved == "cuda":
+        return _batch_greeks_cuda(model, S_or_F, K, T, r, sigma, right, q, dtype)
+    raise ValueError(f"Unknown resolved backend: {resolved!r}")
+
+
+_CUDA_DEFAULT_BATCH_SIZE = 250_000
+
+
+def batch_greeks(
+    model: str,
+    S_or_F,
+    K,
+    T,
+    r,
+    sigma,
+    right,
+    q: float = 0.0,
+    backend: str = "numpy",
+    batch_size: int | None = None,
+    dtype: str = "float64",
+    cuda_min_rows: int | None = None,
+) -> dict[str, np.ndarray]:
+    """Vectorized Greeks for a batch of option rows.
+
+    Invalid rows (T<=0, missing values, unknown right) return NaN in all outputs.
+    Backends: 'numpy' (default), 'loop' (scalar fallback), 'auto', 'cuda' (requires CuPy).
+    CUDA chunking: if backend resolves to 'cuda' and batch_size is None,
+    defaults to 250_000 rows per chunk to avoid OOM.
+    """
+    S_arr = np.asarray(S_or_F, dtype=dtype)
+    K_arr = np.asarray(K, dtype=dtype)
+    T_arr = np.asarray(T, dtype=dtype)
+    r_arr = np.asarray(r, dtype=dtype)
+    sigma_arr = np.asarray(sigma, dtype=dtype)
+    right_arr = np.asarray(right, dtype=object)
+
+    n = len(S_arr)
+    resolved = _resolve_greeks_backend(backend, n, cuda_min_rows=cuda_min_rows)
+
+    # CUDA requires chunking; apply conservative default if not set
+    effective_batch_size = batch_size
+    if resolved == "cuda" and effective_batch_size is None:
+        effective_batch_size = _CUDA_DEFAULT_BATCH_SIZE
+
+    if effective_batch_size is None or int(effective_batch_size) >= n:
+        return _dispatch_greeks_backend(resolved, model, S_arr, K_arr, T_arr, r_arr, sigma_arr, right_arr, q, dtype)
+
+    bsz = int(effective_batch_size)
+    greek_keys = ("delta", "gamma", "vega", "theta", "rho")
+    chunks: dict[str, list] = {g: [] for g in greek_keys}
+
+    for start in range(0, n, bsz):
+        end = min(start + bsz, n)
+        chunk = _dispatch_greeks_backend(
+            resolved, model,
+            S_arr[start:end], K_arr[start:end], T_arr[start:end],
+            r_arr[start:end], sigma_arr[start:end], right_arr[start:end],
+            q, dtype,
+        )
+        for g in greek_keys:
+            chunks[g].append(chunk[g])
+
+    return {g: np.concatenate(chunks[g]) for g in greek_keys}
 
 
 def net_greeks(legs: list[Leg], cfg: dict) -> dict:

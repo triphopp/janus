@@ -30,6 +30,10 @@ def normalize_config(cfg: dict | None) -> dict:
         "iv_solver_bounds",
         "vega_bucket_cutoff",
         "vega_beta",
+        "greeks_backend",
+        "greeks_batch_size",
+        "greeks_dtype",
+        "greeks_cuda_min_rows",
     ):
         _setdefault_from(out, key, pricing, key)
 

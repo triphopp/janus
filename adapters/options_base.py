@@ -487,8 +487,9 @@ class OptionsBase(AdapterBase):
     def compute_greeks(self, df: pd.DataFrame) -> pd.DataFrame:
         """Compute Greeks for all option rows.
 
-        Uses closed-form from core/greeks.py.
+        Uses vectorized batch_greeks() from core/greeks.py (no iterrows).
         Respects cfg['pricing_model'] — black76 for futures, bsm for equity.
+        Config keys (pricing.* prefix or root): greeks_backend, greeks_batch_size, greeks_dtype.
         """
         df = df.copy()
         model = self.cfg.get("pricing_model", "black76")
@@ -503,30 +504,64 @@ class OptionsBase(AdapterBase):
         if not bool(self.cfg.get("compute_greeks", pricing_cfg.get("compute_greeks", True))):
             return df
 
+        backend = self.cfg.get("greeks_backend", pricing_cfg.get("greeks_backend", "numpy"))
+        batch_size = self.cfg.get("greeks_batch_size", pricing_cfg.get("greeks_batch_size", None))
+        dtype = self.cfg.get("greeks_dtype", pricing_cfg.get("greeks_dtype", "float64"))
+        if batch_size is not None:
+            batch_size = int(batch_size)
+
         option_mask = self._option_mask(df)
         option_rows = df.loc[option_mask]
-        show_progress = should_show_progress(self.cfg, total=len(option_rows))
-        for idx, row in progress_iter(
-            option_rows.iterrows(),
-            "Greeks",
-            total=len(option_rows),
-            enabled=show_progress,
-        ):
-            if pd.isna(row.get("T")) or row.get("T", 0) <= 0 or pd.isna(row.get("iv")):
-                continue
 
-            g = _greeks.single_leg_greeks(
+        if option_rows.empty:
+            if not self._has_usable_option_values(df, "delta_provided"):
+                df = self._filter_delta_band(df, "delta")
+            return df
+
+        valid_T = (
+            option_rows["T"].notna() & (option_rows["T"] > 0)
+            if "T" in option_rows.columns
+            else pd.Series(False, index=option_rows.index)
+        )
+        valid_iv = (
+            option_rows["iv"].notna()
+            if "iv" in option_rows.columns
+            else pd.Series(False, index=option_rows.index)
+        )
+        valid_mask = valid_T & valid_iv
+        valid_rows = option_rows.loc[valid_mask]
+
+        if not valid_rows.empty:
+            # Vectorized underlying precedence: underlying_price → S → F → price_std
+            S_or_F = pd.Series(np.nan, index=valid_rows.index, dtype=float)
+            for col in ("underlying_price", "S", "F", "price_std"):
+                if col in valid_rows.columns:
+                    fill_mask = S_or_F.isna() & valid_rows[col].notna()
+                    S_or_F[fill_mask] = pd.to_numeric(valid_rows.loc[fill_mask, col], errors="coerce")
+
+            K_arr = pd.to_numeric(valid_rows.get("strike", pd.Series(np.nan, index=valid_rows.index)), errors="coerce")
+            T_arr = valid_rows["T"]
+            r_arr = valid_rows["r"] if "r" in valid_rows.columns else pd.Series(rf_rate, index=valid_rows.index)
+            r_arr = r_arr.fillna(rf_rate)
+            sigma_arr = valid_rows["iv"]
+            right_arr = valid_rows["right"] if "right" in valid_rows.columns else pd.Series("C", index=valid_rows.index)
+
+            greeks_result = _greeks.batch_greeks(
                 model=model,
-                S_or_F=self._row_underlying_value(row),
-                K=row.get("strike", np.nan),
-                T=row.get("T", np.nan),
-                r=row.get("r", rf_rate),
-                sigma=row.get("iv", 0.2),
-                right=row.get("right", "C"),
+                S_or_F=S_or_F.values,
+                K=K_arr.values,
+                T=T_arr.values,
+                r=r_arr.values,
+                sigma=sigma_arr.values,
+                right=right_arr.values,
                 q=div_yield,
+                backend=backend,
+                batch_size=batch_size,
+                dtype=str(dtype),
             )
+
             for col in greeks_cols:
-                df.loc[idx, col] = g[col]
+                df.loc[valid_rows.index, col] = greeks_result[col]
 
         if not self._has_usable_option_values(df, "delta_provided"):
             df = self._filter_delta_band(df, "delta")
