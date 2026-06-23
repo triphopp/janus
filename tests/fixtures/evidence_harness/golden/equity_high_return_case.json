@@ -1,0 +1,15 @@
+{
+  "case_id": "case_d10a461e5f7f7d03",
+  "run_id": "run_001",
+  "signal_type": "return_outlier",
+  "as_of_date": "2024-05-03",
+  "family": "equity",
+  "symbol": "AAPL",
+  "metric_name": "return_std",
+  "local_context": {
+    "direction": "high"
+  },
+  "protected_columns": [],
+  "candidate_terms": [],
+  "source_hints": []
+}

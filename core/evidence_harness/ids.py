@@ -21,16 +21,20 @@ def stable_id(prefix: str, payload: dict, length: int = 16) -> str:
 
 def case_id(run_id: str, signal_type: str, as_of_date: str, metric_name: str,
             family: str | None = None, symbol: str | None = None,
-            instrument: str | None = None) -> str:
-    identity = symbol or instrument or ""
-    payload = {
+            instrument: str | None = None, identity_key: str | None = None) -> str:
+    payload: dict = {
         "run_id": run_id,
         "signal_type": signal_type,
         "family": family or "",
-        "identity": identity,
         "as_of_date": as_of_date,
         "metric_name": metric_name or "",
     }
+    if symbol:
+        payload["symbol"] = symbol
+    elif instrument:
+        payload["instrument"] = instrument
+    elif identity_key:
+        payload["identity_key"] = identity_key
     return stable_id("case", payload)
 
 

@@ -20,10 +20,11 @@ class TestGoldenSeedQueries:
         )
         queries = QueryPlanner().plan(case)
         texts = [q.text for q in queries]
-        assert texts[0] == "TSLA stock fall January 2024"
-        assert "TSLA earnings January 2024" in texts
+        assert texts[0] == "TSLA stock move 2024-01-25"
+        assert "TSLA shares fall 2024-01-25" in texts
+        assert "TSLA earnings guidance 2024-01-25" in texts
         assert "TSLA SEC filing 2024-01-25" in texts
-        assert "TSLA analyst downgrade January 2024" in texts
+        assert "TSLA analyst downgrade 2024-01-25" in texts
 
     def test_equity_high_return_seed_queries_match_golden(self):
         case = _case(
@@ -33,10 +34,11 @@ class TestGoldenSeedQueries:
         )
         queries = QueryPlanner().plan(case)
         texts = [q.text for q in queries]
-        assert texts[0] == "AAPL stock rise May 2024"
-        assert "AAPL earnings May 2024" in texts
+        assert texts[0] == "AAPL stock move 2024-05-03"
+        assert "AAPL shares rise 2024-05-03" in texts
+        assert "AAPL earnings guidance 2024-05-03" in texts
         assert "AAPL SEC filing 2024-05-03" in texts
-        assert "AAPL analyst upgrade May 2024" in texts
+        assert "AAPL analyst upgrade 2024-05-03" in texts
 
     def test_futures_seed_queries_match_golden(self):
         case = _case(

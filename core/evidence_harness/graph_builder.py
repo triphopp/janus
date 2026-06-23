@@ -150,6 +150,24 @@ def _build_nodes(result: HarnessRunResult) -> list[dict]:
         },
     })
 
+    local_context = result.audit.get("local_context") if result.audit else None
+    if isinstance(local_context, dict) and local_context:
+        node_type = _local_context_node_type(local_context)
+        nodes.append({
+            "node_id": f"node_context_{result.case_id}",
+            "case_id": result.case_id,
+            "source_id": None,
+            "node_type": node_type,
+            "source_tier": None,
+            "title": _local_context_title(local_context, node_type),
+            "observed_at": _first_attr(result, "as_of_date"),
+            "published_at": None,
+            "effective_at": None,
+            "confidence": None,
+            "summary": _local_context_summary(local_context),
+            "payload": local_context,
+        })
+
     # Source nodes
     src_map = {s.document_id: s for s in result.sources}
     doc_map = {d.document_id: d for d in result.documents}
@@ -184,6 +202,75 @@ def _build_nodes(result: HarnessRunResult) -> list[dict]:
                 "document_id": src.document_id,
                 "provider": src.provider,
             },
+        })
+
+    for i, chk in enumerate(result.checks):
+        check_id = _check_id(result.case_id, chk, i)
+        nodes.append({
+            "node_id": f"node_{check_id}",
+            "case_id": result.case_id,
+            "source_id": None,
+            "node_type": "check",
+            "source_tier": None,
+            "title": f"Check: {chk.get('name', 'unknown')}",
+            "observed_at": None,
+            "published_at": None,
+            "effective_at": _first_attr(result, "finished_at"),
+            "confidence": chk.get("score"),
+            "summary": chk.get("rationale"),
+            "payload": {
+                "check_id": check_id,
+                "name": chk.get("name", ""),
+                "status": chk.get("status", "unknown"),
+                **{k: v for k, v in chk.items()
+                   if k not in ("name", "status", "score", "rationale")},
+            },
+        })
+
+    llm_summary = result.audit.get("llm_summary") if result.audit else None
+    llm_valid = bool(result.audit.get("llm_summary_valid")) if result.audit else False
+    citation_status = result.audit.get("citation_status") if result.audit else None
+    if llm_summary and llm_valid and citation_status != "fail":
+        nodes.append({
+            "node_id": f"node_llm_{result.case_id}",
+            "case_id": result.case_id,
+            "source_id": None,
+            "node_type": "llm_summary",
+            "source_tier": None,
+            "title": "LLM Summary",
+            "observed_at": None,
+            "published_at": None,
+            "effective_at": _first_attr(result, "finished_at"),
+            "confidence": None,
+            "summary": llm_summary,
+            "payload": {
+                "citation_status": citation_status,
+                "key_findings": result.audit.get("llm_key_findings", []),
+                "supporting_document_ids": result.audit.get("supporting_document_ids", []),
+                "contradicting_document_ids": result.audit.get("contradicting_document_ids", []),
+            },
+        })
+
+    for i, event in enumerate(_review_events(result)):
+        nodes.append({
+            "node_id": _stable_id("node_review", {
+                "case_id": result.case_id,
+                "i": i,
+                "actor": event.get("actor", ""),
+                "action": event.get("action", ""),
+                "created_at": event.get("created_at", ""),
+            }),
+            "case_id": result.case_id,
+            "source_id": None,
+            "node_type": "human_decision",
+            "source_tier": None,
+            "title": f"Review: {event.get('action', 'decision')}",
+            "observed_at": None,
+            "published_at": None,
+            "effective_at": event.get("created_at") or _first_attr(result, "finished_at"),
+            "confidence": None,
+            "summary": event.get("reason") or event.get("note"),
+            "payload": event,
         })
 
     return nodes
@@ -257,6 +344,60 @@ def _build_edges(result: HarnessRunResult, nodes: list[dict]) -> list[dict]:
                 "payload": {},
             })
 
+    context_id = f"node_context_{result.case_id}"
+    if context_id in node_ids:
+        edges.append({
+            "edge_id": _edge_id(context_id, root_id, "context_for"),
+            "case_id": result.case_id,
+            "from_node": context_id,
+            "to_node": root_id,
+            "relation": "context_for",
+            "confidence": None,
+            "check_name": "local_context",
+            "rationale": "Local run context used to build and interpret the case.",
+            "payload": {},
+        })
+
+    for n in nodes:
+        if n.get("node_type") == "check":
+            edges.append({
+                "edge_id": _edge_id(n["node_id"], root_id, "checks"),
+                "case_id": result.case_id,
+                "from_node": n["node_id"],
+                "to_node": root_id,
+                "relation": "checks",
+                "confidence": n.get("confidence"),
+                "check_name": (n.get("payload") or {}).get("name"),
+                "rationale": n.get("summary"),
+                "payload": {
+                    "status": (n.get("payload") or {}).get("status"),
+                },
+            })
+        elif n.get("node_type") == "llm_summary":
+            edges.append({
+                "edge_id": _edge_id(n["node_id"], root_id, "summarizes"),
+                "case_id": result.case_id,
+                "from_node": n["node_id"],
+                "to_node": root_id,
+                "relation": "summarizes",
+                "confidence": None,
+                "check_name": "citation_verification",
+                "rationale": f"citation_status={(n.get('payload') or {}).get('citation_status')}",
+                "payload": {},
+            })
+        elif n.get("node_type") == "human_decision":
+            edges.append({
+                "edge_id": _edge_id(n["node_id"], root_id, "reviewed_by"),
+                "case_id": result.case_id,
+                "from_node": n["node_id"],
+                "to_node": root_id,
+                "relation": "reviewed_by",
+                "confidence": None,
+                "check_name": "human_review",
+                "rationale": n.get("summary"),
+                "payload": n.get("payload") or {},
+            })
+
     return edges
 
 
@@ -265,7 +406,7 @@ def _build_edges(result: HarnessRunResult, nodes: list[dict]) -> list[dict]:
 def _build_checks(result: HarnessRunResult) -> list[dict]:
     rows = []
     for i, chk in enumerate(result.checks):
-        check_id = _stable_id("chk", {"case_id": result.case_id, "name": chk.get("name", ""), "i": i})
+        check_id = _check_id(result.case_id, chk, i)
         rows.append({
             "check_id": check_id,
             "case_id": result.case_id,
@@ -302,9 +443,14 @@ def _build_queries(result: HarnessRunResult) -> list[dict]:
 
 _NODE_TYPE_ORDER = {
     "outlier": 0,
+    "local_context": 1,
+    "data_quality_finding": 1,
+    "provider_comparison": 1,
+    "diff_record": 1,
     "macro_release": 2,
     "filing": 3,
     "news_article": 4,
+    "check": 5,
     "llm_summary": 6,
     "human_decision": 7,
 }
@@ -349,6 +495,49 @@ def _dominant_event_type(claims) -> str | None:
 def _max_support(doc_id: str, claims) -> float | None:
     scores = [c.support_score for c in claims if c.document_id == doc_id and c.support_score]
     return max(scores) if scores else None
+
+
+def _local_context_node_type(local_context: dict) -> str:
+    keys = set(local_context)
+    if any(k.startswith("diff_") or k.startswith("_diff") for k in keys):
+        return "diff_record"
+    if "provider_comparison" in keys or "provider" in keys and "comparison" in keys:
+        return "provider_comparison"
+    if "_return_validation_status" in keys or any("quality" in k for k in keys):
+        return "data_quality_finding"
+    return "local_context"
+
+
+def _local_context_title(local_context: dict, node_type: str) -> str:
+    if node_type == "data_quality_finding":
+        status = local_context.get("_return_validation_status")
+        return f"Validation Context: {status}" if status else "Validation Context"
+    if node_type == "provider_comparison":
+        return "Provider Comparison"
+    if node_type == "diff_record":
+        return "Diff Record"
+    return "Local Context"
+
+
+def _local_context_summary(local_context: dict) -> str:
+    parts = []
+    for key in ("_return_validation_status", "_return_outlier_reason", "identity_key"):
+        if local_context.get(key) is not None:
+            parts.append(f"{key}={local_context[key]}")
+    return "; ".join(parts) if parts else "Local context captured for this evidence case."
+
+
+def _review_events(result: HarnessRunResult) -> list[dict]:
+    if not result.audit:
+        return []
+    events = result.audit.get("review_events") or result.audit.get("events") or []
+    if not isinstance(events, list):
+        return []
+    return [e for e in events if isinstance(e, dict)]
+
+
+def _check_id(case_id: str, chk: dict, i: int) -> str:
+    return _stable_id("chk", {"case_id": case_id, "name": chk.get("name", ""), "i": i})
 
 
 def _parse_dt(value: str | None) -> str | None:

@@ -52,7 +52,7 @@ def _family_source_hints(family: str | None) -> list[str]:
 def _sanitize_local_context(row: dict, run_id: str) -> dict:
     safe: dict[str, Any] = {"run_id": run_id}
     scalar_keys = [
-        "as_of_date", "symbol", "instrument", "family",
+        "as_of_date", "symbol", "instrument", "identity_key", "family",
         "_return_outlier_direction", "_return_outlier_severity",
         "_return_outlier_reason", "_return_validation_status",
         "signal_type",
@@ -78,6 +78,8 @@ def build_case_package_from_tagged_return_outlier(
     family = run_context.get("family")
     instrument = run_context.get("instrument")
     symbol = row.get("symbol") or row.get("Symbol")
+    # identity_key is the fallback identifier when both symbol and instrument are absent
+    identity_key = row.get("identity_key") if not symbol and not instrument else None
     as_of_date = str(row.get("as_of_date", ""))[:10]
     metric_name = "return_std"
 
@@ -89,6 +91,7 @@ def build_case_package_from_tagged_return_outlier(
         family=family,
         symbol=symbol,
         instrument=instrument,
+        identity_key=identity_key,
     )
 
     direction = str(row.get("_return_outlier_direction", "")).lower()

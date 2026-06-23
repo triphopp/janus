@@ -203,17 +203,30 @@ def run_evidence_summary(
             "summary": "",
             "key_findings": [],
             "limitations": ["llm_unavailable"],
+            "supporting_document_ids": [],
+            "contradicting_document_ids": [],
             "cited_document_ids": [],
             "llm_error": True,
         }
 
-    # Strip hallucinated citations
-    cited = [d for d in response.get("cited_document_ids", []) if d in registered_ids]
+    # Normalize: prefer supporting_document_ids; fall back to legacy cited_document_ids.
+    raw_supporting = (
+        response.get("supporting_document_ids")
+        or response.get("cited_document_ids", [])
+    )
+    raw_contradicting = response.get("contradicting_document_ids", [])
+
+    # Strip hallucinated citations — only IDs that exist in the registry.
+    supporting = [d for d in raw_supporting if d in registered_ids]
+    contradicting = [d for d in raw_contradicting if d in registered_ids]
+
     return {
         "summary": str(response.get("summary", ""))[:1000],
         "key_findings": [str(f)[:200] for f in response.get("key_findings", [])[:5]],
         "limitations": [str(l)[:200] for l in response.get("limitations", [])[:5]],
-        "cited_document_ids": cited,
+        "supporting_document_ids": supporting,
+        "contradicting_document_ids": contradicting,
+        "cited_document_ids": supporting,  # legacy alias for read-side compat
         "llm_error": False,
     }
 

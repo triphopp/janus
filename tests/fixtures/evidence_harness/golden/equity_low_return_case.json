@@ -1,0 +1,15 @@
+{
+  "case_id": "case_7765b887d4587614",
+  "run_id": "run_001",
+  "signal_type": "return_outlier",
+  "as_of_date": "2024-01-25",
+  "family": "equity",
+  "symbol": "TSLA",
+  "metric_name": "return_std",
+  "local_context": {
+    "direction": "low"
+  },
+  "protected_columns": [],
+  "candidate_terms": [],
+  "source_hints": []
+}

@@ -1,0 +1,5 @@
+{"name": "query_budget", "status": "pass", "score": 1.0, "rationale": "within budget"}
+{"name": "fetch_budget", "status": "pass", "score": 1.0, "rationale": "within budget"}
+{"name": "source_quality", "status": "pass", "score": 0.95, "rationale": "tier1 present"}
+{"name": "temporal_consistency", "status": "pass", "score": 0.9, "rationale": "before outlier"}
+{"name": "instrument_relevance", "status": "pass", "score": 0.85, "rationale": "TSLA mentioned"}

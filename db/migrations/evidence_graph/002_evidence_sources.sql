@@ -23,8 +23,13 @@ create table if not exists evidence_sources (
   ) stored
 );
 
-create unique index if not exists evidence_sources_url_idx
+drop index if exists evidence_sources_url_idx;
+create unique index if not exists evidence_sources_url_content_idx
+  on evidence_sources(canonical_url, content_hash);
+create index if not exists evidence_sources_url_idx
   on evidence_sources(url);
+create index if not exists evidence_sources_canonical_url_idx
+  on evidence_sources(canonical_url);
 create index if not exists evidence_sources_hash_idx
   on evidence_sources(content_hash);
 create index if not exists evidence_sources_domain_idx

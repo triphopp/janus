@@ -87,6 +87,10 @@ def _result(with_claims=True, with_sources=True) -> HarnessRunResult:
             "family": "futures",
             "severity": "high",
             "observed_value": 3.2,
+            "local_context": {
+                "_return_validation_status": "validated",
+                "_return_outlier_reason": "large absolute move",
+            },
         },
     )
 
@@ -115,7 +119,7 @@ class TestBuildGraph:
 
     def test_source_node_created_for_each_source(self):
         g = build_graph(_result())
-        source_nodes = [n for n in g["nodes"] if n["node_type"] != "outlier"]
+        source_nodes = [n for n in g["nodes"] if n["source_id"] is not None]
         assert len(source_nodes) == 1
 
     def test_macro_release_node_type_for_eia(self):
@@ -167,12 +171,88 @@ class TestBuildGraph:
     def test_no_sources_produces_minimal_graph(self):
         g = build_graph(_result(with_sources=False))
         assert g["case"]["case_id"] == "case_wti"
-        assert len([n for n in g["nodes"] if n["node_type"] != "outlier"]) == 0
-        assert g["edges"] == []
+        assert len([n for n in g["nodes"] if n["source_id"] is not None]) == 0
+        assert not any(e["relation"] in ("supports", "contradicts") for e in g["edges"])
 
     def test_dominant_event_type_captured(self):
         g = build_graph(_result())
         assert g["case"]["event_type"] == "commodity_inventory"
+
+    def test_local_context_node_exists_when_validation_status_present(self):
+        g = build_graph(_result())
+        node = next((n for n in g["nodes"] if n["node_type"] == "data_quality_finding"), None)
+        assert node is not None
+        assert node["payload"]["_return_validation_status"] == "validated"
+        assert any(e["relation"] == "context_for" for e in g["edges"])
+
+    def test_check_nodes_and_edges_explain_verdict_checks(self):
+        g = build_graph(_result())
+        check_nodes = [n for n in g["nodes"] if n["node_type"] == "check"]
+        assert {n["payload"]["name"] for n in check_nodes} >= {
+            "source_quality", "temporal_consistency"
+        }
+        assert any(e["relation"] == "checks" and e["check_name"] == "source_quality"
+                   for e in g["edges"])
+
+    def test_valid_llm_summary_node_created(self):
+        r = _result()
+        r.audit.update({
+            "llm_summary": "Registered sources support the WTI move.",
+            "llm_summary_valid": True,
+            "citation_status": "pass",
+            "llm_key_findings": ["EIA inventory draw"],
+            "supporting_document_ids": ["doc_abc"],
+            "contradicting_document_ids": [],
+        })
+        g = build_graph(r)
+        llm = next((n for n in g["nodes"] if n["node_type"] == "llm_summary"), None)
+        assert llm is not None
+        assert llm["payload"]["citation_status"] == "pass"
+        assert any(e["relation"] == "summarizes" for e in g["edges"])
+
+    def test_invalid_llm_summary_does_not_create_support_node(self):
+        r = _result()
+        r.audit.update({
+            "llm_summary": "Unsupported summary.",
+            "llm_summary_valid": False,
+            "citation_status": "fail",
+        })
+        g = build_graph(r)
+        assert not any(n["node_type"] == "llm_summary" for n in g["nodes"])
+
+    def test_review_event_appears_as_human_decision_node(self):
+        r = _result()
+        r.audit["review_events"] = [{
+            "actor": "analyst@example.com",
+            "action": "mark_supported_event",
+            "reason": "Source chain is credible.",
+            "created_at": "2024-09-26T10:00:00Z",
+        }]
+        g = build_graph(r)
+        human = next((n for n in g["nodes"] if n["node_type"] == "human_decision"), None)
+        assert human is not None
+        assert human["payload"]["actor"] == "analyst@example.com"
+        assert any(e["relation"] == "reviewed_by" for e in g["edges"])
+
+    def test_timeline_order_follows_chain_contract(self):
+        r = _result()
+        r.audit.update({
+            "llm_summary": "Registered sources support the WTI move.",
+            "llm_summary_valid": True,
+            "citation_status": "pass",
+            "review_events": [{
+                "actor": "analyst",
+                "action": "mark_supported_event",
+                "created_at": "2024-09-26T10:00:00Z",
+            }],
+        })
+        g = build_graph(r)
+        order = [n["node_type"] for n in g["timeline"]]
+        assert order.index("outlier") < order.index("data_quality_finding")
+        assert order.index("data_quality_finding") < order.index("macro_release")
+        assert order.index("macro_release") < order.index("check")
+        assert order.index("check") < order.index("llm_summary")
+        assert order.index("llm_summary") < order.index("human_decision")
 
 
 class TestBuildTimeline:

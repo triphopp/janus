@@ -69,21 +69,20 @@ def _equity_queries(case: OutlierCasePackage, direction: str, date: str) -> list
     terms = _direction_terms(case, direction)
     dir_term = terms[0] if terms else "move"
     analyst_term = "upgrade" if direction == "high" else "downgrade"
-    friendly = _friendly_date(date)
 
-    # candidate_terms provided by the caller take priority — they encode domain knowledge
-    candidate_queries: list[tuple[str, str]] = []
-    for term in (case.candidate_terms or []):
-        candidate_queries.append((term, "equity.candidate_term.v1"))
-
+    # Contract-specified seed order is mandatory: neutral first, then directional/event/official/analyst.
+    # candidate_terms are appended AFTER contract seeds so they never displace index 0.
     generic = [
-        (f"{symbol} stock {dir_term} {friendly}", "equity.return_outlier.directional.v1"),
-        (f"{symbol} earnings {friendly}", "equity.return_outlier.event.v1"),
-        (f"{symbol} news {friendly}", "equity.return_outlier.neutral.v1"),
+        (f"{symbol} stock move {date}", "equity.return_outlier.neutral.v1"),
+        (f"{symbol} shares {dir_term} {date}", "equity.return_outlier.directional.v1"),
+        (f"{symbol} earnings guidance {date}", "equity.return_outlier.event.v1"),
         (f"{symbol} SEC filing {date}", "equity.return_outlier.official.v1"),
-        (f"{symbol} analyst {analyst_term} {friendly}", "equity.return_outlier.analyst.v1"),
+        (f"{symbol} analyst {analyst_term} {date}", "equity.return_outlier.analyst.v1"),
     ]
-    return candidate_queries + generic
+    candidate_queries: list[tuple[str, str]] = [
+        (term, "equity.candidate_term.v1") for term in (case.candidate_terms or [])
+    ]
+    return generic + candidate_queries
 
 
 def _futures_queries(case: OutlierCasePackage, date: str) -> list[tuple[str, str]]:

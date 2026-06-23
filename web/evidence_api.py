@@ -286,11 +286,24 @@ def list_run_outliers(run_id: str):
         except Exception:
             return str(v)
 
+    from core.evidence_harness.case_builder import build_case_package_from_tagged_return_outlier
+
+    # Infer family from parquet path (e.g. outputs/runs/<family>/<run_id>/data/prepared.parquet)
+    run_context: dict = {}
+    try:
+        run_context["family"] = Path(matches[0]).parts[-4]
+    except Exception:
+        pass
+
     outliers = []
     for _, row in outlier_df.iterrows():
         as_of = str(row["as_of_date"])[:10]
         symbol = str(row.get("symbol", ""))
-        case_id = f"case_{symbol.lower()}_{as_of}_{run_id}"
+        row_dict = row.to_dict()
+        pkg = build_case_package_from_tagged_return_outlier(
+            run_id=run_id, row=row_dict, run_context=run_context
+        )
+        case_id = pkg.case_id
 
         # Enrich with job / DB status
         job = _job_get(case_id)
@@ -320,7 +333,7 @@ def list_run_outliers(run_id: str):
             "evidence": str(row.get("_return_outlier_evidence", "")),
             "evidence_status": evidence_status,
             "verdict": verdict,
-            "investigate_url": f"/api/evidence/run",
+            "investigate_url": f"/api/evidence/runs/{run_id}/cases/{case_id}/investigate",
         })
 
     return {"run_id": run_id, "outliers": outliers, "total": len(outliers)}
@@ -331,7 +344,7 @@ def _artifact_base() -> Path:
 
 
 def _latest_harness_run(case_id: str) -> Path | None:
-    """Return the path to the most recent harness run folder for this case."""
+    """Return the most recent harness run folder for this case (all runs scanned)."""
     base = _artifact_base()
     best: tuple[float, Path] | None = None
     try:
@@ -342,6 +355,167 @@ def _latest_harness_run(case_id: str) -> Path | None:
     except Exception:
         pass
     return best[1] if best else None
+
+
+def _latest_harness_run_scoped(run_id: str, case_id: str) -> Path | None:
+    """Return the most recent harness sub-run under outputs/harness/<run_id>/<case_id>/."""
+    base = _artifact_base() / run_id / case_id
+    best: tuple[float, Path] | None = None
+    try:
+        for verdict_path in base.glob("*/verdict.json"):
+            mtime = verdict_path.stat().st_mtime
+            if best is None or mtime > best[0]:
+                best = (mtime, verdict_path.parent)
+    except Exception:
+        pass
+    return best[1] if best else None
+
+
+# ── Run-scoped routes ──────────────────────────────────────────────────────────
+
+@router.get("/runs/{run_id}")
+def get_run_summary(run_id: str):
+    """Return summary of all cases investigated under this pipeline run."""
+    base = _artifact_base() / run_id
+    if not base.exists():
+        raise HTTPException(status_code=404, detail=f"No evidence artifacts for run {run_id!r}")
+    cases = []
+    for case_dir in sorted(base.iterdir()):
+        if not case_dir.is_dir():
+            continue
+        run_dir = _latest_harness_run_scoped(run_id, case_dir.name)
+        verdict: dict = {}
+        if run_dir:
+            try:
+                with open(run_dir / "verdict.json", encoding="utf-8") as f:
+                    verdict = json.load(f)
+            except Exception:
+                pass
+        cases.append({
+            "case_id": case_dir.name,
+            "verdict": verdict.get("verdict"),
+            "confidence": verdict.get("confidence"),
+            "citation_status": verdict.get("citation_status"),
+        })
+    return {"run_id": run_id, "cases": cases, "count": len(cases)}
+
+
+@router.get("/runs/{run_id}/cases/{case_id}")
+def get_run_case(run_id: str, case_id: str):
+    """Return case detail from run-scoped artifacts."""
+    run_dir = _latest_harness_run_scoped(run_id, case_id)
+    if not run_dir:
+        raise HTTPException(status_code=404, detail=f"Case {case_id!r} not found under run {run_id!r}")
+    result: dict = {"run_id": run_id, "case_id": case_id}
+    try:
+        with open(run_dir / "verdict.json", encoding="utf-8") as f:
+            result["verdict"] = json.load(f)
+    except Exception:
+        result["verdict"] = {}
+    result["sources"] = _read_jsonl(run_dir / "sources.jsonl")
+    result["checks"] = _read_jsonl(run_dir / "checks.jsonl")
+    return result
+
+
+@router.get("/runs/{run_id}/cases/{case_id}/status")
+def get_run_case_status(run_id: str, case_id: str):
+    """Return run-scoped status for a case — checks job tracker then artifact."""
+    job = _job_get(case_id) or {"status": "not_investigated"}
+    run_dir = _latest_harness_run_scoped(run_id, case_id)
+    artifact: dict = {}
+    if run_dir:
+        try:
+            with open(run_dir / "verdict.json", encoding="utf-8") as f:
+                v = json.load(f)
+            artifact = {
+                "verdict": v.get("verdict"),
+                "confidence": v.get("confidence"),
+                "citation_status": v.get("citation_status"),
+                "llm_summary_valid": v.get("llm_summary_valid"),
+                "limitations": v.get("limitations", []),
+                "started_at": v.get("started_at"),
+                "finished_at": v.get("finished_at"),
+            }
+        except Exception:
+            pass
+    merged = dict(job)
+    for k, val in artifact.items():
+        if not merged.get(k):
+            merged[k] = val
+    return {"run_id": run_id, "case_id": case_id, "job": merged}
+
+
+@router.get("/runs/{run_id}/cases/{case_id}/sources")
+def get_run_case_sources(run_id: str, case_id: str):
+    """Return sources from run-scoped registry (never triggers a new run)."""
+    run_dir = _latest_harness_run_scoped(run_id, case_id)
+    if not run_dir:
+        raise HTTPException(status_code=404, detail=f"No artifacts for run={run_id!r} case={case_id!r}")
+    sources = _read_jsonl(run_dir / "sources.jsonl")
+    return {"run_id": run_id, "case_id": case_id, "sources": sources}
+
+
+@router.get("/runs/{run_id}/cases/{case_id}/checks")
+def get_run_case_checks(run_id: str, case_id: str):
+    """Return deterministic checks from run-scoped artifacts (never triggers a new run)."""
+    run_dir = _latest_harness_run_scoped(run_id, case_id)
+    if not run_dir:
+        raise HTTPException(status_code=404, detail=f"No artifacts for run={run_id!r} case={case_id!r}")
+    checks = _read_jsonl(run_dir / "checks.jsonl")
+    return {"run_id": run_id, "case_id": case_id, "checks": checks}
+
+
+@router.get("/runs/{run_id}/cases/{case_id}/queries")
+def get_run_case_queries(run_id: str, case_id: str):
+    """Return query log from run-scoped artifacts (never triggers a new run)."""
+    run_dir = _latest_harness_run_scoped(run_id, case_id)
+    if not run_dir:
+        raise HTTPException(status_code=404, detail=f"No artifacts for run={run_id!r} case={case_id!r}")
+    queries = _read_jsonl(run_dir / "query_log.jsonl")
+    return {"run_id": run_id, "case_id": case_id, "queries": queries}
+
+
+@router.post("/runs/{run_id}/cases/{case_id}/investigate")
+def investigate_run_case(run_id: str, case_id: str, background_tasks: BackgroundTasks):
+    """Trigger a harness run for a known case in the context of a specific pipeline run."""
+    job = _job_get(case_id)
+    if job and job.get("status") == "running":
+        return {"case_id": case_id, "run_id": run_id, "status": "already_running", "job": job}
+
+    # Load case package from artifact if it exists
+    run_dir = _latest_harness_run_scoped(run_id, case_id)
+    case_pkg: dict = {}
+    if run_dir:
+        try:
+            with open(run_dir / "case_package.json", encoding="utf-8") as f:
+                case_pkg = json.load(f)
+        except Exception:
+            pass
+
+    req = RunRequest(
+        run_id=run_id,
+        case_id=case_id,
+        instrument=case_pkg.get("instrument") or case_pkg.get("symbol") or "unknown",
+        family=case_pkg.get("family") or "equity",
+        symbol=case_pkg.get("symbol"),
+        as_of_date=case_pkg.get("as_of_date") or "1970-01-01",
+        signal_type=case_pkg.get("signal_type") or "return_outlier",
+        z_score=case_pkg.get("z_score"),
+        severity=case_pkg.get("severity"),
+        observed_value=case_pkg.get("observed_value"),
+        pct_change=case_pkg.get("pct_change"),
+        candidate_terms=case_pkg.get("candidate_terms") or [],
+        source_hints=case_pkg.get("source_hints") or [],
+    )
+    _job_set(case_id, status="queued", started_at=datetime.now(timezone.utc).isoformat())
+    background_tasks.add_task(_run_harness_task, req)
+    return {
+        "case_id": case_id,
+        "run_id": run_id,
+        "status": "queued",
+        "poll_url": f"/api/evidence/runs/{run_id}/cases/{case_id}/status",
+        "result_url": f"/api/evidence/runs/{run_id}/cases/{case_id}",
+    }
 
 
 def _read_jsonl(path: Path, limit: int = 50) -> list[dict]:

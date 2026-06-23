@@ -193,10 +193,46 @@ def run_harness(
             claims=claims, checks=checks, registry=sources, client=llm_client,
         )
 
-    # ── Citation verification ──────────────────────────────────────────────
+    # ── Citation verification — must run before verdict is written ─────────
     citation_report = verify_citations(
         summary=llm_summary, registry=sources, verdict=final_verdict
     )
+
+    # B3: For no-LLM supported_event, build deterministic support from registry.
+    # citation_status=skip is only valid for non-supported verdicts.
+    if citation_report["status"] == "skip" and final_verdict == "supported_event":
+        credible_doc_ids = [
+            s.document_id for s in sources
+            if s.source_tier in ("tier1_official", "tier2_reputable")
+            and s.content_hash
+            and s.extract_hash
+        ]
+        if credible_doc_ids:
+            citation_report = verify_citations(
+                summary={
+                    "supporting_document_ids": credible_doc_ids,
+                    "contradicting_document_ids": [],
+                },
+                registry=sources,
+                verdict=final_verdict,
+            )
+        else:
+            citation_report = {
+                "status": "fail",
+                "missing_document_ids": [],
+                "unfetched_urls": [],
+                "source_mismatches": [],
+                "supporting_registered_sources": 0,
+                "blocking_reason": "no credible registered sources for deterministic support",
+            }
+
+    # Citation gate: downgrade supported_event when citation verification fails.
+    if final_verdict == "supported_event" and citation_report["status"] == "fail":
+        final_verdict = "insufficient_evidence"
+        confidence = "low"
+    elif final_verdict == "supported_event" and citation_report["status"] == "warn":
+        if confidence == "high":
+            confidence = "medium"
 
     # ── Artifacts ──────────────────────────────────────────────────────────
     finished_at = datetime.now(timezone.utc).isoformat()
@@ -229,7 +265,11 @@ def run_harness(
         "deterministic_verdict": final_verdict,
         "llm_summary": llm_summary.get("summary", "") if llm_summary else "",
         "llm_key_findings": llm_summary.get("key_findings", []) if llm_summary else [],
-        "llm_summary_valid": bool(llm_summary and not llm_summary.get("llm_error")),
+        "llm_summary_valid": bool(
+            llm_summary
+            and not llm_summary.get("llm_error")
+            and citation_report.get("status") != "fail"
+        ),
         "llm_provider": config.llm_provider if config.llm_enabled else None,
         "llm_model": config.llm_model if config.llm_enabled else None,
         "llm_prompt_version": config.llm_prompt_version if config.llm_enabled else None,
@@ -293,6 +333,13 @@ def run_harness(
             "family": case.family,
             "severity": case.severity,
             "observed_value": case.observed_value,
+            "local_context": case.local_context,
+            "citation_status": verdict_doc["citation_status"],
+            "llm_summary": verdict_doc["llm_summary"],
+            "llm_summary_valid": verdict_doc["llm_summary_valid"],
+            "llm_key_findings": verdict_doc["llm_key_findings"],
+            "supporting_document_ids": verdict_doc["supporting_document_ids"],
+            "contradicting_document_ids": verdict_doc["contradicting_document_ids"],
         },
     )
 

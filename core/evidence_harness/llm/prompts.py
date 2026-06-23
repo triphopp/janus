@@ -178,6 +178,11 @@ EVIDENCE_SUMMARY_SCHEMA = {
         "summary": {"type": "string", "maxLength": 1000},
         "key_findings": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
         "limitations": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+        # supporting_document_ids: docs that support the verdict (read by citations.py)
+        "supporting_document_ids": {"type": "array", "items": {"type": "string"}},
+        # contradicting_document_ids: docs that contradict the verdict
+        "contradicting_document_ids": {"type": "array", "items": {"type": "string"}},
+        # cited_document_ids: legacy alias — read-side only, do not write new output here
         "cited_document_ids": {"type": "array", "items": {"type": "string"}},
     },
 }
@@ -219,7 +224,9 @@ Write a concise evidence summary for an analyst reviewing this outlier.
 
 Rules:
 - The summary must be consistent with the deterministic verdict above.
-- cited_document_ids must only contain IDs from the Registered list above.
+- supporting_document_ids: IDs from the Registered list that support the verdict.
+- contradicting_document_ids: IDs from the Registered list that contradict the verdict.
+- All cited IDs must be from the Registered list above. Do not invent document IDs.
 - Do not introduce new URLs or claim document sources that were not registered.
 - key_findings: up to 5 bullet points, one sentence each.
 - limitations: up to 5 bullet points describing gaps or uncertainties.

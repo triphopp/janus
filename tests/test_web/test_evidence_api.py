@@ -387,45 +387,104 @@ class TestCaseStatus:
 
 # ── GET /api/evidence/runs/{run_id}/outliers ──────────────────────────────────
 
-# INTC/20260619_062444 is a real run present in outputs/runs/ with 41 outliers.
-_REAL_RUN_ID = "20260619_062444"
+def _make_run_parquet(tmp_path, run_id: str = "run_test_fixture",
+                      family: str = "equity") -> str:
+    """Write a minimal prepared.parquet fixture in the expected directory layout."""
+    import pandas as pd
+    import numpy as np
+
+    rows = [
+        {"as_of_date": "2024-01-25", "symbol": "TSLA",
+         "_return_outlier_flag": True, "_return_outlier_zscore": -5.2,
+         "_return_outlier_severity": "extreme", "_return_outlier_direction": "low",
+         "return_std": -0.08, "return_price": 190.0},
+        {"as_of_date": "2024-01-25", "symbol": "AAPL",
+         "_return_outlier_flag": True, "_return_outlier_zscore": 3.1,
+         "_return_outlier_severity": "high", "_return_outlier_direction": "high",
+         "return_std": 0.04, "return_price": 187.0},
+        {"as_of_date": "2024-01-25", "symbol": "MSFT",
+         "_return_outlier_flag": False, "_return_outlier_zscore": 0.5,
+         "_return_outlier_severity": "low", "_return_outlier_direction": "high",
+         "return_std": 0.01, "return_price": 400.0},
+    ]
+    df = pd.DataFrame(rows)
+    run_dir = tmp_path / family / run_id / "data"
+    run_dir.mkdir(parents=True)
+    pq_path = run_dir / "prepared.parquet"
+    df.to_parquet(pq_path, index=False)
+    return run_id
 
 
 class TestRunOutliers:
-    def test_returns_outliers_from_real_parquet(self, client):
-        resp = client.get(f"/api/evidence/runs/{_REAL_RUN_ID}/outliers")
+    def test_returns_outliers_from_parquet_fixture(self, client, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        run_id = _make_run_parquet(tmp_path / "outputs" / "runs")
+        resp = client.get(f"/api/evidence/runs/{run_id}/outliers")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["total"] > 0
+        assert data["total"] == 2  # only flagged rows
         first = data["outliers"][0]
         assert "case_id" in first
         assert "z_score" in first
         assert "evidence_status" in first
         assert first["evidence_status"] == "not_investigated"
 
-    def test_outliers_sorted_by_abs_zscore(self, client):
-        resp = client.get(f"/api/evidence/runs/{_REAL_RUN_ID}/outliers")
-        zs = [abs(o["z_score"]) for o in resp.json()["outliers"]]
+    def test_outliers_sorted_by_abs_zscore(self, client, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        run_id = _make_run_parquet(tmp_path / "outputs" / "runs")
+        resp = client.get(f"/api/evidence/runs/{run_id}/outliers")
+        zs = [abs(o["z_score"]) for o in resp.json()["outliers"] if o["z_score"] is not None]
         assert zs == sorted(zs, reverse=True)
 
     def test_returns_404_for_unknown_run(self, client):
-        resp = client.get("/api/evidence/runs/nonexistent_run_id/outliers")
+        resp = client.get("/api/evidence/runs/nonexistent_run_id_xyz/outliers")
         assert resp.status_code == 404
 
-    def test_evidence_status_reflects_job(self, client):
+    def test_evidence_status_reflects_job(self, client, tmp_path, monkeypatch):
         from web.evidence_api import _job_set
-        resp = client.get(f"/api/evidence/runs/{_REAL_RUN_ID}/outliers")
+        monkeypatch.chdir(tmp_path)
+        run_id = _make_run_parquet(tmp_path / "outputs" / "runs")
+        resp = client.get(f"/api/evidence/runs/{run_id}/outliers")
         first = resp.json()["outliers"][0]
         _job_set(first["case_id"], status="done", verdict="supported_event")
-        resp2 = client.get(f"/api/evidence/runs/{_REAL_RUN_ID}/outliers")
+        resp2 = client.get(f"/api/evidence/runs/{run_id}/outliers")
         updated = next(o for o in resp2.json()["outliers"] if o["case_id"] == first["case_id"])
         assert updated["evidence_status"] == "done"
         assert updated["verdict"] == "supported_event"
 
-    def test_investigate_url_present(self, client):
-        resp = client.get(f"/api/evidence/runs/{_REAL_RUN_ID}/outliers")
+    def test_investigate_url_present(self, client, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        run_id = _make_run_parquet(tmp_path / "outputs" / "runs")
+        resp = client.get(f"/api/evidence/runs/{run_id}/outliers")
         for o in resp.json()["outliers"]:
-            assert o["investigate_url"] == "/api/evidence/run"
+            assert o["investigate_url"] == (
+                f"/api/evidence/runs/{run_id}/cases/{o['case_id']}/investigate"
+            )
+
+    def test_empty_parquet_returns_zero_total(self, client, tmp_path, monkeypatch):
+        import pandas as pd
+        monkeypatch.chdir(tmp_path)
+        run_id = "run_empty"
+        run_dir = tmp_path / "outputs" / "runs" / "equity" / run_id / "data"
+        run_dir.mkdir(parents=True)
+        pd.DataFrame({
+            "as_of_date": [], "symbol": [],
+            "_return_outlier_flag": [], "_return_outlier_zscore": [],
+        }).to_parquet(run_dir / "prepared.parquet", index=False)
+        resp = client.get(f"/api/evidence/runs/{run_id}/outliers")
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 0
+
+    def test_case_id_matches_deterministic_builder(self, client, tmp_path, monkeypatch):
+        from core.evidence_harness.ids import case_id as make_case_id
+        monkeypatch.chdir(tmp_path)
+        run_id = _make_run_parquet(tmp_path / "outputs" / "runs")
+        resp = client.get(f"/api/evidence/runs/{run_id}/outliers")
+        first = resp.json()["outliers"][0]
+        # first row is TSLA (highest abs z-score), family inferred from path
+        expected = make_case_id(run_id, "return_outlier", "2024-01-25", "return_std",
+                                family="equity", symbol="TSLA")
+        assert first["case_id"] == expected
 
 
 # ── Config env var interpolation ──────────────────────────────────────────────

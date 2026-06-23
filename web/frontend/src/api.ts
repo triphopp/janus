@@ -64,11 +64,16 @@ export const dashboardApi = {
   evidenceOutliers: (runId: string) =>
     api<EvidenceRunOutliersResponse>(`/api/evidence/runs/${encodeURIComponent(runId)}/outliers`),
   investigateOutlier: (req: EvidenceInvestigateRequest) =>
-    api<{ case_id: string; status: string }>("/api/evidence/run", {
+    api<{ case_id: string; run_id: string; status: string }>(
+      `/api/evidence/runs/${encodeURIComponent(req.run_id)}/cases/${encodeURIComponent(req.case_id)}/investigate`,
+      {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
-    }),
-  evidenceCaseStatus: (caseId: string) =>
-    api<EvidenceCaseStatus>(`/api/evidence/cases/${encodeURIComponent(caseId)}/status`),
+      }
+    ),
+  evidenceCaseStatus: (runId: string, caseId: string) =>
+    api<EvidenceCaseStatus>(
+      `/api/evidence/runs/${encodeURIComponent(runId)}/cases/${encodeURIComponent(caseId)}/status`
+    ),
 };

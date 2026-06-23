@@ -41,11 +41,11 @@ export function EvidencePanel({
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await dashboardApi.evidenceCaseStatus(outlier.case_id);
+      const res = await dashboardApi.evidenceCaseStatus(runId, outlier.case_id);
       setJob(res.job);
       if (res.job.status === "done" || res.job.status === "error") stopPolling();
     } catch { /* transient */ }
-  }, [outlier.case_id, stopPolling]);
+  }, [runId, outlier.case_id, stopPolling]);
 
   useEffect(() => {
     // On mount: if already done (from previous run), fetch full data with sources

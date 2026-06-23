@@ -1,0 +1,5 @@
+{"name": "query_budget", "status": "pass", "score": 1.0, "rationale": "ok"}
+{"name": "fetch_budget", "status": "pass", "score": 1.0, "rationale": "ok"}
+{"name": "source_quality", "status": "warn", "score": 0.1, "rationale": "no sources"}
+{"name": "temporal_consistency", "status": "warn", "score": 0.0, "rationale": "no docs"}
+{"name": "instrument_relevance", "status": "warn", "score": 0.0, "rationale": "no docs"}

@@ -1,0 +1,50 @@
+[
+  {
+    "query_id": "query_414e74f808b2db6a",
+    "case_id": "case_3c30b5176f2ae9d0",
+    "text": "TSLA implied volatility spike 2024-01-25",
+    "date_start": "2024-01-23",
+    "date_end": "2024-01-27",
+    "domains": [],
+    "reason": "seed query (options.vol_surface.spike.v1)",
+    "priority": 100,
+    "template_id": "options.vol_surface.spike.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_93b618f94ae577ed",
+    "case_id": "case_3c30b5176f2ae9d0",
+    "text": "TSLA options volume 2024-01-25",
+    "date_start": "2024-01-23",
+    "date_end": "2024-01-27",
+    "domains": [],
+    "reason": "seed query (options.vol_surface.volume.v1)",
+    "priority": 99,
+    "template_id": "options.vol_surface.volume.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_02b6bea272f58676",
+    "case_id": "case_3c30b5176f2ae9d0",
+    "text": "TSLA volatility skew 2024-01-25",
+    "date_start": "2024-01-23",
+    "date_end": "2024-01-27",
+    "domains": [],
+    "reason": "seed query (options.vol_surface.skew.v1)",
+    "priority": 98,
+    "template_id": "options.vol_surface.skew.v1",
+    "evidence_goal": "explain_price_move"
+  },
+  {
+    "query_id": "query_72654f19c780fb42",
+    "case_id": "case_3c30b5176f2ae9d0",
+    "text": "TSLA earnings volatility 2024-01-25",
+    "date_start": "2024-01-23",
+    "date_end": "2024-01-27",
+    "domains": [],
+    "reason": "seed query (options.vol_surface.earnings.v1)",
+    "priority": 97,
+    "template_id": "options.vol_surface.earnings.v1",
+    "evidence_goal": "explain_price_move"
+  }
+]
