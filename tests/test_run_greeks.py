@@ -589,8 +589,8 @@ class TestDivYield:
         _, summary = run_greek_only(df, model="black76", div_yield=0.03)
         assert summary["div_yield"] is None
 
-    def test_cfg_div_yield_used_when_explicit_arg_is_zero(self):
-        """cfg['div_yield'] must be used when div_yield arg is default 0.0."""
+    def test_cfg_div_yield_used_when_explicit_arg_omitted(self):
+        """cfg['div_yield'] must be used when div_yield arg is omitted."""
         from core.greeks import single_leg_greeks
         df = pd.DataFrame([{
             "underlying_price": 150.0, "K": 150.0, "T": 0.5,
@@ -600,6 +600,18 @@ class TestDivYield:
         out_exp, _ = run_greek_only(df, model="bsm", div_yield=0.07)
         assert out_cfg["delta"].iloc[0] == pytest.approx(out_exp["delta"].iloc[0], rel=1e-8)
         assert s_cfg["div_yield"] == pytest.approx(0.07)
+
+    def test_explicit_zero_div_yield_overrides_cfg(self):
+        """Explicit div_yield=0.0 must override a non-zero cfg dividend yield."""
+        from core.greeks import single_leg_greeks
+        df = pd.DataFrame([{
+            "underlying_price": 150.0, "K": 150.0, "T": 0.5,
+            "r": 0.05, "iv": 0.2, "right": "C",
+        }])
+        out, summary = run_greek_only(df, model="bsm", div_yield=0.0, cfg={"div_yield": 0.07})
+        ref = single_leg_greeks("bsm", 150.0, 150.0, 0.5, 0.05, 0.2, "C", q=0.0)
+        assert out["delta"].iloc[0] == pytest.approx(ref["delta"], rel=1e-6)
+        assert summary["div_yield"] == pytest.approx(0.0)
 
     def test_explicit_div_yield_overrides_cfg(self):
         """Explicit div_yield arg wins over cfg['div_yield']."""

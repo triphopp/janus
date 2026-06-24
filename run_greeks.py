@@ -121,7 +121,7 @@ def run_greek_only(
     backend: str = "numpy",
     batch_size: int | None = None,
     dtype: str = "float64",
-    div_yield: float = 0.0,
+    div_yield: float | None = None,
     iv_source: str = "computed",
     rf_rate_default: float = 0.0,
     cfg: dict | None = None,
@@ -138,8 +138,9 @@ def run_greek_only(
         (output_df, summary)
     """
     cfg = cfg or {}
-    # Resolve q: explicit arg wins; fallback to cfg["div_yield"]; then 0.0
-    q = div_yield if div_yield != 0.0 else float(cfg.get("div_yield", 0.0))
+    # Resolve q: explicit arg wins, including an intentional 0.0 override.
+    cfg_div_yield = cfg.get("div_yield", 0.0)
+    q = float(div_yield) if div_yield is not None else float(cfg_div_yield or 0.0)
     n_input = len(df)
 
     # Resolve T upfront so DTE filters work even when T is absent but dates exist
@@ -413,8 +414,8 @@ Examples:
                      help="IV column to use. (default: computed)")
     mdl.add_argument("--rf-rate", type=float, default=0.0,
                      help="Risk-free rate fallback. (default: 0.0)")
-    mdl.add_argument("--div-yield", type=float, default=0.0,
-                     help="Dividend yield for BSM model. (default: 0.0)")
+    mdl.add_argument("--div-yield", type=float, default=None,
+                     help="Dividend yield for BSM model. Defaults to config div_yield, then 0.0.")
 
     bck = p.add_argument_group("Backend")
     bck.add_argument("--backend", default="numpy", choices=["numpy", "loop", "auto", "cuda"],

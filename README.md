@@ -23,25 +23,39 @@ The actively supported workflows are:
 - Futures and futures-options diagnostics from pipe-delimited settlement files.
 - WTI futures-options runs using a hash-pinned local settlement file.
 - Contract/quarantine, coverage, CDC, break ledger, reports, and dashboard scan.
+- **Greek-only computation** from prepared rows or instrument config without
+  running the full pipeline.
 
 Recent additions include:
 
+- **Greek-only runner** (`run_greeks.py`): compute option Greeks independently
+  using Black-76 or BSM, with numpy/loop/auto/cuda backends, universe filters,
+  and a structured JSON summary — without touching splitter, metrics, or
+  reporting stages
+- **Vectorized Greek engine** (`core/greeks.py`): `batch_greeks()` shared by
+  the full pipeline and Greek-only mode; corrected Black-76 theta with
+  `exp(−rT)` discount factor on the volatility-decay term
+- **Greek input resolver** (`core/greek_inputs.py`): strict column-precedence
+  contract, numeric coercion of bad inputs, `greek_invalid_reason` column,
+  never crashes on malformed rows
+- **Independent reference validation**: `tools/generate_greek_reference.py`
+  produces scipy-based Black-76/BSM reference values with no shared code paths
+  with `core/greeks.py`
 - expiry-aware option purge through `label_end_col: expiry`
 - embargo support on the expiry-aware purge path
-- option universe filters for DTE, minimum premium, IV cap, delta bands, and relative spread
+- option universe filters for DTE, minimum premium, IV cap, delta bands, and
+  relative spread
 - hash-pinned local file acceptance without `--allow-unversioned-data`
 - settlement `net_change` checks at contract identity grain
 - futures curve outlier checks at delivery-month grain
 - sampled provided-IV validation for large option chains
-- optional Greeks and PCP checks for large chains
-- **option universe exclusion observability**: `summary.json` now explains why each option row
-  was excluded (DTE, premium, IV, delta, spread, missing underlying) rather than reporting a
-  single opaque row-drop count
-- **option quality summary**: `summary.json` includes `option_quality` with IV rates,
-  delta coverage, PCP flags, and universe exclusion reasons — separating research universe
-  choices from hard data defects
-- **equity option price provenance**: `price_source` (mid/last/missing), bid-ask spread, and
-  relative spread columns added to equity option chain output
+- **option universe exclusion observability**: `summary.json` now explains why
+  each option row was excluded (DTE, premium, IV, delta, spread, missing
+  underlying) rather than reporting a single opaque row-drop count
+- **option quality summary**: `summary.json` includes `option_quality` with IV
+  rates, delta coverage, PCP flags, and universe exclusion reasons
+- **equity option price provenance**: `price_source` (mid/last/missing),
+  bid-ask spread, and relative spread columns added to equity option chain output
 
 ## Pipeline Shape
 
@@ -136,10 +150,10 @@ Run the full test suite:
 python3 -m pytest -q
 ```
 
-Expected current result:
+Expected current result (on `feature/greek-engine`):
 
 ```text
-248 passed
+468 passed, 3 skipped
 ```
 
 ## Quick Start: WTI Settlement Options
@@ -207,6 +221,50 @@ For a ticker without a YAML file, `--instrument` can be the ticker:
 python3 run_pipeline.py -i NVDA --start 2024-01-01 --end 2024-12-31 --allow-unversioned-data
 ```
 
+## Quick Start: Greek-only Mode
+
+Compute Greeks from prepared option rows without running the full pipeline:
+
+```bash
+# From a prepared CSV (Black-76, WTI futures options)
+python3 run_greeks.py \
+  --input wti_options.csv \
+  --model black76 \
+  --backend numpy \
+  --output outputs/greeks/wti_greeks.parquet
+
+# From a prepared CSV (BSM, equity options with dividend yield)
+python3 run_greeks.py \
+  --input aapl_options.csv \
+  --model bsm \
+  --div-yield 0.005 \
+  --rf-rate 0.05 \
+  --output outputs/greeks/aapl_greeks.parquet
+
+# From instrument config and raw chain
+python3 run_greeks.py \
+  --instrument wti \
+  --data-file data/WTI_2024.csv \
+  --start 2024-01-01 \
+  --end 2024-12-31 \
+  --min-dte 1 \
+  --max-dte 90 \
+  --output outputs/greeks/wti_2024.parquet
+```
+
+Greek-only mode writes two artifacts beside the output file:
+- The Greek output file (CSV or Parquet) with `delta`, `gamma`, `vega`,
+  `theta`, `rho`, `greek_model`, `greek_backend`, `greek_dtype`,
+  `greek_input_valid`, and `greek_invalid_reason` columns.
+- A `.greek_summary.json` file with `schema_version`, model/backend/dtype,
+  universe filter counts, input quality counts, convention metadata,
+  and provenance (git commit, input hash).
+
+Invalid rows (missing underlying, IV, T, or bad right) receive `NaN` for all
+Greek columns. The runner never raises on individual bad rows.
+
+See `docs/greek_only_runner.md` for the full API reference.
+
 ## CLI Rules
 
 `run_pipeline.py` separates instrument identity from file location:
@@ -270,6 +328,51 @@ stdout. `--progress auto` shows bars only for an interactive terminal with
 `tqdm` installed, `plain` keeps the historical logs only, and `none` suppresses
 both bars and stdout logs for batch runs.
 
+## Greek Engine
+
+Janus has a single shared Greek engine used by both the full pipeline
+(`run_pipeline.py`) and the standalone runner (`run_greeks.py`).
+
+```
+Full pipeline:   run_pipeline.py → OptionsBase.compute_greeks() ──┐
+                                                                   ├→ core.greeks.batch_greeks()
+Greek-only mode: run_greeks.py   → run_greek_only() ─────────────┘
+                                 → core.greek_inputs.resolve_greek_inputs()
+```
+
+### Models
+
+| Flag | Model | Use for |
+|------|-------|---------|
+| `--model black76` | Black-76 | Futures options (WTI, grains) |
+| `--model bsm` | Black-Scholes-Merton | Equity options (AAPL, SPX) |
+
+### Backends
+
+| Flag | Backend | Notes |
+|------|---------|-------|
+| `--backend numpy` | CPU vectorized (default) | ~40–50× faster than loop |
+| `--backend loop` | Scalar per-row | Debugging only |
+| `--backend auto` | Automatic | numpy unless GPU threshold met |
+| `--backend cuda` | GPU via CuPy | Requires `cupy-cuda12x` |
+
+### Convention reference
+
+**Theta** is annualized calendar-time decay: `−dV/dT` where `T` is in years.
+To convert to per-day: `theta_per_day = theta / 365`.
+
+Black-76 call theta:
+```
+θ = −e^(−rT) · F · φ(d₁) · σ / (2√T)
+    − r · K · e^(−rT) · N(d₂)
+    + r · F · e^(−rT) · N(d₁)
+```
+
+**Vega** is per 1.0 volatility unit (not per 1% move).
+To convert to per-1% move: `vega_per_pct = vega / 100`.
+
+**Rates** are continuously compounded.
+
 ## WTI Options Controls
 
 The WTI example narrows the chain before expensive validation:
@@ -290,7 +393,6 @@ option_universe:
   # delta_band:
   #   min_abs_delta: 0.15
   #   max_abs_delta: 0.80
-  # max_relative_spread: 0.50   # equity options only
 ```
 
 Why these defaults exist:
@@ -300,19 +402,8 @@ Why these defaults exist:
 - Very long-dated options dominate runtime and purge behavior while often being
   outside the intended research universe.
 - Provided-IV validation is sampled so large chains remain usable.
-- Greeks and PCP can be enabled after the universe is narrowed or run offline as
-  dedicated quality checks.
-
-`--iv-cap` filters against `iv_provided` before pricing when `iv_source:
-provided`; solved-IV runs apply the cap after IV solve. Delta bands use
-`delta_provided` before Greeks when that column is available; otherwise they
-apply after computed Greeks. If Greeks are disabled and no provided delta exists,
-delta-band filters have no row-level value to apply.
-
-The canonical key for IV universe filtering is `option_universe.max_iv`. The
-legacy top-level key `iv_cap` is still accepted as a deprecated alias when
-`option_universe.max_iv` is absent, but a config warning is recorded in
-`summary.json` under `_config_warnings`.
+- Greeks and PCP can be enabled after the universe is narrowed or run offline
+  via `run_greeks.py`.
 
 ## Option Universe Exclusion Observability
 
@@ -344,11 +435,7 @@ reported as a single opaque row-drop. Counts appear in `summary.json` under
         "max_dte_days": 730,
         "min_option_price": 0.00001
       }
-    },
-    "iv": {"null_rate": 0.0, "solve_fail_rate": 0.0, "flag_rate": 0.01, "max": 1.9},
-    "delta": {"coverage_rate": 1.0, "bad_sign_count": 0},
-    "pcp": {"flag_rate": 0.0, "pair_missing_rate": 0.12, "duplicate_pair_rate": 0.0},
-    "underlying_map": {"missing_rows": 0, "drop_rate": 0.0}
+    }
   }
 }
 ```
@@ -404,6 +491,13 @@ outputs/diff/<run_id>_diff.html
 outputs/breaks/<run_id>.jsonl
 outputs/manifest/<run_id>.json
 quarantine/<run_id>/
+```
+
+Greek-only outputs:
+
+```text
+outputs/greeks/<name>.parquet          # Greek columns + identity columns
+outputs/greeks/<name>.greek_summary.json  # counts, conventions, provenance
 ```
 
 Each `summary.json` includes guard status for PIT timing, contract gate,
@@ -462,26 +556,51 @@ Main dashboard/API routes:
 
 ```text
 janus/
-├── run_pipeline.py
+├── run_pipeline.py              # full pipeline CLI
+├── run_greeks.py                # Greek-only CLI (no splitter/metrics/reports)
 ├── run_dashboard.py
 ├── configs/
+│   ├── equity.yaml / futures.yaml
+│   ├── instruments/bz.yaml / spx.yaml / aapl.yaml / wti.yaml.example
+│   └── symbology/product_map.yaml
 ├── contracts/
 ├── ingestion/
-│   └── equity_options_loader_yf.py   # price_source / spread provenance columns
+│   └── equity_options_loader_yf.py   # price_source / spread provenance
 ├── adapters/
-│   └── options_base.py               # universe exclusion counting + _option_quality state
+│   └── options_base.py               # compute_greeks() → batch_greeks(); universe exclusion counting
 ├── core/
-│   └── options_quality.py            # standalone options quality summarizer
+│   ├── greeks.py                     # batch_greeks() — single formula source of truth
+│   ├── greek_inputs.py               # resolve_greek_inputs() — single column resolver
+│   ├── pricing.py                    # Black-76, BSM, IV solver
+│   ├── dte.py                        # DTE single source of truth
+│   └── options_quality.py            # summarize() → option_quality in summary.json
+├── tools/
+│   └── generate_greek_reference.py   # independent scipy/QuantLib reference values
+├── tests/
+│   ├── fixtures/greek_reference.json # generated; scipy_analytic source
+│   ├── golden/black76_reference.csv  # corrected Black-76 theta values
+│   ├── test_core/
+│   │   ├── test_greeks.py            # scalar, vectorized, bump, identity
+│   │   ├── test_greek_inputs.py      # resolver contract, coercion, invalid-reason
+│   │   └── test_greek_external_reference.py  # vs. scipy reference
+│   └── test_run_greeks.py            # CLI, output schema, downstream-skip
+├── docs/
+│   ├── greek_only_runner.md          # Mode A/B API reference
+│   └── architecture_sections/
+│       ├── fig5_greek_only_workflow.mmd
+│       ├── fig5a_greek_engine.mmd
+│       └── fig5b_greek_only_flow.mmd
 ├── lineage/
 ├── web/
 │   ├── dashboard.py
+│   ├── view_model.py
 │   ├── scanner.py
+│   ├── evidence_api.py
 │   └── frontend/
-├── tests/
 ├── outputs/          # generated, ignored
 ├── quarantine/       # generated, ignored
 ├── data/             # local raw files, ignored
-└── memory/           # local working notes
+└── memory/           # local working notes, ignored
 ```
 
 ## Adding Instruments
@@ -513,38 +632,43 @@ pricing:
 iv_source: provided
 ```
 
-## Feature Status And Work To Do
+## Feature Status
 
-This section tracks feature promises made by the README and what remains.
-
-| Feature | Status | Remaining Work |
+| Feature | Status | Notes |
 | --- | --- | --- |
-| Pinned local settlement file | Working | Move large local files into `VersionedCache` for team/shared replay instead of relying only on local file hashes. |
-| Bronze contract and quarantine | Working | Consider `enforcement: block` for production-grade contracts after real feeds are clean. |
-| Coverage SLA | Working | Add exchange holiday calendars where business-day approximation is too rough. |
-| WTI futures-options adapter | Working | Validate more historical windows and add a smaller checked-in fixture for end-to-end CI. |
-| Expiry-aware purge/embargo | Working | Add more CPCV coverage if combinatorial purged CV is used for options. |
-| Option universe DTE/price/IV/delta/spread filters | Working | Add moneyness filter. |
-| Option universe exclusion observability | Working | `summary.json` reports per-reason exclusion counts. Wire `options_quality.summarize()` into `run_pipeline.py` to populate `option_quality` in `summary.json`. |
-| Equity option price provenance | Working | `price_source`, `bid_ask_spread`, `relative_spread`, `_wide_spread_flag` columns emitted by `EquityOptionsLoaderYF`. |
-| Provided-IV validation | Partial | Currently supports sampling; add stale-IV detection and break-ledger attribution. |
-| Put-call parity | Partial | Code exists and can be enabled, but WTI config disables it for large chains; add sampled/offline PCP checks that emit clean quality reports. |
-| Greeks | Partial | Correct formulas exist, but WTI disables runtime Greeks for speed; vectorize/cache Greeks before enabling full-chain runs. |
-| Silver quality flags | Not started | Add `_iv_quality_flag`, `_delta_quality_flag`, `_premium_quality_flag` columns after IV/Greeks (Phase 6 of observability plan). Framework and counts are already in `_option_quality`. |
-| Strategy P&L metrics | Partial | Pipeline reports market diagnostics unless `return_net`, `strategy_return`, or `pnl_return` exists. Add signal/position/P&L generation or ingest strategy P&L. |
-| Diversity gate | Partial | WTI Q4 builds folds but passes `0` diversity folds. Tune regime axes/thresholds or use longer history. |
-| Asset context panel | Not started | Surface dividends, split events, coverage, quarantine, and option-universe counts together in `summary.json` and dashboard cards. |
-| Equity historical options | Not started | yfinance is snapshot-only. Add ORATS/OptionMetrics/exchange historical chain provider and mark snapshot runs `backtest_grade: false`. |
-| Event calendar handling | Partial | Basic lag-aware event flags exist; richer release-time calendars and event source contracts are still needed. |
-| Lineage graphs | Partial | `futures_options` graph exists. Add/expand graphs for all families and enforce lineage coverage in CI. |
-| Full-file WTI performance | Partial | Q4 smoke is clean; full 1.85M-row file still needs chunked/partitioned ingestion, leaner CDC, and optional artifact export modes. |
+| Greek-only runner (`run_greeks.py`) | Working | Mode A (prepared rows) + Mode B (instrument config); schema_version, greek_invalid_reason, greek_dtype |
+| Vectorized Greek engine (`batch_greeks`) | Working | numpy/loop/auto/cuda; Black-76 theta corrected; CUDA path requires `cupy-cuda12x` |
+| Greek input resolver | Working | Numeric coercion, column precedence, invalid-reason column, never crashes |
+| Independent Greek reference | Working | scipy-based, no shared code with `core/greeks.py`; QuantLib preferred when installed |
+| Pinned local settlement file | Working | Move large files into `VersionedCache` for team replay |
+| Bronze contract and quarantine | Working | Consider `enforcement: block` for production-grade contracts |
+| Coverage SLA | Working | Add exchange holiday calendars where business-day approx is rough |
+| WTI futures-options adapter | Working | Validate more historical windows; add smaller checked-in fixture for CI |
+| Expiry-aware purge/embargo | Working | Add more CPCV coverage for combinatorial purged CV |
+| Option universe DTE/price/IV/delta/spread filters | Working | Add moneyness filter |
+| Option universe exclusion observability | Working | `summary.json` reports per-reason exclusion counts |
+| Equity option price provenance | Working | `price_source`, `bid_ask_spread`, `relative_spread` columns |
+| Provided-IV validation | Partial | Supports sampling; add stale-IV detection and break-ledger attribution |
+| Put-call parity | Partial | Code exists; WTI disables for large chains |
+| Full-pipeline Greeks | Partial | Correct formulas exist; WTI disables runtime Greeks for speed |
+| Silver quality flags | Not started | `_iv_quality_flag`, `_delta_quality_flag`, `_premium_quality_flag` framework ready |
+| Strategy P&L metrics | Partial | Reports market diagnostics unless return/pnl column exists |
+| Diversity gate | Partial | WTI Q4 builds folds but passes `0` diversity folds; tune regime thresholds |
+| Asset context panel | Not started | Surface dividends, splits, coverage, quarantine, option-universe counts |
+| Equity historical options | Not started | yfinance is snapshot-only; add ORATS/OptionMetrics/exchange provider |
+| Event calendar handling | Partial | Basic lag-aware event flags; richer release-time calendars needed |
+| Lineage graphs | Partial | `futures_options` graph exists; expand for all families |
+| Full-file WTI performance | Partial | Q4 smoke clean; full 1.85M-row file needs chunked ingestion |
+| QuantLib Greek reference | Not started | Requires QuantLib environment; scipy reference in use as fallback |
 
 ## Design Rules
 
 - Keep asset-specific behavior in `adapters/`; keep `core/` generic.
 - Keep real instrument names in configs, not adapter/core code.
-- Use Black-76 for futures options.
+- Use Black-76 for futures options; use BSM for equity options.
 - Compute DTE through `core/dte.py`.
+- Compute Greeks through `core/greeks.batch_greeks()` — never reimplement formulas.
+- Resolve Greek inputs through `core/greek_inputs.resolve_greek_inputs()`.
 - Keep PIT timing explicit and fail closed when unsafe.
 - Require fixed raw inputs for backtest-grade runs.
 - Treat CDC `UNATTRIBUTED` mutations as bugs until explained.

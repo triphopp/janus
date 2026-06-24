@@ -26,7 +26,7 @@
    `fig5b_greek_only_flow.mmd` แสดง execution sequence ของ Greek-only runner ตั้งแต่ input loading จนเขียน output
 
    Implementation plan:
-   `docs/greek_only_engine_implementation_plan.md` แยก phase, acceptance criteria และ test gates สำหรับ agent ที่จะ implement ระบบนี้ต่อ
+   `memory/plans/greek_only_engine_implementation_plan.md` แยก phase, acceptance criteria และ test gates สำหรับ agent ที่จะ implement ระบบนี้ต่อ
 
 ## How This Is Usually Written
 
