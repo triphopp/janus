@@ -348,6 +348,46 @@ class TestInstrumentMode:
 
         assert summary["underlying_missing_rows"] >= 1
 
+    def test_future_context_rows_excluded_from_output(self):
+        """Rows with instrument_type='future' must not appear in Greek-only output."""
+        df = pd.DataFrame([
+            {"instrument_type": "future", "expiry": "2024-12-31", "right": None, "strike": None, "F": 80.0},
+            {"instrument_type": "option", "expiry": "2024-12-31", "right": "C", "strike": 80.0,
+             "underlying_price": 80.0, "iv": 0.3, "T": 0.5, "r": 0.05},
+        ])
+        adapter, _ = self._mock_adapter(df)
+        mock_provider = MagicMock()
+        mock_provider.fetch.return_value = df
+        cfg = {"family": "futures_options", "pricing_model": "black76"}
+
+        patches = self._patch_rp(cfg, mock_provider, adapter)
+        with patches[0], patches[1], patches[2], patches[3]:
+            from run_greeks import run_instrument_mode
+            out, summary = run_instrument_mode("bz")
+
+        assert len(out) == 1, f"Expected 1 option row, got {len(out)}"
+        if "instrument_type" in out.columns:
+            assert (out["instrument_type"] == "option").all()
+
+    def test_context_row_without_instrument_type_excluded_by_right(self):
+        """Without instrument_type column, rows lacking right+strike are excluded."""
+        df = pd.DataFrame([
+            {"expiry": "2024-12-31", "F": 80.0},  # context/future row, no right or strike
+            {"expiry": "2024-12-31", "right": "C", "strike": 80.0,
+             "underlying_price": 80.0, "iv": 0.3, "T": 0.5, "r": 0.05},
+        ])
+        adapter, _ = self._mock_adapter(df)
+        mock_provider = MagicMock()
+        mock_provider.fetch.return_value = df
+        cfg = {"family": "futures_options", "pricing_model": "black76"}
+
+        patches = self._patch_rp(cfg, mock_provider, adapter)
+        with patches[0], patches[1], patches[2], patches[3]:
+            from run_greeks import run_instrument_mode
+            out, summary = run_instrument_mode("bz")
+
+        assert len(out) == 1
+
     def test_dte_filter_applied_in_instrument_mode(self):
         short_dte = _make_futures_raw_df()
         short_dte["T"] = 5 / 365  # 5 DTE only
@@ -548,6 +588,30 @@ class TestDivYield:
         df = _option_df()
         _, summary = run_greek_only(df, model="black76", div_yield=0.03)
         assert summary["div_yield"] is None
+
+    def test_cfg_div_yield_used_when_explicit_arg_is_zero(self):
+        """cfg['div_yield'] must be used when div_yield arg is default 0.0."""
+        from core.greeks import single_leg_greeks
+        df = pd.DataFrame([{
+            "underlying_price": 150.0, "K": 150.0, "T": 0.5,
+            "r": 0.05, "iv": 0.2, "right": "C",
+        }])
+        out_cfg, s_cfg = run_greek_only(df, model="bsm", cfg={"div_yield": 0.07})
+        out_exp, _ = run_greek_only(df, model="bsm", div_yield=0.07)
+        assert out_cfg["delta"].iloc[0] == pytest.approx(out_exp["delta"].iloc[0], rel=1e-8)
+        assert s_cfg["div_yield"] == pytest.approx(0.07)
+
+    def test_explicit_div_yield_overrides_cfg(self):
+        """Explicit div_yield arg wins over cfg['div_yield']."""
+        from core.greeks import single_leg_greeks
+        df = pd.DataFrame([{
+            "underlying_price": 150.0, "K": 150.0, "T": 0.5,
+            "r": 0.05, "iv": 0.2, "right": "C",
+        }])
+        out, summary = run_greek_only(df, model="bsm", div_yield=0.03, cfg={"div_yield": 0.07})
+        ref = single_leg_greeks("bsm", 150.0, 150.0, 0.5, 0.05, 0.2, "C", q=0.03)
+        assert out["delta"].iloc[0] == pytest.approx(ref["delta"], rel=1e-6)
+        assert summary["div_yield"] == pytest.approx(0.03)
 
 
 # ── P1: Numeric coercion in run_greek_only ───────────────────────────────────

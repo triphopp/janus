@@ -138,6 +138,8 @@ def run_greek_only(
         (output_df, summary)
     """
     cfg = cfg or {}
+    # Resolve q: explicit arg wins; fallback to cfg["div_yield"]; then 0.0
+    q = div_yield if div_yield != 0.0 else float(cfg.get("div_yield", 0.0))
     n_input = len(df)
 
     # Resolve T upfront so DTE filters work even when T is absent but dates exist
@@ -187,7 +189,7 @@ def run_greek_only(
         r=resolved["r"].to_numpy(),
         sigma=resolved["sigma"].to_numpy(),
         right=resolved["right"].to_numpy(),
-        q=div_yield,
+        q=q,
         backend=backend,
         batch_size=batch_size,
         dtype=dtype,
@@ -212,7 +214,7 @@ def run_greek_only(
         "model": model,
         "backend": backend,
         "dtype": dtype,
-        "div_yield": div_yield if model in ("bs", "bsm") else None,
+        "div_yield": q if model in ("bs", "bsm") else None,
         "universe_filter": {
             "input_rows": n_input,
             "rows_after_filter": n_filtered,
@@ -289,12 +291,21 @@ def run_instrument_mode(
     # Compute Greeks via adapter (shares same batch_greeks engine)
     df = adapter.compute_greeks(df)
 
-    # Identify option rows (rows that have at least one Greek column present,
-    # or rows with expiry/right columns — include invalid rows with NaN Greeks)
-    option_mask = pd.Series(False, index=df.index)
-    for col in ("expiry", "right", "strike", "K"):
-        if col in df.columns:
-            option_mask |= df[col].notna()
+    # Identify option rows — include invalid rows (NaN Greeks) but exclude
+    # futures/context rows. Prefer explicit instrument_type column; fallback
+    # requires valid right (C/P) AND non-null strike/K so expiry alone on a
+    # future row does not pull it into the Greek-only artifact.
+    if "instrument_type" in df.columns:
+        option_mask = df["instrument_type"].astype(str).str.lower() == "option"
+    else:
+        right_valid = pd.Series(False, index=df.index)
+        if "right" in df.columns:
+            right_valid = df["right"].astype(str).str.upper().isin({"C", "P"})
+        strike_present = pd.Series(False, index=df.index)
+        for col in ("strike", "K"):
+            if col in df.columns:
+                strike_present |= df[col].notna()
+        option_mask = right_valid & strike_present
 
     out = df[option_mask].copy()
 
