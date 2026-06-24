@@ -220,8 +220,8 @@ def _batch_greeks_numpy(
         delta = np.where(cv, disc * Phi_d1, -disc * Phi_nd1)
         gamma = disc * phi_d1 / (Sv * sv * sqrt_T)
         vega = disc * Sv * phi_d1 * sqrt_T
-        theta_c = -Sv * phi_d1 * sv / (2 * sqrt_T) - rv * Kv * disc * Phi_d2 + rv * Sv * disc * Phi_d1
-        theta_p = -Sv * phi_d1 * sv / (2 * sqrt_T) + rv * Kv * disc * Phi_nd2 - rv * Sv * disc * Phi_nd1
+        theta_c = -disc * Sv * phi_d1 * sv / (2 * sqrt_T) - rv * Kv * disc * Phi_d2 + rv * Sv * disc * Phi_d1
+        theta_p = -disc * Sv * phi_d1 * sv / (2 * sqrt_T) + rv * Kv * disc * Phi_nd2 - rv * Sv * disc * Phi_nd1
         theta = np.where(cv, theta_c, theta_p)
         rho_c = -Tv * disc * (Sv * Phi_d1 - Kv * Phi_d2)
         rho_p = -Tv * disc * (Kv * Phi_nd2 - Sv * Phi_nd1)
@@ -364,8 +364,8 @@ def _batch_greeks_cuda(
         delta = cp.where(cv, disc * Phi_d1, -disc * Phi_nd1)
         gamma = disc * phi_d1 / (Sv * sv * sqrt_T)
         vega = disc * Sv * phi_d1 * sqrt_T
-        theta_c = -Sv * phi_d1 * sv / (2 * sqrt_T) - rv * Kv * disc * Phi_d2 + rv * Sv * disc * Phi_d1
-        theta_p = -Sv * phi_d1 * sv / (2 * sqrt_T) + rv * Kv * disc * Phi_nd2 - rv * Sv * disc * Phi_nd1
+        theta_c = -disc * Sv * phi_d1 * sv / (2 * sqrt_T) - rv * Kv * disc * Phi_d2 + rv * Sv * disc * Phi_d1
+        theta_p = -disc * Sv * phi_d1 * sv / (2 * sqrt_T) + rv * Kv * disc * Phi_nd2 - rv * Sv * disc * Phi_nd1
         theta = cp.where(cv, theta_c, theta_p)
         rho_c = -Tv * disc * (Sv * Phi_d1 - Kv * Phi_d2)
         rho_p = -Tv * disc * (Kv * Phi_nd2 - Sv * Phi_nd1)
