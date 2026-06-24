@@ -1,0 +1,53 @@
+flowchart TD
+    %% Greek-only workflow aligned with feature/greek-pricing-engine-beta.
+    %% The full pipeline and Greek-only runner must share the same core Greek engine.
+
+    UserChoice["User chooses execution mode"] --> Mode{"Run mode"}
+
+    Mode -->|"Full pipeline"| FullPipeline["run_pipeline.py"]
+    FullPipeline --> Ingestion["Ingestion"]
+    Ingestion --> ContractGuards["Contract, quarantine, coverage guards"]
+    ContractGuards --> AdapterPrepare["Option adapter prepare()"]
+    AdapterPrepare --> IVSurface["Build IV surface and T"]
+    IVSurface --> GreekInputs["Greek input contract"]
+
+    Mode -->|"Greek-only"| GreekOnlyRunner["Greek-only runner"]
+    GreekOnlyRunner --> InputType{"Input type"}
+    InputType -->|"Prepared rows"| PreparedRows["Load CSV or Parquet option rows"]
+    InputType -->|"Instrument config + raw chain"| MinimalPrep["Minimal ingest + adapter prep"]
+
+    PreparedRows --> ColumnResolver["Resolve required columns"]
+    ColumnResolver --> NeedT{"Need T?"}
+    NeedT -->|"yes"| ComputeT["Compute T from as_of_date, expiry, DTE config"]
+    NeedT -->|"no"| GreekInputs
+    ComputeT --> GreekInputs
+    MinimalPrep --> IVSurface
+
+    GreekInputs --> GreekEngine
+    GreekEngine["Shared Greek engine"] --> Backend{"Backend"}
+    Backend -->|"numpy"| BatchNumpy["batch_greeks numpy"]
+    Backend -->|"loop"| ScalarLoop["single_leg_greeks loop"]
+    Backend -->|"auto"| AutoBackend["auto selects numpy or cuda"]
+    Backend -->|"cuda"| BatchCuda["batch_greeks cuda"]
+
+    BatchNumpy --> GreekOutput["Row-aligned Greek output"]
+    ScalarLoop --> GreekOutput
+    AutoBackend --> GreekOutput
+    BatchCuda --> GreekOutput
+
+    GreekOutput --> Consumer{"Consumer context"}
+    Consumer -->|"Full pipeline"| Downstream["Continue to validators, splitter, metrics, reports"]
+    Consumer -->|"Greek-only"| OutputArtifacts["Write greeks file and quality summary"]
+
+    GreekInputs -.-> InputContractNote["Required: model, S_or_F, K, T, r, sigma, right, q"]
+    GreekEngine -.-> EngineNote["Single source of truth: core.greeks.batch_greeks()"]
+
+    classDef mode fill:#f4f7fb,stroke:#5a6f8f,color:#18212f;
+    classDef engine fill:#f7f1df,stroke:#9b7a25,color:#2d2614;
+    classDef output fill:#edf7ee,stroke:#5e8b61,color:#18361d;
+    classDef note fill:#fff,stroke:#999,stroke-dasharray:4 3,color:#333;
+
+    class Mode,InputType,NeedT,Backend,Consumer mode;
+    class GreekEngine,BatchNumpy,ScalarLoop,AutoBackend,BatchCuda engine;
+    class GreekOutput,OutputArtifacts,Downstream output;
+    class InputContractNote,EngineNote note;

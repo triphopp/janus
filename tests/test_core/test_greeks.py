@@ -48,6 +48,14 @@ class TestClosedFormGreeks:
         assert g_76["delta"] == pytest.approx(expected_black76, rel=1e-10)
         assert g_76["delta"] != pytest.approx(g_bs["delta"], abs=1e-3)
 
+    def test_black76_rho_price_identity(self):
+        """For Black-76 with fixed futures price, rho = -T * option price."""
+        F, K, T, r, sigma = 80, 85, 0.5, 0.05, 0.3
+        for right in ("C", "P"):
+            g = single_leg_greeks("black76", F, K, T, r, sigma, right)
+            option_price = price("black76", F, K, T, r, sigma, right)
+            assert g["rho"] == pytest.approx(-T * option_price, rel=1e-10)
+
 
 class TestBumpVsAnalytic:
     """Numerical bump must match closed-form within tolerance."""
@@ -70,6 +78,18 @@ class TestBumpVsAnalytic:
         analytic = single_leg_greeks("black76", F, K, T, r, sigma, "C")
         bump = bump_greeks("black76", price, F, K, T, r, sigma, "C")
         assert analytic["gamma"] == pytest.approx(bump["gamma"], abs=1e-4)
+
+    def test_theta_bump_match(self):
+        F, K, T, r, sigma = 80, 80, 0.5, 0.05, 0.3
+        analytic = single_leg_greeks("black76", F, K, T, r, sigma, "C")
+        bump = bump_greeks("black76", price, F, K, T, r, sigma, "C")
+        assert analytic["theta"] == pytest.approx(bump["theta"], abs=1e-4)
+
+    def test_rho_bump_match(self):
+        F, K, T, r, sigma = 80, 80, 0.5, 0.05, 0.3
+        analytic = single_leg_greeks("black76", F, K, T, r, sigma, "C")
+        bump = bump_greeks("black76", price, F, K, T, r, sigma, "C")
+        assert analytic["rho"] == pytest.approx(bump["rho"], abs=1e-4)
 
 
 class TestNetGreeksSpread:

@@ -18,6 +18,16 @@
 4. `fig4_metrics_reporting.mmd`  
    ใช้ใน Evaluation Protocol หรือ Reporting เพื่ออธิบายว่า metrics ใช้ all purged walk-forward folds พร้อม diversity annotations, เลือก strategy return หรือ market diagnostic return, ตรวจ sample floor แล้วสร้าง artifacts อะไรบ้าง
 
+5. `fig5_greek_only_workflow.mmd`  
+   ใช้ใน Options Methodology หรือ System Extension เพื่ออธิบายว่า Janus สามารถรันเฉพาะ Greek computation ได้ โดยใช้ shared Greek engine เดียวกับ full pipeline และข้าม splitter/metrics/reporting stages ที่ไม่จำเป็น
+
+   Related detailed views:
+   `fig5a_greek_engine.mmd` แสดง shared Greek engine, input contract, backend selection และ output consumers
+   `fig5b_greek_only_flow.mmd` แสดง execution sequence ของ Greek-only runner ตั้งแต่ input loading จนเขียน output
+
+   Implementation plan:
+   `docs/greek_only_engine_implementation_plan.md` แยก phase, acceptance criteria และ test gates สำหรับ agent ที่จะ implement ระบบนี้ต่อ
+
 ## How This Is Usually Written
 
 การแบ่งรูปแบบนี้ทำได้และพบได้บ่อยในงานวิชาการ โดยมักใช้หนึ่งในสองรูปแบบ:
@@ -39,6 +49,12 @@
 
 **Fig. 4. Evaluation and reporting flow.** Stage 4 evaluates all purged walk-forward folds and annotates each fold with diversity-gate status rather than dropping failed folds. Strategy-required option runs skip performance metrics when no strategy/PnL returns are present; diagnostic runs can still use market returns. Janus writes performance, diversity, data-quality, prepared-data, diff, break, manifest, summary, and HTML artifacts.
 
+**Fig. 5. Greek-only computation workflow.** Janus can route either the full option pipeline or a Greek-only runner into the same `core.greeks.batch_greeks()` engine. The Greek-only path accepts prepared option rows or performs minimal option preparation, resolves the required pricing inputs, selects a backend, and writes Greek outputs without running validation folds, metrics, or reporting stages.
+
+**Fig. 5a. Shared Greek engine.** The Greek engine resolves model inputs, validates row-level pricing contracts, dispatches to the configured backend, and returns the same Greek columns for both full-pipeline and Greek-only consumers.
+
+**Fig. 5b. Greek-only execution sequence.** A Greek-only runner loads option rows, normalizes columns, resolves IV, time-to-expiry, rates, model, and backend settings, calls the shared batch engine, and writes Greek outputs and a compact quality summary.
+
 ## Suggested Paper Narrative
 
 ตัวอย่างการเล่าในรายงาน:
@@ -47,6 +63,7 @@
 2. อธิบาย Fig. 2 ว่าทำไม fixed input guard, bronze contract, quarantine, coverage SLA, family schema guard และ adapter layer ช่วยแยก data operations ออกจาก core statistical pipeline
 3. ใช้ Fig. 3 เพื่อเน้นว่า validation ในระบบมี data validation, data-quality scorecard, CDC/break observability และ purged/embargoed walk-forward CV สำหรับป้องกัน leakage
 4. ปิดด้วย Fig. 4 เพื่อแสดงว่า metrics และรายงานถูกสร้างจาก all folds พร้อม diversity annotations ไม่ใช่เลือกเฉพาะ folds ที่ผ่าน gate และมี audit/manifest artifacts รองรับ reproducibility
+5. ใช้ Fig. 5 เมื่อต้องการอธิบาย extension สำหรับ Greek-only execution โดยเน้นว่า full pipeline และ Greek-only path ใช้ engine เดียวกัน จึงลดโอกาสที่สูตรหรือ convention จะแตกกัน
 
 ## Export Commands
 
@@ -57,4 +74,7 @@ mmdc -i docs/architecture_sections/fig1_overview.mmd -o docs/images/fig1_overvie
 mmdc -i docs/architecture_sections/fig2_data_preparation.mmd -o docs/images/fig2_data_preparation.svg -b white
 mmdc -i docs/architecture_sections/fig3_validation_diagnostics.mmd -o docs/images/fig3_validation_diagnostics.svg -b white
 mmdc -i docs/architecture_sections/fig4_metrics_reporting.mmd -o docs/images/fig4_metrics_reporting.svg -b white
+mmdc -i docs/architecture_sections/fig5_greek_only_workflow.mmd -o docs/images/fig5_greek_only_workflow.svg -b white
+mmdc -i docs/architecture_sections/fig5a_greek_engine.mmd -o docs/images/fig5a_greek_engine.svg -b white
+mmdc -i docs/architecture_sections/fig5b_greek_only_flow.mmd -o docs/images/fig5b_greek_only_flow.svg -b white
 ```
