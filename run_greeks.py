@@ -26,6 +26,8 @@ import pandas as pd
 from core.greek_inputs import resolve_greek_inputs
 from core.greeks import batch_greeks
 
+_SCHEMA_VERSION = 1
+
 
 # ── Provenance helpers ───────────────────────────────────────────────────────
 
@@ -94,6 +96,24 @@ _CONVENTIONS = {
 }
 
 
+def _resolve_T_for_filter(df: pd.DataFrame, dte_cfg: dict | None) -> pd.Series:
+    """Resolve T (years) from existing T column or date columns, for DTE filtering."""
+    dte_cfg = dte_cfg or {"basis": "calendar", "day_count": "act_365", "exclude_expiry_date": False}
+    from core.dte import compute_dte
+    T = pd.Series(np.nan, index=df.index)
+    if "T" in df.columns:
+        T = pd.to_numeric(df["T"], errors="coerce")
+    if T.isna().any() and "as_of_date" in df.columns and "expiry" in df.columns:
+        for idx in df.index[T.isna()]:
+            try:
+                t_val = compute_dte(df.at[idx, "as_of_date"], df.at[idx, "expiry"], dte_cfg)
+                if t_val > 0:
+                    T.at[idx] = t_val
+            except Exception:
+                pass
+    return T
+
+
 def run_greek_only(
     df: pd.DataFrame,
     *,
@@ -101,6 +121,7 @@ def run_greek_only(
     backend: str = "numpy",
     batch_size: int | None = None,
     dtype: str = "float64",
+    div_yield: float = 0.0,
     iv_source: str = "computed",
     rf_rate_default: float = 0.0,
     cfg: dict | None = None,
@@ -119,30 +140,35 @@ def run_greek_only(
     cfg = cfg or {}
     n_input = len(df)
 
+    # Resolve T upfront so DTE filters work even when T is absent but dates exist
+    T_for_filter = _resolve_T_for_filter(df, dte_cfg)
+
     # Universe filters before Greek computation
     mask = pd.Series(True, index=df.index)
-    if min_dte is not None and "T" in df.columns:
-        mask &= (df["T"] * 365 >= min_dte) | df["T"].isna()
-    if max_dte is not None and "T" in df.columns:
-        mask &= (df["T"] * 365 <= max_dte) | df["T"].isna()
+    if min_dte is not None:
+        mask &= (T_for_filter * 365 >= min_dte) | T_for_filter.isna()
+    if max_dte is not None:
+        mask &= (T_for_filter * 365 <= max_dte) | T_for_filter.isna()
     if min_option_price is not None:
         for price_col in ("option_price", "mid_price", "price"):
             if price_col in df.columns:
-                mask &= (df[price_col] >= min_option_price) | df[price_col].isna()
+                price_numeric = pd.to_numeric(df[price_col], errors="coerce")
+                mask &= (price_numeric >= min_option_price) | price_numeric.isna()
                 break
     if max_iv is not None and "iv" in df.columns:
-        mask &= (df["iv"] <= max_iv) | df["iv"].isna()
+        iv_numeric = pd.to_numeric(df["iv"], errors="coerce")
+        mask &= (iv_numeric <= max_iv) | iv_numeric.isna()
 
     filtered = df[mask].copy()
     n_filtered = len(filtered)
 
-    # Resolve inputs
+    # Resolve inputs (full coercion + invalid reasons)
     resolved, input_summary = resolve_greek_inputs(
         filtered, cfg=cfg, iv_source=iv_source,
         rf_rate_default=rf_rate_default, dte_cfg=dte_cfg,
     )
 
-    # Warn if iv_provided rows failed IV validation (Phase 5)
+    # Warn if iv_provided rows have quality flags
     config_warnings = []
     if iv_source == "provided" and "iv_provided" in filtered.columns and "_iv_quality_flag" in filtered.columns:
         failed = filtered["_iv_quality_flag"].notna() & (filtered["_iv_quality_flag"] != "")
@@ -161,6 +187,7 @@ def run_greek_only(
         r=resolved["r"].to_numpy(),
         sigma=resolved["sigma"].to_numpy(),
         right=resolved["right"].to_numpy(),
+        q=div_yield,
         backend=backend,
         batch_size=batch_size,
         dtype=dtype,
@@ -172,16 +199,20 @@ def run_greek_only(
         out[greek] = greeks_result[greek]
     out["greek_model"] = model
     out["greek_backend"] = backend
+    out["greek_dtype"] = dtype
     out["greek_input_valid"] = resolved["greek_input_valid"].values
+    out["greek_invalid_reason"] = resolved["greek_invalid_reason"].values
 
     # Force NaN on invalid rows
     for greek in ("delta", "gamma", "vega", "theta", "rho"):
         out.loc[~out["greek_input_valid"], greek] = np.nan
 
-    summary = {
+    summary: dict = {
+        "schema_version": _SCHEMA_VERSION,
         "model": model,
         "backend": backend,
         "dtype": dtype,
+        "div_yield": div_yield if model in ("bs", "bsm") else None,
         "universe_filter": {
             "input_rows": n_input,
             "rows_after_filter": n_filtered,
@@ -233,6 +264,8 @@ def run_instrument_mode(
         cfg,
         compute_greeks=True,
         greeks_backend=backend,
+        greeks_batch_size=batch_size,
+        greeks_dtype=dtype,
         min_dte=min_dte,
         max_dte=max_dte,
         min_option_price=min_option_price,
@@ -256,15 +289,34 @@ def run_instrument_mode(
     # Compute Greeks via adapter (shares same batch_greeks engine)
     df = adapter.compute_greeks(df)
 
-    # Filter to option rows with computed Greeks
-    greek_cols = ["delta", "gamma", "vega", "theta", "rho"]
-    has_greeks = df[greek_cols].notna().any(axis=1)
-    out = df[has_greeks].copy()
+    # Identify option rows (rows that have at least one Greek column present,
+    # or rows with expiry/right columns — include invalid rows with NaN Greeks)
+    option_mask = pd.Series(False, index=df.index)
+    for col in ("expiry", "right", "strike", "K"):
+        if col in df.columns:
+            option_mask |= df[col].notna()
 
-    # Add metadata columns
+    out = df[option_mask].copy()
+
+    # Ensure greek_input_valid and greek_invalid_reason columns exist
+    if "greek_input_valid" not in out.columns:
+        greek_cols = ["delta", "gamma", "vega", "theta", "rho"]
+        has_all = out[[c for c in greek_cols if c in out.columns]].notna().all(axis=1)
+        out["greek_input_valid"] = has_all
+        out["greek_invalid_reason"] = out["greek_input_valid"].map(
+            lambda v: "" if v else "adapter_did_not_compute"
+        )
+
+    # Add metadata
     model = adapted_cfg.get("pricing_model", "black76")
     out["greek_model"] = model
     out["greek_backend"] = backend
+    out["greek_dtype"] = dtype
+
+    # Force NaN on invalid rows for Greek columns
+    for col in ("delta", "gamma", "vega", "theta", "rho"):
+        if col in out.columns:
+            out.loc[~out["greek_input_valid"], col] = np.nan
 
     # Provenance
     prov: dict = {
@@ -278,14 +330,18 @@ def run_instrument_mode(
         prov["data_file"] = data_file
         prov["data_hash"] = _file_sha256(data_file)
 
-    # Missing underlying summary (futures underlying mapping diagnostics)
+    # Underlying missing count (futures underlying-map diagnostics)
     underlying_missing = 0
-    if "F" in df.columns or "underlying_price" in df.columns:
-        under_col = "underlying_price" if "underlying_price" in df.columns else "F"
-        underlying_missing = int(df[under_col].isna().sum())
+    for col in ("underlying_price", "F"):
+        if col in df.columns:
+            underlying_missing = int(df[col].isna().sum())
+            break
 
-    n_valid = int(df[greek_cols].notna().all(axis=1).sum())
-    summary = {
+    # Invalid rows count
+    n_invalid = int((~out["greek_input_valid"]).sum()) if "greek_input_valid" in out.columns else 0
+
+    summary: dict = {
+        "schema_version": _SCHEMA_VERSION,
         "mode": "instrument",
         "instrument": instrument,
         "model": model,
@@ -294,7 +350,8 @@ def run_instrument_mode(
         "raw_rows": len(raw_df),
         "prepared_rows": len(df),
         "output_rows": len(out),
-        "valid_greek_rows": n_valid,
+        "valid_greek_rows": int(out["greek_input_valid"].sum()) if "greek_input_valid" in out.columns else len(out),
+        "invalid_greek_rows": n_invalid,
         "underlying_missing_rows": underlying_missing,
         "conventions": _CONVENTIONS,
         "provenance": prov,
@@ -330,23 +387,21 @@ Examples:
 
     inp = p.add_argument_group("Input")
     inp.add_argument("--input", "-i", metavar="PATH",
-                     help="Prepared option rows (CSV or Parquet). "
-                          "Required columns: underlying_price/S/F, K/strike, right, iv.")
+                     help="Prepared option rows (CSV or Parquet).")
     inp.add_argument("--instrument", metavar="NAME",
-                     help="Instrument name (configs/instruments/<NAME>.yaml). "
-                          "Triggers config-driven mode: ingestion → adapter prep → Greeks.")
+                     help="Instrument name — triggers config-driven mode.")
     inp.add_argument("--data-file", metavar="PATH",
-                     help="Raw data file for instrument mode (pipe-delimited settlement file).")
-    inp.add_argument("--start", metavar="DATE", help="Start date for instrument mode (YYYY-MM-DD).")
-    inp.add_argument("--end", metavar="DATE", help="End date for instrument mode (YYYY-MM-DD).")
+                     help="Raw data file for instrument mode.")
+    inp.add_argument("--start", metavar="DATE", help="Start date (YYYY-MM-DD).")
+    inp.add_argument("--end", metavar="DATE", help="End date (YYYY-MM-DD).")
 
     mdl = p.add_argument_group("Model")
     mdl.add_argument("--model", default="black76", choices=["black76", "bs", "bsm"],
-                     help="Pricing model. black76: futures options. bs/bsm: equity options. (default: black76)")
+                     help="Pricing model. (default: black76)")
     mdl.add_argument("--iv-source", default="computed", choices=["computed", "provided"],
-                     help="IV column to use. 'computed': iv column. 'provided': prefer iv_provided. (default: computed)")
+                     help="IV column to use. (default: computed)")
     mdl.add_argument("--rf-rate", type=float, default=0.0,
-                     help="Risk-free rate fallback when no row-level 'r' column. (default: 0.0)")
+                     help="Risk-free rate fallback. (default: 0.0)")
     mdl.add_argument("--div-yield", type=float, default=0.0,
                      help="Dividend yield for BSM model. (default: 0.0)")
 
@@ -354,19 +409,15 @@ Examples:
     bck.add_argument("--backend", default="numpy", choices=["numpy", "loop", "auto", "cuda"],
                      help="Greek computation backend. (default: numpy)")
     bck.add_argument("--batch-size", type=int, default=None,
-                     help="Chunk size for batched computation (default: no chunking).")
+                     help="Chunk size for batched computation.")
     bck.add_argument("--dtype", default="float64", choices=["float64", "float32"],
                      help="Floating-point dtype. (default: float64)")
 
-    uni = p.add_argument_group("Universe filters (applied before Greek computation)")
-    uni.add_argument("--min-dte", type=int, default=None,
-                     help="Minimum DTE in days.")
-    uni.add_argument("--max-dte", type=int, default=None,
-                     help="Maximum DTE in days.")
-    uni.add_argument("--min-option-price", type=float, default=None,
-                     help="Minimum option price (option_price / mid_price / price column).")
-    uni.add_argument("--max-iv", type=float, default=None,
-                     help="Maximum implied volatility (iv column).")
+    uni = p.add_argument_group("Universe filters")
+    uni.add_argument("--min-dte", type=int, default=None)
+    uni.add_argument("--max-dte", type=int, default=None)
+    uni.add_argument("--min-option-price", type=float, default=None)
+    uni.add_argument("--max-iv", type=float, default=None)
 
     out = p.add_argument_group("Output")
     out.add_argument("--output", "-o", metavar="PATH", required=True,
@@ -426,6 +477,7 @@ def main(argv: list[str] | None = None) -> int:
                 backend=args.backend,
                 batch_size=args.batch_size,
                 dtype=args.dtype,
+                div_yield=args.div_yield,
                 iv_source=args.iv_source,
                 rf_rate_default=args.rf_rate,
                 min_dte=args.min_dte,

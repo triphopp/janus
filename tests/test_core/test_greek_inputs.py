@@ -183,3 +183,68 @@ class TestSummary:
         _, summary = resolve_greek_inputs(df)
         assert summary["valid_rows"] == 1
         assert summary["invalid_rows"] == 1
+
+
+class TestNumericCoercion:
+    """Bad string values must become invalid rows, never crash."""
+
+    def test_bad_underlying_price_is_missing_underlying(self):
+        df = _base_row(underlying_price="bad")
+        out, summary = resolve_greek_inputs(df)
+        assert summary["invalid_by_reason"]["missing_underlying"] == 1
+        assert not out["greek_input_valid"].iloc[0]
+
+    def test_bad_K_is_missing_strike(self):
+        df = _base_row(K="bad")
+        out, summary = resolve_greek_inputs(df)
+        assert summary["invalid_by_reason"]["missing_strike"] == 1
+        assert not out["greek_input_valid"].iloc[0]
+
+    def test_bad_iv_is_missing_iv(self):
+        df = _base_row(iv="bad")
+        out, summary = resolve_greek_inputs(df)
+        assert summary["invalid_by_reason"]["missing_iv"] == 1
+        assert not out["greek_input_valid"].iloc[0]
+
+    def test_bad_T_is_missing_or_expired_T(self):
+        df = _base_row(T="bad")
+        out, summary = resolve_greek_inputs(df)
+        assert summary["invalid_by_reason"]["missing_or_expired_T"] == 1
+        assert not out["greek_input_valid"].iloc[0]
+
+    def test_bad_r_falls_back_to_default(self):
+        df = _base_row(r="bad")
+        out, _ = resolve_greek_inputs(df, rf_rate_default=0.03)
+        assert out["r"].iloc[0] == pytest.approx(0.03)
+
+    def test_bad_row_does_not_crash_valid_batch(self):
+        df = pd.DataFrame([
+            {"underlying_price": 80.0, "K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"},
+            {"underlying_price": "bad", "K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"},
+        ])
+        out, summary = resolve_greek_inputs(df)
+        assert out["greek_input_valid"].iloc[0]
+        assert not out["greek_input_valid"].iloc[1]
+        assert summary["valid_rows"] == 1
+
+
+class TestInvalidReason:
+    """greek_invalid_reason column carries human-readable cause."""
+
+    def test_valid_row_has_empty_reason(self):
+        df = _base_row()
+        out, _ = resolve_greek_inputs(df)
+        assert out["greek_invalid_reason"].iloc[0] == ""
+
+    def test_missing_underlying_reason(self):
+        df = pd.DataFrame([{"K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"}])
+        out, _ = resolve_greek_inputs(df)
+        assert "missing_underlying" in out["greek_invalid_reason"].iloc[0]
+
+    def test_multiple_reasons_joined_with_semicolon(self):
+        df = pd.DataFrame([{"K": 80.0, "T": 0.5, "right": "C"}])  # missing underlying + iv
+        out, _ = resolve_greek_inputs(df)
+        reasons = out["greek_invalid_reason"].iloc[0]
+        assert "missing_underlying" in reasons
+        assert "missing_iv" in reasons
+        assert ";" in reasons

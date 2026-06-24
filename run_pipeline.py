@@ -107,6 +107,8 @@ def apply_runtime_overrides(
     *,
     compute_greeks: bool | None = None,
     greeks_backend: str | None = None,
+    greeks_batch_size: int | None = None,
+    greeks_dtype: str | None = None,
     metrics_mode: str | None = None,
     min_dte: int | None = None,
     max_dte: int | None = None,
@@ -137,6 +139,16 @@ def apply_runtime_overrides(
         out.setdefault("pricing", {})["greeks_backend"] = greeks_backend
         out["greeks_backend"] = greeks_backend
         runtime["greeks_backend"] = greeks_backend
+
+    if greeks_batch_size is not None:
+        out.setdefault("pricing", {})["greeks_batch_size"] = int(greeks_batch_size)
+        out["greeks_batch_size"] = int(greeks_batch_size)
+        runtime["greeks_batch_size"] = int(greeks_batch_size)
+
+    if greeks_dtype is not None:
+        out.setdefault("pricing", {})["greeks_dtype"] = greeks_dtype
+        out["greeks_dtype"] = greeks_dtype
+        runtime["greeks_dtype"] = greeks_dtype
 
     if metrics_mode:
         out["metrics_mode"] = metrics_mode

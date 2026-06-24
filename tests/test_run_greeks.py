@@ -486,3 +486,189 @@ class TestProvenance:
         df = _option_df()
         _, summary = run_greek_only(df)
         assert summary["config_warnings"] == []
+
+
+# ── P1: div_yield (BSM dividend yield) ───────────────────────────────────────
+
+class TestDivYield:
+    def test_bsm_div_yield_matches_single_leg_greeks(self):
+        from core.greeks import single_leg_greeks
+        df = pd.DataFrame([{
+            "underlying_price": 150.0, "K": 150.0, "T": 0.5,
+            "r": 0.05, "iv": 0.2, "right": "C",
+        }])
+        out, _ = run_greek_only(df, model="bsm", div_yield=0.02)
+        ref = single_leg_greeks("bsm", 150.0, 150.0, 0.5, 0.05, 0.2, "C", q=0.02)
+        assert out["delta"].iloc[0] == pytest.approx(ref["delta"], rel=1e-6)
+        assert out["theta"].iloc[0] == pytest.approx(ref["theta"], rel=1e-6)
+
+    def test_bsm_div_yield_changes_output_vs_zero(self):
+        df = pd.DataFrame([{
+            "underlying_price": 150.0, "K": 150.0, "T": 0.5,
+            "r": 0.05, "iv": 0.2, "right": "C",
+        }])
+        out_q0, _ = run_greek_only(df, model="bsm", div_yield=0.0)
+        out_q2, _ = run_greek_only(df, model="bsm", div_yield=0.02)
+        assert out_q0["delta"].iloc[0] != pytest.approx(out_q2["delta"].iloc[0], rel=1e-4)
+
+    def test_black76_unchanged_by_div_yield(self):
+        df = _option_df()
+        out_q0, _ = run_greek_only(df, model="black76", div_yield=0.0)
+        out_q2, _ = run_greek_only(df, model="black76", div_yield=0.05)
+        for col in ("delta", "gamma", "vega", "theta", "rho"):
+            np.testing.assert_allclose(
+                out_q0[col].values, out_q2[col].values, rtol=1e-10,
+                err_msg=f"Black-76 {col} changed with div_yield",
+            )
+
+    def test_cli_div_yield_changes_bsm_output(self, tmp_path):
+        df = pd.DataFrame([{
+            "underlying_price": 150.0, "K": 150.0, "T": 0.5,
+            "r": 0.05, "iv": 0.2, "right": "C",
+        }])
+        in_path = str(tmp_path / "in.csv")
+        out_q0 = str(tmp_path / "q0.csv")
+        out_q2 = str(tmp_path / "q2.csv")
+        df.to_csv(in_path, index=False)
+        main(["--input", in_path, "--model", "bsm", "--output", out_q0])
+        main(["--input", in_path, "--model", "bsm", "--div-yield", "0.02", "--output", out_q2])
+        delta_q0 = pd.read_csv(out_q0)["delta"].iloc[0]
+        delta_q2 = pd.read_csv(out_q2)["delta"].iloc[0]
+        assert delta_q0 != pytest.approx(delta_q2, rel=1e-4)
+
+    def test_summary_records_div_yield_for_bsm(self):
+        df = pd.DataFrame([{
+            "underlying_price": 150.0, "K": 150.0, "T": 0.5,
+            "r": 0.05, "iv": 0.2, "right": "C",
+        }])
+        _, summary = run_greek_only(df, model="bsm", div_yield=0.03)
+        assert summary["div_yield"] == pytest.approx(0.03)
+
+    def test_summary_div_yield_none_for_black76(self):
+        df = _option_df()
+        _, summary = run_greek_only(df, model="black76", div_yield=0.03)
+        assert summary["div_yield"] is None
+
+
+# ── P1: Numeric coercion in run_greek_only ───────────────────────────────────
+
+class TestNumericCoercionInRunner:
+    def test_bad_underlying_produces_nan_greeks(self):
+        df = pd.DataFrame([{
+            "underlying_price": "bad", "K": 80.0, "T": 0.5, "iv": 0.3, "right": "C",
+        }])
+        out, _ = run_greek_only(df)
+        for col in ("delta", "gamma", "vega", "theta", "rho"):
+            assert pd.isna(out[col].iloc[0])
+
+    def test_bad_row_does_not_affect_other_rows(self):
+        df = pd.DataFrame([
+            {"underlying_price": 80.0, "K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"},
+            {"underlying_price": "bad", "K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"},
+        ])
+        out, _ = run_greek_only(df)
+        assert pd.notna(out["delta"].iloc[0])
+        assert pd.isna(out["delta"].iloc[1])
+
+
+# ── P2: DTE filter with date-derived T ───────────────────────────────────────
+
+class TestDTEFilterWithDates:
+    """DTE filter applies even when T is absent but as_of_date + expiry are present."""
+
+    def _date_df(self, as_of_date, expiry):
+        return pd.DataFrame([{
+            "underlying_price": 80.0, "K": 80.0, "iv": 0.3, "right": "C",
+            "as_of_date": as_of_date, "expiry": expiry,
+        }])
+
+    def test_min_dte_filters_short_dated_row(self):
+        short = self._date_df("2024-06-01", "2024-06-10")  # ~9 DTE
+        long = self._date_df("2024-06-01", "2024-12-31")   # ~213 DTE
+        df = pd.concat([short, long]).reset_index(drop=True)
+        _, summary = run_greek_only(df, min_dte=30)
+        assert summary["universe_filter"]["rows_after_filter"] == 1
+
+    def test_max_dte_filters_long_dated_row(self):
+        short = self._date_df("2024-06-01", "2024-06-20")  # ~19 DTE
+        long = self._date_df("2024-06-01", "2025-12-31")   # >500 DTE
+        df = pd.concat([short, long]).reset_index(drop=True)
+        _, summary = run_greek_only(df, max_dte=90)
+        assert summary["universe_filter"]["rows_after_filter"] == 1
+
+
+# ── P2: Output contract ───────────────────────────────────────────────────────
+
+class TestOutputContract:
+    def test_greek_invalid_reason_column_present(self):
+        out, _ = run_greek_only(_option_df())
+        assert "greek_invalid_reason" in out.columns
+
+    def test_valid_rows_have_empty_reason(self):
+        out, _ = run_greek_only(_option_df())
+        for reason in out["greek_invalid_reason"]:
+            assert reason == ""
+
+    def test_invalid_rows_have_nonempty_reason(self):
+        df = pd.DataFrame([{"K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"}])
+        out, _ = run_greek_only(df)
+        assert out["greek_invalid_reason"].iloc[0] != ""
+
+    def test_greek_dtype_column_present(self):
+        out, _ = run_greek_only(_option_df(), dtype="float32")
+        assert "greek_dtype" in out.columns
+        assert (out["greek_dtype"] == "float32").all()
+
+    def test_summary_schema_version_present(self):
+        _, summary = run_greek_only(_option_df())
+        assert "schema_version" in summary
+        assert isinstance(summary["schema_version"], int)
+        assert summary["schema_version"] >= 1
+
+
+# ── P2: Downstream-skip tests ─────────────────────────────────────────────────
+
+class TestDownstreamSkip:
+    """Greek-only mode must not invoke any full-pipeline stages."""
+
+    _FORBIDDEN = [
+        "core.splitter",
+        "core.metrics",
+        "reporting",
+        "core.cdc",
+        "web.dashboard",
+    ]
+
+    def test_prepared_row_mode_does_not_call_pipeline_stages(self):
+        """run_greek_only() must never import or call pipeline-specific stages."""
+        import sys
+
+        originally_loaded = set(sys.modules.keys())
+        run_greek_only(_option_df())
+        newly_loaded = set(sys.modules.keys()) - originally_loaded
+
+        for forbidden in self._FORBIDDEN:
+            collisions = [m for m in newly_loaded if m.startswith(forbidden)]
+            assert not collisions, (
+                f"run_greek_only() triggered import of forbidden module(s): {collisions}"
+            )
+
+    def test_prepared_row_mode_skip_stages_raise(self):
+        """Monkeypatching pipeline stages to raise proves they are unreachable."""
+        import importlib
+        import run_greeks as rg
+
+        def _boom(*args, **kwargs):
+            raise AssertionError("Pipeline stage should not be called in Greek-only mode")
+
+        # Patch any attributes on the module that might invoke pipeline stages
+        for attr in ("run_pipeline",):
+            if hasattr(rg, attr):
+                original = getattr(rg, attr)
+                setattr(rg, attr, _boom)
+                try:
+                    run_greek_only(_option_df())
+                finally:
+                    setattr(rg, attr, original)
+            else:
+                run_greek_only(_option_df())  # must succeed without that attr
