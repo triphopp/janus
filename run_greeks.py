@@ -5,7 +5,8 @@ Workflows:
        python run_greeks.py --input options.csv --model black76 --output greeks.parquet
 
   B) Raw chain via instrument config (minimal option prep):
-       python run_greeks.py --instrument wti --data-file WTI.csv --output greeks.parquet
+       python run_greeks.py --instrument bz --data-file WTI.csv \\
+           --start 2024-01-01 --end 2024-12-31 --output greeks.parquet
 
 Does NOT run splitter, metrics, reporting, CDC, or dashboard generation.
 """
@@ -13,7 +14,9 @@ Does NOT run splitter, metrics, reporting, CDC, or dashboard generation.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -22,6 +25,32 @@ import pandas as pd
 
 from core.greek_inputs import resolve_greek_inputs
 from core.greeks import batch_greeks
+
+
+# ── Provenance helpers ───────────────────────────────────────────────────────
+
+def _git_commit() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _file_sha256(path: str) -> str | None:
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()[:16]
+    except Exception:
+        return None
 
 
 # ── I/O helpers ──────────────────────────────────────────────────────────────
@@ -58,6 +87,12 @@ _IDENTITY_COLS = [
     "right", "K", "strike", "product_id", "contract_root",
 ]
 
+_CONVENTIONS = {
+    "theta": "annualized calendar-time decay, -dV/dT",
+    "vega": "per 1.0 vol unit",
+    "rate": "continuously compounded",
+}
+
 
 def run_greek_only(
     df: pd.DataFrame,
@@ -74,6 +109,7 @@ def run_greek_only(
     min_option_price: float | None = None,
     max_iv: float | None = None,
     dte_cfg: dict | None = None,
+    provenance: dict | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Resolve inputs, apply universe filters, compute Greeks.
 
@@ -83,7 +119,7 @@ def run_greek_only(
     cfg = cfg or {}
     n_input = len(df)
 
-    # Apply universe filters before Greek computation
+    # Universe filters before Greek computation
     mask = pd.Series(True, index=df.index)
     if min_dte is not None and "T" in df.columns:
         mask &= (df["T"] * 365 >= min_dte) | df["T"].isna()
@@ -106,6 +142,16 @@ def run_greek_only(
         rf_rate_default=rf_rate_default, dte_cfg=dte_cfg,
     )
 
+    # Warn if iv_provided rows failed IV validation (Phase 5)
+    config_warnings = []
+    if iv_source == "provided" and "iv_provided" in filtered.columns and "_iv_quality_flag" in filtered.columns:
+        failed = filtered["_iv_quality_flag"].notna() & (filtered["_iv_quality_flag"] != "")
+        n_failed = int(failed.sum())
+        if n_failed:
+            config_warnings.append(
+                f"{n_failed} iv_provided rows have _iv_quality_flag set — review before trusting Greeks"
+            )
+
     # Compute Greeks
     greeks_result = batch_greeks(
         model=model,
@@ -121,12 +167,6 @@ def run_greek_only(
     )
 
     # Build output — identity columns first, then Greeks
-    out_cols = {}
-    for col in _IDENTITY_COLS:
-        if col in df.columns:
-            # Re-index to filtered frame
-            out_cols[col] = filtered[col].values if col in filtered.columns else None
-
     out = filtered[[c for c in _IDENTITY_COLS if c in filtered.columns]].copy()
     for greek in ("delta", "gamma", "vega", "theta", "rho"):
         out[greek] = greeks_result[greek]
@@ -149,11 +189,116 @@ def run_greek_only(
         },
         "input_quality": input_summary,
         "output_rows": len(out),
-        "conventions": {
-            "theta": "annualized calendar-time decay, -dV/dT",
-            "vega": "per 1.0 vol unit",
-            "rate": "continuously compounded",
-        },
+        "conventions": _CONVENTIONS,
+        "config_warnings": config_warnings,
+        "provenance": provenance or {},
+    }
+
+    return out, summary
+
+
+# ── Instrument-mode (Phase 3) ────────────────────────────────────────────────
+
+def run_instrument_mode(
+    instrument: str,
+    *,
+    data_file: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    backend: str = "numpy",
+    batch_size: int | None = None,
+    dtype: str = "float64",
+    iv_source: str = "computed",
+    min_dte: int | None = None,
+    max_dte: int | None = None,
+    min_option_price: float | None = None,
+    max_iv: float | None = None,
+) -> tuple[pd.DataFrame, dict]:
+    """Load raw chain via config, run minimal option prep, compute Greeks.
+
+    Reuses load_config + get_provider + get_adapter from run_pipeline.
+    Runs: ingestion → adapter.prepare() → adapter.compute_greeks().
+    Does NOT run validators, splitter, metrics, reporting, CDC, or dashboard.
+
+    Returns:
+        (output_df, summary)
+    """
+    from run_pipeline import load_config, get_provider, get_adapter, apply_runtime_overrides
+
+    cfg = load_config(instrument)
+    if data_file:
+        cfg["data_file"] = data_file
+        cfg.setdefault("provider", "settlement")
+    cfg = apply_runtime_overrides(
+        cfg,
+        compute_greeks=True,
+        greeks_backend=backend,
+        min_dte=min_dte,
+        max_dte=max_dte,
+        min_option_price=min_option_price,
+        iv_cap=max_iv,
+    )
+
+    # Ingestion
+    provider = get_provider(cfg)
+    provider_name = cfg.get("provider", "settlement")
+    if provider_name == "settlement":
+        data_source = cfg.get("data_file") or instrument
+    else:
+        data_source = cfg.get("symbol", {}).get("ticker", instrument)
+
+    raw_df = provider.fetch(data_source, start, end)
+
+    # Adapter prep (DTE, IV, underlying mapping, universe filters, quality flags)
+    adapter = get_adapter(cfg)
+    df, adapted_cfg = adapter.prepare(raw_df)
+
+    # Compute Greeks via adapter (shares same batch_greeks engine)
+    df = adapter.compute_greeks(df)
+
+    # Filter to option rows with computed Greeks
+    greek_cols = ["delta", "gamma", "vega", "theta", "rho"]
+    has_greeks = df[greek_cols].notna().any(axis=1)
+    out = df[has_greeks].copy()
+
+    # Add metadata columns
+    model = adapted_cfg.get("pricing_model", "black76")
+    out["greek_model"] = model
+    out["greek_backend"] = backend
+
+    # Provenance
+    prov: dict = {
+        "instrument": instrument,
+        "git_commit": _git_commit(),
+        "config_model": model,
+        "dte_cfg": adapted_cfg.get("dte", {}),
+        "iv_source": iv_source,
+    }
+    if data_file:
+        prov["data_file"] = data_file
+        prov["data_hash"] = _file_sha256(data_file)
+
+    # Missing underlying summary (futures underlying mapping diagnostics)
+    underlying_missing = 0
+    if "F" in df.columns or "underlying_price" in df.columns:
+        under_col = "underlying_price" if "underlying_price" in df.columns else "F"
+        underlying_missing = int(df[under_col].isna().sum())
+
+    n_valid = int(df[greek_cols].notna().all(axis=1).sum())
+    summary = {
+        "mode": "instrument",
+        "instrument": instrument,
+        "model": model,
+        "backend": backend,
+        "dtype": dtype,
+        "raw_rows": len(raw_df),
+        "prepared_rows": len(df),
+        "output_rows": len(out),
+        "valid_greek_rows": n_valid,
+        "underlying_missing_rows": underlying_missing,
+        "conventions": _CONVENTIONS,
+        "provenance": prov,
+        "config_warnings": [],
     }
 
     return out, summary
@@ -174,6 +319,10 @@ Examples:
   # Prepared Parquet (AAPL equity options)
   python run_greeks.py --input aapl_options.parquet --model bsm --backend numpy --output outputs/greeks/aapl.parquet
 
+  # Instrument config + raw data file
+  python run_greeks.py --instrument bz --data-file WTI.csv \\
+      --start 2024-01-01 --end 2024-12-31 --output outputs/greeks/bz.parquet
+
   # Universe filter before computation
   python run_greeks.py --input options.csv --min-dte 1 --max-dte 90 --max-iv 2.0 --output greeks.csv
 """,
@@ -184,9 +333,12 @@ Examples:
                      help="Prepared option rows (CSV or Parquet). "
                           "Required columns: underlying_price/S/F, K/strike, right, iv.")
     inp.add_argument("--instrument", metavar="NAME",
-                     help="Instrument name for config-driven mode (future Phase 3).")
+                     help="Instrument name (configs/instruments/<NAME>.yaml). "
+                          "Triggers config-driven mode: ingestion → adapter prep → Greeks.")
     inp.add_argument("--data-file", metavar="PATH",
-                     help="Raw data file for config-driven mode (future Phase 3).")
+                     help="Raw data file for instrument mode (pipe-delimited settlement file).")
+    inp.add_argument("--start", metavar="DATE", help="Start date for instrument mode (YYYY-MM-DD).")
+    inp.add_argument("--end", metavar="DATE", help="End date for instrument mode (YYYY-MM-DD).")
 
     mdl = p.add_argument_group("Model")
     mdl.add_argument("--model", default="black76", choices=["black76", "bs", "bsm"],
@@ -208,7 +360,7 @@ Examples:
 
     uni = p.add_argument_group("Universe filters (applied before Greek computation)")
     uni.add_argument("--min-dte", type=int, default=None,
-                     help="Minimum DTE in days (requires T column in calendar days, or as_of_date+expiry).")
+                     help="Minimum DTE in days.")
     uni.add_argument("--max-dte", type=int, default=None,
                      help="Maximum DTE in days.")
     uni.add_argument("--min-option-price", type=float, default=None,
@@ -229,41 +381,65 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.input and not args.instrument:
         parser.error("Provide --input (prepared rows) or --instrument (config mode).")
-    if args.instrument and not args.input:
-        parser.error("Config-driven mode (--instrument) is not yet implemented. Use --input.")
 
-    # Load
-    try:
-        df = _load_input(args.input)
-    except (FileNotFoundError, Exception) as exc:
-        print(f"ERROR loading input: {exc}", file=sys.stderr)
-        return 1
+    # Instrument mode
+    if args.instrument:
+        try:
+            out_df, summary = run_instrument_mode(
+                args.instrument,
+                data_file=args.data_file,
+                start=args.start,
+                end=args.end,
+                backend=args.backend,
+                batch_size=args.batch_size,
+                dtype=args.dtype,
+                iv_source=args.iv_source,
+                min_dte=args.min_dte,
+                max_dte=args.max_dte,
+                min_option_price=args.min_option_price,
+                max_iv=args.max_iv,
+            )
+        except Exception as exc:
+            print(f"ERROR (instrument mode): {exc}", file=sys.stderr)
+            return 1
+    else:
+        # Prepared-row mode
+        try:
+            df = _load_input(args.input)
+        except Exception as exc:
+            print(f"ERROR loading input: {exc}", file=sys.stderr)
+            return 1
 
-    if len(df) == 0:
-        print("WARNING: input file has zero rows. Writing empty output.", file=sys.stderr)
+        if len(df) == 0:
+            print("WARNING: input file has zero rows. Writing empty output.", file=sys.stderr)
 
-    # Run
-    try:
-        out_df, summary = run_greek_only(
-            df,
-            model=args.model,
-            backend=args.backend,
-            batch_size=args.batch_size,
-            dtype=args.dtype,
-            iv_source=args.iv_source,
-            rf_rate_default=args.rf_rate,
-            min_dte=args.min_dte,
-            max_dte=args.max_dte,
-            min_option_price=args.min_option_price,
-            max_iv=args.max_iv,
-        )
-    except (ValueError, RuntimeError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
+        prov = {
+            "input_file": args.input,
+            "input_hash": _file_sha256(args.input),
+            "git_commit": _git_commit(),
+        }
+
+        try:
+            out_df, summary = run_greek_only(
+                df,
+                model=args.model,
+                backend=args.backend,
+                batch_size=args.batch_size,
+                dtype=args.dtype,
+                iv_source=args.iv_source,
+                rf_rate_default=args.rf_rate,
+                min_dte=args.min_dte,
+                max_dte=args.max_dte,
+                min_option_price=args.min_option_price,
+                max_iv=args.max_iv,
+                provenance=prov,
+            )
+        except (ValueError, RuntimeError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
 
     summary["output_path"] = args.output
 
-    # Write
     try:
         _write_output(out_df, args.output)
         summary_path = _write_summary(summary, args.output)
@@ -271,10 +447,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR writing output: {exc}", file=sys.stderr)
         return 1
 
-    valid = summary["input_quality"]["valid_rows"]
-    total = summary["input_quality"]["total_rows"]
+    valid = summary.get("input_quality", {}).get("valid_rows", summary.get("valid_greek_rows", "?"))
+    total = summary.get("input_quality", {}).get("total_rows", summary.get("prepared_rows", "?"))
     print(f"Greeks computed: {valid}/{total} valid rows → {args.output}")
     print(f"Summary: {summary_path}")
+    if summary.get("config_warnings"):
+        for w in summary["config_warnings"]:
+            print(f"WARNING: {w}", file=sys.stderr)
     return 0
 
 

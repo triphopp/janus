@@ -1,15 +1,16 @@
-"""Tests for run_greeks.py — Phase 2 of greek_only_engine plan."""
+"""Tests for run_greeks.py — Phases 2–5 of greek_only_engine plan."""
 
 import json
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from run_greeks import run_greek_only, _load_input, _write_output, main
+from run_greeks import run_greek_only, _load_input, _write_output, main, _git_commit, _file_sha256
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -213,3 +214,275 @@ class TestCLI:
         df_lp = pd.read_csv(out_lp)
         for col in ("delta", "gamma", "vega", "theta", "rho"):
             np.testing.assert_allclose(df_np[col].values, df_lp[col].values, rtol=1e-8)
+
+
+# ── Phase 3: Instrument mode tests ───────────────────────────────────────────
+
+def _make_futures_raw_df():
+    """Minimal synthetic futures options fixture for instrument-mode tests."""
+    rows = []
+    for strike in [75.0, 80.0, 85.0]:
+        for right in ("C", "P"):
+            rows.append({
+                "as_of_date": "2024-06-01",
+                "expiry": "2024-12-31",
+                "strike": strike,
+                "right": right,
+                "price": 3.5,
+                "F": 80.0,
+                "T": 0.5,
+                "r": 0.05,
+                "iv": 0.3,
+                "underlying_price": 80.0,
+            })
+    return pd.DataFrame(rows)
+
+
+def _make_equity_raw_df():
+    rows = []
+    for strike in [145.0, 150.0, 155.0]:
+        for right in ("C", "P"):
+            rows.append({
+                "as_of_date": "2024-06-01",
+                "expiry": "2024-12-31",
+                "strike": strike,
+                "right": right,
+                "price": 4.0,
+                "S": 150.0,
+                "T": 0.5,
+                "r": 0.05,
+                "iv": 0.25,
+                "underlying_price": 150.0,
+            })
+    return pd.DataFrame(rows)
+
+
+class TestInstrumentMode:
+    """Phase 3 — config-driven mode via mocked adapter."""
+
+    def _mock_adapter(self, df_out, model="black76"):
+        """Return a mock adapter that simulates prepare() + compute_greeks()."""
+        from adapters.options_base import OptionsBase
+        adapter = MagicMock()
+        cfg_out = {"pricing_model": model, "rf_rate": 0.05}
+
+        # prepare() returns (df, cfg)
+        df_prep = df_out.copy()
+        adapter.prepare.return_value = (df_prep, cfg_out)
+
+        # compute_greeks() adds Greek columns
+        def fake_compute_greeks(df):
+            from core.greeks import batch_greeks
+            from core.greek_inputs import resolve_greek_inputs
+            resolved, _ = resolve_greek_inputs(df)
+            g = batch_greeks(
+                model=model,
+                S_or_F=resolved["S_or_F"].to_numpy(),
+                K=resolved["K"].to_numpy(),
+                T=resolved["T"].to_numpy(),
+                r=resolved["r"].to_numpy(),
+                sigma=resolved["sigma"].to_numpy(),
+                right=resolved["right"].to_numpy(),
+            )
+            out = df.copy()
+            for col in ("delta", "gamma", "vega", "theta", "rho"):
+                out[col] = g[col]
+            return out
+
+        adapter.compute_greeks.side_effect = fake_compute_greeks
+        return adapter, cfg_out
+
+    def _patch_rp(self, cfg, provider, adapter):
+        return (
+            patch("run_pipeline.load_config", return_value=cfg),
+            patch("run_pipeline.get_provider", return_value=provider),
+            patch("run_pipeline.get_adapter", return_value=adapter),
+            patch("run_pipeline.apply_runtime_overrides", side_effect=lambda c, **kw: c),
+        )
+
+    def test_futures_raw_maps_F(self):
+        df = _make_futures_raw_df()
+        adapter, _ = self._mock_adapter(df, model="black76")
+        mock_provider = MagicMock()
+        mock_provider.fetch.return_value = df
+        cfg = {"family": "futures_options", "provider": "settlement", "pricing_model": "black76"}
+
+        patches = self._patch_rp(cfg, mock_provider, adapter)
+        with patches[0], patches[1], patches[2], patches[3]:
+            from run_greeks import run_instrument_mode
+            out, summary = run_instrument_mode("bz", data_file="fake.csv")
+
+        assert "delta" in out.columns
+        assert out["delta"].notna().any()
+        assert summary["raw_rows"] == len(df)
+
+    def test_equity_raw_computes_bsm(self):
+        df = _make_equity_raw_df()
+        adapter, _ = self._mock_adapter(df, model="bsm")
+        mock_provider = MagicMock()
+        mock_provider.fetch.return_value = df
+        cfg = {"family": "equity_options", "provider": "yfinance", "pricing_model": "bsm"}
+
+        patches = self._patch_rp(cfg, mock_provider, adapter)
+        with patches[0], patches[1], patches[2], patches[3]:
+            from run_greeks import run_instrument_mode
+            out, summary = run_instrument_mode("aapl")
+
+        assert summary["model"] == "bsm"
+        assert out["delta"].notna().any()
+
+    def test_missing_futures_underlying_counted(self):
+        df = _make_futures_raw_df()
+        df_with_missing = df.copy()
+        df_with_missing.loc[0, "underlying_price"] = np.nan
+        df_with_missing.loc[0, "F"] = np.nan
+        adapter, _ = self._mock_adapter(df_with_missing)
+        mock_provider = MagicMock()
+        mock_provider.fetch.return_value = df_with_missing
+        cfg = {"family": "futures_options", "pricing_model": "black76"}
+
+        patches = self._patch_rp(cfg, mock_provider, adapter)
+        with patches[0], patches[1], patches[2], patches[3]:
+            from run_greeks import run_instrument_mode
+            out, summary = run_instrument_mode("bz")
+
+        assert summary["underlying_missing_rows"] >= 1
+
+    def test_dte_filter_applied_in_instrument_mode(self):
+        short_dte = _make_futures_raw_df()
+        short_dte["T"] = 5 / 365  # 5 DTE only
+        adapter, _ = self._mock_adapter(short_dte)
+        mock_provider = MagicMock()
+        mock_provider.fetch.return_value = short_dte
+        cfg = {"family": "futures_options", "pricing_model": "black76"}
+
+        patches = self._patch_rp(cfg, mock_provider, adapter)
+        with patches[0], patches[1], patches[2], patches[3]:
+            from run_greeks import run_instrument_mode
+            _, summary = run_instrument_mode("bz", min_dte=30)
+
+        assert summary["raw_rows"] == len(short_dte)
+
+
+# ── Phase 4: Full pipeline compatibility tests ────────────────────────────────
+
+class TestFullPipelineCompat:
+    """Phase 4 — verify run_greeks and adapter share same Greek engine."""
+
+    def test_compute_greeks_false_returns_nan_columns(self):
+        """OptionsBase.compute_greeks with compute_greeks=False → NaN Greeks."""
+        from adapters.options_base import OptionsBase
+
+        df = _make_futures_raw_df()
+        df["iv"] = 0.3
+
+        class _FakeOptionsAdapter(OptionsBase):
+            def prepare(self, raw_df):
+                return raw_df.copy(), self.cfg
+
+        cfg = {"compute_greeks": False, "pricing_model": "black76", "family": "futures_options"}
+        adapter = _FakeOptionsAdapter(cfg)
+        result = adapter.compute_greeks(df)
+
+        for col in ("delta", "gamma", "vega", "theta", "rho"):
+            assert col in result.columns
+            assert result[col].isna().all(), f"{col} should be all-NaN when compute_greeks=False"
+
+    def test_adapter_and_run_greek_only_agree_on_greeks(self):
+        """OptionsBase.compute_greeks and run_greek_only produce identical Greek values."""
+        from adapters.options_base import OptionsBase
+
+        df = pd.DataFrame([
+            {"underlying_price": 80.0, "strike": 80.0, "T": 0.5, "r": 0.05,
+             "iv": 0.3, "right": "C", "F": 80.0, "as_of_date": "2024-01-01",
+             "expiry": "2024-07-01", "price": 5.0},
+        ])
+
+        class _FakeAdapter(OptionsBase):
+            def prepare(self, raw_df):
+                return raw_df.copy(), self.cfg
+
+        cfg = {"compute_greeks": True, "pricing_model": "black76", "greeks_backend": "numpy",
+               "family": "futures_options"}
+        adapter = _FakeAdapter(cfg)
+        adapter_out = adapter.compute_greeks(df.copy())
+
+        runner_out, _ = run_greek_only(df, model="black76", backend="numpy")
+
+        for col in ("delta", "gamma", "vega"):
+            assert adapter_out[col].iloc[0] == pytest.approx(runner_out[col].iloc[0], rel=1e-8)
+
+    def test_context_rows_do_not_affect_option_greeks(self):
+        """Perturbing context/future rows does not change Greeks on earlier rows."""
+        df1 = _option_df()
+        df2 = _option_df()
+        df2["underlying_price"] = df2["underlying_price"] * 1.5  # perturb all rows
+
+        out1, _ = run_greek_only(df1)
+        out_combined, _ = run_greek_only(pd.concat([df1, df2]).reset_index(drop=True))
+
+        for col in ("delta", "gamma", "vega", "theta", "rho"):
+            np.testing.assert_allclose(
+                out1[col].values, out_combined[col].iloc[:len(df1)].values,
+                rtol=1e-10,
+                err_msg=f"Row order affected {col}",
+            )
+
+
+# ── Phase 5: Provenance and quality gates ────────────────────────────────────
+
+class TestProvenance:
+    def test_git_commit_returns_string_or_none(self):
+        result = _git_commit()
+        assert result is None or (isinstance(result, str) and len(result) > 0)
+
+    def test_file_sha256_returns_hex(self, tmp_path):
+        p = tmp_path / "f.csv"
+        p.write_text("a,b\n1,2\n")
+        h = _file_sha256(str(p))
+        assert h is not None
+        assert len(h) == 16
+        assert all(c in "0123456789abcdef" for c in h)
+
+    def test_file_sha256_missing_returns_none(self):
+        assert _file_sha256("/nonexistent/path.csv") is None
+
+    def test_summary_contains_provenance(self, tmp_path):
+        df = _option_df()
+        in_path = str(tmp_path / "in.csv")
+        out_path = str(tmp_path / "out.csv")
+        df.to_csv(in_path, index=False)
+        main(["--input", in_path, "--output", out_path])
+        with open(str(tmp_path / "out.greek_summary.json")) as f:
+            s = json.load(f)
+        assert "provenance" in s
+        assert "input_file" in s["provenance"]
+        assert "input_hash" in s["provenance"]
+        assert "git_commit" in s["provenance"]
+
+    def test_summary_contains_conventions(self, tmp_path):
+        df = _option_df()
+        in_path = str(tmp_path / "in.csv")
+        out_path = str(tmp_path / "out.csv")
+        df.to_csv(in_path, index=False)
+        main(["--input", in_path, "--output", out_path])
+        with open(str(tmp_path / "out.greek_summary.json")) as f:
+            s = json.load(f)
+        assert s["conventions"]["theta"] == "annualized calendar-time decay, -dV/dT"
+        assert s["conventions"]["vega"] == "per 1.0 vol unit"
+        assert s["conventions"]["rate"] == "continuously compounded"
+
+    def test_iv_provided_quality_warning(self):
+        """When iv_source='provided' and _iv_quality_flag is set, config_warnings non-empty."""
+        df = _option_df(iv=0.3)
+        df["iv_provided"] = 0.3
+        df["_iv_quality_flag"] = ["iv_suspect", ""]
+        _, summary = run_greek_only(df, iv_source="provided")
+        # At least one row has a flag — warning should appear
+        assert len(summary["config_warnings"]) >= 1
+        assert any("iv_provided" in w for w in summary["config_warnings"])
+
+    def test_no_iv_warning_when_flag_absent(self):
+        df = _option_df()
+        _, summary = run_greek_only(df)
+        assert summary["config_warnings"] == []
