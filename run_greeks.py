@@ -1,0 +1,282 @@
+"""Greek-only runner — compute option Greeks without running the full pipeline.
+
+Workflows:
+  A) Prepared rows (CSV or Parquet):
+       python run_greeks.py --input options.csv --model black76 --output greeks.parquet
+
+  B) Raw chain via instrument config (minimal option prep):
+       python run_greeks.py --instrument wti --data-file WTI.csv --output greeks.parquet
+
+Does NOT run splitter, metrics, reporting, CDC, or dashboard generation.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from core.greek_inputs import resolve_greek_inputs
+from core.greeks import batch_greeks
+
+
+# ── I/O helpers ──────────────────────────────────────────────────────────────
+
+def _load_input(path: str) -> pd.DataFrame:
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Input file not found: {path}")
+    if p.suffix.lower() == ".parquet":
+        return pd.read_parquet(p)
+    return pd.read_csv(p)
+
+
+def _write_output(df: pd.DataFrame, path: str) -> None:
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if p.suffix.lower() == ".parquet":
+        df.to_parquet(p, index=False)
+    else:
+        df.to_csv(p, index=False)
+
+
+def _write_summary(summary: dict, output_path: str) -> str:
+    p = Path(output_path)
+    summary_path = p.with_suffix("").with_suffix(".greek_summary.json")
+    summary_path.write_text(json.dumps(summary, indent=2))
+    return str(summary_path)
+
+
+# ── Core logic ────────────────────────────────────────────────────────────────
+
+_IDENTITY_COLS = [
+    "as_of_date", "expiry", "instrument", "symbol", "ticker",
+    "right", "K", "strike", "product_id", "contract_root",
+]
+
+
+def run_greek_only(
+    df: pd.DataFrame,
+    *,
+    model: str = "black76",
+    backend: str = "numpy",
+    batch_size: int | None = None,
+    dtype: str = "float64",
+    iv_source: str = "computed",
+    rf_rate_default: float = 0.0,
+    cfg: dict | None = None,
+    min_dte: int | None = None,
+    max_dte: int | None = None,
+    min_option_price: float | None = None,
+    max_iv: float | None = None,
+    dte_cfg: dict | None = None,
+) -> tuple[pd.DataFrame, dict]:
+    """Resolve inputs, apply universe filters, compute Greeks.
+
+    Returns:
+        (output_df, summary)
+    """
+    cfg = cfg or {}
+    n_input = len(df)
+
+    # Apply universe filters before Greek computation
+    mask = pd.Series(True, index=df.index)
+    if min_dte is not None and "T" in df.columns:
+        mask &= (df["T"] * 365 >= min_dte) | df["T"].isna()
+    if max_dte is not None and "T" in df.columns:
+        mask &= (df["T"] * 365 <= max_dte) | df["T"].isna()
+    if min_option_price is not None:
+        for price_col in ("option_price", "mid_price", "price"):
+            if price_col in df.columns:
+                mask &= (df[price_col] >= min_option_price) | df[price_col].isna()
+                break
+    if max_iv is not None and "iv" in df.columns:
+        mask &= (df["iv"] <= max_iv) | df["iv"].isna()
+
+    filtered = df[mask].copy()
+    n_filtered = len(filtered)
+
+    # Resolve inputs
+    resolved, input_summary = resolve_greek_inputs(
+        filtered, cfg=cfg, iv_source=iv_source,
+        rf_rate_default=rf_rate_default, dte_cfg=dte_cfg,
+    )
+
+    # Compute Greeks
+    greeks_result = batch_greeks(
+        model=model,
+        S_or_F=resolved["S_or_F"].to_numpy(),
+        K=resolved["K"].to_numpy(),
+        T=resolved["T"].to_numpy(),
+        r=resolved["r"].to_numpy(),
+        sigma=resolved["sigma"].to_numpy(),
+        right=resolved["right"].to_numpy(),
+        backend=backend,
+        batch_size=batch_size,
+        dtype=dtype,
+    )
+
+    # Build output — identity columns first, then Greeks
+    out_cols = {}
+    for col in _IDENTITY_COLS:
+        if col in df.columns:
+            # Re-index to filtered frame
+            out_cols[col] = filtered[col].values if col in filtered.columns else None
+
+    out = filtered[[c for c in _IDENTITY_COLS if c in filtered.columns]].copy()
+    for greek in ("delta", "gamma", "vega", "theta", "rho"):
+        out[greek] = greeks_result[greek]
+    out["greek_model"] = model
+    out["greek_backend"] = backend
+    out["greek_input_valid"] = resolved["greek_input_valid"].values
+
+    # Force NaN on invalid rows
+    for greek in ("delta", "gamma", "vega", "theta", "rho"):
+        out.loc[~out["greek_input_valid"], greek] = np.nan
+
+    summary = {
+        "model": model,
+        "backend": backend,
+        "dtype": dtype,
+        "universe_filter": {
+            "input_rows": n_input,
+            "rows_after_filter": n_filtered,
+            "rows_dropped": n_input - n_filtered,
+        },
+        "input_quality": input_summary,
+        "output_rows": len(out),
+        "conventions": {
+            "theta": "annualized calendar-time decay, -dV/dT",
+            "vega": "per 1.0 vol unit",
+            "rate": "continuously compounded",
+        },
+    }
+
+    return out, summary
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="run_greeks.py",
+        description="Compute option Greeks without running the full Janus pipeline.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Prepared CSV (WTI futures options)
+  python run_greeks.py --input wti_options.csv --model black76 --output outputs/greeks/wti.parquet
+
+  # Prepared Parquet (AAPL equity options)
+  python run_greeks.py --input aapl_options.parquet --model bsm --backend numpy --output outputs/greeks/aapl.parquet
+
+  # Universe filter before computation
+  python run_greeks.py --input options.csv --min-dte 1 --max-dte 90 --max-iv 2.0 --output greeks.csv
+""",
+    )
+
+    inp = p.add_argument_group("Input")
+    inp.add_argument("--input", "-i", metavar="PATH",
+                     help="Prepared option rows (CSV or Parquet). "
+                          "Required columns: underlying_price/S/F, K/strike, right, iv.")
+    inp.add_argument("--instrument", metavar="NAME",
+                     help="Instrument name for config-driven mode (future Phase 3).")
+    inp.add_argument("--data-file", metavar="PATH",
+                     help="Raw data file for config-driven mode (future Phase 3).")
+
+    mdl = p.add_argument_group("Model")
+    mdl.add_argument("--model", default="black76", choices=["black76", "bs", "bsm"],
+                     help="Pricing model. black76: futures options. bs/bsm: equity options. (default: black76)")
+    mdl.add_argument("--iv-source", default="computed", choices=["computed", "provided"],
+                     help="IV column to use. 'computed': iv column. 'provided': prefer iv_provided. (default: computed)")
+    mdl.add_argument("--rf-rate", type=float, default=0.0,
+                     help="Risk-free rate fallback when no row-level 'r' column. (default: 0.0)")
+    mdl.add_argument("--div-yield", type=float, default=0.0,
+                     help="Dividend yield for BSM model. (default: 0.0)")
+
+    bck = p.add_argument_group("Backend")
+    bck.add_argument("--backend", default="numpy", choices=["numpy", "loop", "auto", "cuda"],
+                     help="Greek computation backend. (default: numpy)")
+    bck.add_argument("--batch-size", type=int, default=None,
+                     help="Chunk size for batched computation (default: no chunking).")
+    bck.add_argument("--dtype", default="float64", choices=["float64", "float32"],
+                     help="Floating-point dtype. (default: float64)")
+
+    uni = p.add_argument_group("Universe filters (applied before Greek computation)")
+    uni.add_argument("--min-dte", type=int, default=None,
+                     help="Minimum DTE in days (requires T column in calendar days, or as_of_date+expiry).")
+    uni.add_argument("--max-dte", type=int, default=None,
+                     help="Maximum DTE in days.")
+    uni.add_argument("--min-option-price", type=float, default=None,
+                     help="Minimum option price (option_price / mid_price / price column).")
+    uni.add_argument("--max-iv", type=float, default=None,
+                     help="Maximum implied volatility (iv column).")
+
+    out = p.add_argument_group("Output")
+    out.add_argument("--output", "-o", metavar="PATH", required=True,
+                     help="Output path (.csv or .parquet).")
+
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    if not args.input and not args.instrument:
+        parser.error("Provide --input (prepared rows) or --instrument (config mode).")
+    if args.instrument and not args.input:
+        parser.error("Config-driven mode (--instrument) is not yet implemented. Use --input.")
+
+    # Load
+    try:
+        df = _load_input(args.input)
+    except (FileNotFoundError, Exception) as exc:
+        print(f"ERROR loading input: {exc}", file=sys.stderr)
+        return 1
+
+    if len(df) == 0:
+        print("WARNING: input file has zero rows. Writing empty output.", file=sys.stderr)
+
+    # Run
+    try:
+        out_df, summary = run_greek_only(
+            df,
+            model=args.model,
+            backend=args.backend,
+            batch_size=args.batch_size,
+            dtype=args.dtype,
+            iv_source=args.iv_source,
+            rf_rate_default=args.rf_rate,
+            min_dte=args.min_dte,
+            max_dte=args.max_dte,
+            min_option_price=args.min_option_price,
+            max_iv=args.max_iv,
+        )
+    except (ValueError, RuntimeError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    summary["output_path"] = args.output
+
+    # Write
+    try:
+        _write_output(out_df, args.output)
+        summary_path = _write_summary(summary, args.output)
+    except Exception as exc:
+        print(f"ERROR writing output: {exc}", file=sys.stderr)
+        return 1
+
+    valid = summary["input_quality"]["valid_rows"]
+    total = summary["input_quality"]["total_rows"]
+    print(f"Greeks computed: {valid}/{total} valid rows → {args.output}")
+    print(f"Summary: {summary_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
