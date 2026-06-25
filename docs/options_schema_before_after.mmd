@@ -1,0 +1,136 @@
+flowchart TD
+
+    Start([Option family input]) --> Family{"family"}
+    Family --> EqBefore
+    Family --> FutBefore
+
+    subgraph EqRaw["Before: equity_options bronze/raw schema"]
+        direction TB
+        EqBefore["Contract identity and PIT<br/>as_of_date, available_at, ingested_at<br/>symbol, expiry, right, strike"]
+        EqMarket["Market and liquidity<br/>price, underlying_price<br/>iv_provided, volume, open_interest"]
+        EqOptional["Adapter-supported provider extras<br/>raw_close, adj_factor, adj_factor_is_pit, S"]
+        EqBefore --> EqMarket
+        EqMarket --> EqOptional
+    end
+
+    subgraph FutRaw["Before: futures_options bronze/raw schema"]
+        direction TB
+        FutBefore["Contract identity and PIT<br/>as_of_date, available_at, ingested_at, timestamp<br/>product_id, contract_root, hub"]
+        FutContract["Contract row identity<br/>instrument_type, right, strike<br/>delivery_month, expiry"]
+        FutMarket["Market fields<br/>price, net_change, iv_provided<br/>delta_provided, provider"]
+        FutBefore --> FutContract
+        FutContract --> FutMarket
+    end
+
+    EqOptional --> BronzeGate
+    FutMarket --> BronzeGate
+
+    subgraph Bronze["Bronze gate: contract normalization"]
+        direction TB
+        BronzeGate["Validate and normalize raw schema"]
+        BronzeStruct["Required columns and dtype coercion<br/>dates, timestamps, strings, numeric fields"]
+        BronzeKey["Identity key normalization<br/>strike rounding: equity 4 dp, futures-options 6 dp"]
+        BronzeSemantics["Semantic and PIT checks<br/>price, strike, right, expiry, available_at"]
+        BronzePass{"row passes?"}
+        Quarantine["Quarantine failed rows<br/>not part of prepared DataFrame"]
+        BronzePassed["Bronze-passed DataFrame<br/>raw contract columns retained"]
+        BronzeGate --> BronzeStruct
+        BronzeStruct --> BronzeKey
+        BronzeKey --> BronzeSemantics
+        BronzeSemantics --> BronzePass
+        BronzePass -->|no| Quarantine
+        BronzePass -->|yes| BronzePassed
+    end
+
+    BronzePassed --> AdapterBranch{"adapter"}
+
+    subgraph EqAdapter["EquityOptionsAdapter schema additions"]
+        direction TB
+        EqAdjust["PIT-safe adjustment columns<br/>adjusted_price_provider<br/>price_adjustment_warning<br/>strike_raw, strike_adjusted_provider<br/>strike_adjustment_warning"]
+        EqModelCols["Model input aliases<br/>underlying_price, option_price<br/>S, F, price_std"]
+        EqAdjust --> EqModelCols
+    end
+
+    subgraph FutAdapter["FuturesOptionsAdapter schema additions"]
+        direction TB
+        FutRoll["Futures construction columns<br/>dte, is_roll_period, price_std<br/>term_structure_slope"]
+        FutModelCols["Underlying map and model input<br/>option_price, underlying_price, F"]
+        FutConditional["Conditional configured columns<br/>scheduled_event and event regime flags<br/>_underlying_map_flag and reason if map breaks occur"]
+        FutRoll --> FutModelCols
+        FutModelCols --> FutConditional
+    end
+
+    AdapterBranch -->|equity_options| EqAdjust
+    AdapterBranch -->|futures_options| FutRoll
+    EqModelCols --> SharedAdapter
+    FutConditional --> SharedAdapter
+
+    subgraph Shared["Shared OptionsBase additions"]
+        direction TB
+        SharedAdapter["Time series and expiry fields<br/>return_std, vol_std<br/>T, dte_days, r"]
+        IVCols["IV surface fields<br/>iv, iv_source_used<br/>iv_flag, iv_solved, iv_diff"]
+        GreekCols["Greek fields<br/>delta, gamma, vega, theta, rho"]
+        QualityCols["Option diagnostics<br/>vrp, vrp_sign, skew_25d<br/>_pcp_flag, pcp_pair_missing, pcp_duplicate_pair"]
+        SilverQuality["Silver quality flags<br/>_iv_quality_flag, _iv_quality_reason<br/>_delta_quality_flag, _delta_quality_reason<br/>_premium_quality_flag, _premium_quality_reason"]
+        UniverseEffect["Universe filters may drop rows<br/>DTE, premium, IV, delta band, spread<br/>drop reasons are summarized outside the frame"]
+        SharedAdapter --> IVCols
+        IVCols --> GreekCols
+        GreekCols --> QualityCols
+        QualityCols --> SilverQuality
+        SilverQuality --> UniverseEffect
+    end
+
+    UniverseEffect --> AdapterOut
+
+    subgraph AfterAdapter["After adapter: prepared schema"]
+        direction TB
+        AdapterOut["Prepared DataFrame"]
+        Retained["Retained contract columns<br/>identity, PIT, market, provider fields"]
+        Added["Added analytics columns<br/>pricing inputs, returns, vol, DTE, IV, Greeks,<br/>VRP, skew, PCP, quality flags"]
+        CoreCfg["core_cfg sidecar<br/>identity_cols, outlier_identity_cols<br/>price_col=price_std, return_col=return_std, vol_col=vol_std<br/>option_quality summary"]
+        AdapterOut --> Retained
+        AdapterOut --> Added
+        AdapterOut --> CoreCfg
+    end
+
+    AdapterOut --> Validators
+
+    subgraph ValidatorStage["After validators: final cleaned DataFrame schema"]
+        direction TB
+        Validators["Stage 1 validators"]
+        Bounds["logical_bounds_check adds<br/>_bound_flag, _bound_reason"]
+        Missing["missing_completeness adds<br/>_missing_flag, _missing_reason"]
+        Outlier["outlier_cap adds or updates<br/>_outlier_flag<br/>may cap price_std, not raw price"]
+        FinalDf["Final cleaned DataFrame<br/>prepared schema plus validator flags"]
+        Validators --> Bounds
+        Bounds --> Missing
+        Missing --> Outlier
+        Outlier --> FinalDf
+    end
+
+    FinalDf --> ArtifactBoundary
+
+    subgraph ExternalArtifacts["Schema-related artifacts outside the DataFrame"]
+        direction TB
+        ArtifactBoundary["External outputs"]
+        DiffLedger["CDC ledger and diff summary<br/>schema_add, row_drop, cell_mod, reason"]
+        BreakLedger["Break ledger<br/>contract, quality, and unattributed changes"]
+        Summary["summary.json<br/>option_quality.universe.drop_by_reason<br/>data_quality scorecard, manifest hashes"]
+        ArtifactBoundary --> DiffLedger
+        ArtifactBoundary --> BreakLedger
+        ArtifactBoundary --> Summary
+    end
+
+    classDef raw fill:#eef2ff,stroke:#4f46e5,stroke-width:1.2px,color:#111827;
+    classDef gate fill:#fff7ed,stroke:#c2410c,stroke-width:1.2px,color:#431407;
+    classDef add fill:#ecfdf5,stroke:#047857,stroke-width:1.2px,color:#052e16;
+    classDef final fill:#e0f2fe,stroke:#0369a1,stroke-width:1.4px,color:#082f49;
+    classDef risk fill:#fee2e2,stroke:#b91c1c,stroke-width:1.2px,color:#450a0a;
+    classDef artifact fill:#f8fafc,stroke:#475569,stroke-width:1.2px,color:#0f172a;
+
+    class EqBefore,EqMarket,EqOptional,FutBefore,FutContract,FutMarket raw;
+    class BronzeGate,BronzeStruct,BronzeKey,BronzeSemantics,BronzePass,AdapterBranch,Validators gate;
+    class EqAdjust,EqModelCols,FutRoll,FutModelCols,FutConditional,SharedAdapter,IVCols,GreekCols,QualityCols,SilverQuality,UniverseEffect,Retained,Added,CoreCfg,Bounds,Missing,Outlier add;
+    class AdapterOut,FinalDf final;
+    class Quarantine,BreakLedger risk;
+    class ArtifactBoundary,DiffLedger,Summary artifact;

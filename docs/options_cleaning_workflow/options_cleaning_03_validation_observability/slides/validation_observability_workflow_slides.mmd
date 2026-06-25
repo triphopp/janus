@@ -1,0 +1,41 @@
+flowchart LR
+    classDef gate fill:#fff8db,stroke:#b7791f,stroke-width:1.2px,color:#3d2b00;
+    classDef clean fill:#e9f7ef,stroke:#2f855a,stroke-width:1.2px,color:#123524;
+    classDef risk fill:#fdecea,stroke:#c53030,stroke-width:1.2px,color:#4a1111;
+    classDef artifact fill:#f1f5f9,stroke:#475569,stroke-width:1.2px,color:#0f172a;
+
+    Prepared["Prepared DataFrame + core_cfg"]:::artifact
+
+    subgraph Validation["Validators and run-level quality"]
+        direction TB
+        ReturnClip{"Return clip hook available?"}:::gate
+        ReturnPolicy["PIT-MAD return policy<br/>tag-only default; optional derived return"]:::clean
+        Validators["Stage 1 validators"]:::clean
+        Bounds["logical_bounds_check()<br/>bounds, IV, strike, bid/ask, intrinsic"]:::clean
+        Completeness["missing_completeness()<br/>duplicates, date gaps, OI or volume floors"]:::clean
+        OutlierCap["outlier_cap()<br/>PIT expanding MAD on price series where applicable"]:::clean
+        Scorecard["Data-quality scorecard<br/>return, price, bounds, missing, quarantine, coverage"]:::artifact
+        QualityDecision{"scorecard enforcement"}:::gate
+        DataBreak["Data-quality break<br/>recorded when fail-enforced"]:::risk
+        SilverClean["Silver-clean frame"]:::clean
+
+        Prepared --> ReturnClip
+        ReturnClip -->|yes| ReturnPolicy --> Validators
+        ReturnClip -->|no| Validators
+        Validators --> Bounds --> Completeness --> OutlierCap --> Scorecard --> QualityDecision
+        QualityDecision -->|fail| DataBreak
+        QualityDecision -->|pass or warn| SilverClean
+    end
+
+    subgraph Observability["CDC, break ledger, and reproducible outputs"]
+        direction TB
+        CDC["Stage-chain CDC diff<br/>ingestion -> adapter -> return_clip -> validators"]:::artifact
+        ChangeLedger["Change ledger JSONL<br/>schema_add, row_drop, cell_mod, reason"]:::artifact
+        BreakLedger["Break ledger<br/>UNATTRIBUTED or unexplained changes"]:::risk
+        Manifest["Run manifest<br/>code version, config hash, input/output hashes"]:::artifact
+        Outputs["Artifacts<br/>prepared data, summary, option_quality,<br/>diff summary, quarantine report"]:::artifact
+        FinalDataset["Validated prepared option dataset"]:::clean
+
+        SilverClean --> CDC --> ChangeLedger --> BreakLedger --> Manifest --> Outputs --> FinalDataset
+        DataBreak --> BreakLedger
+    end

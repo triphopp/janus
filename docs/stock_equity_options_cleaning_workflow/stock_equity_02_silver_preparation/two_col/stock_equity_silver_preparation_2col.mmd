@@ -1,0 +1,16 @@
+flowchart TB
+    classDef box fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef gate fill:#f7f7f7,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef note fill:#ffffff,stroke:#555555,stroke-width:1px,stroke-dasharray:4 3,color:#111111;
+
+    A["Bronze-ready frame"]:::box
+    B{"family"}:::gate
+    C["Stock preparation<br/>price policy, dividends,<br/>returns, vol, survivor flag"]:::box
+    D["Equity-option preparation<br/>PIT spot/strike + BSM inputs"]:::box
+    E["Option transforms<br/>DTE, IV, Greeks,<br/>PCP, VRP, filters"]:::box
+    F["Prepared stock DataFrame<br/>core_cfg"]:::note
+    G["Prepared option DataFrame<br/>core_cfg + option_quality"]:::note
+
+    A --> B
+    B -->|equity| C --> F
+    B -->|equity_options| D --> E --> G

@@ -1,0 +1,50 @@
+flowchart LR
+    classDef gate fill:#fff8db,stroke:#b7791f,stroke-width:1.2px,color:#3d2b00;
+    classDef clean fill:#e9f7ef,stroke:#2f855a,stroke-width:1.2px,color:#123524;
+    classDef risk fill:#fdecea,stroke:#c53030,stroke-width:1.2px,color:#4a1111;
+    classDef artifact fill:#f1f5f9,stroke:#475569,stroke-width:1.2px,color:#0f172a;
+
+    subgraph Input["Input and fixed-version guard"]
+        direction TB
+        Config["Instrument YAML<br/>normalize_config()"]:::artifact
+        Family{"family"}:::gate
+        FixedGuard["Fixed-input guard<br/>data_file_sha256 or immutable data_version"]:::gate
+        SourceChoice{"source mode"}:::gate
+        EquitySource["equity_options<br/>yfinance snapshot or vendor chain"]:::artifact
+        FuturesSource["futures_options<br/>settlement futures + option rows"]:::artifact
+        RawFrame["Raw provider/cache frame"]:::artifact
+
+        Config --> Family
+        Family --> FixedGuard --> SourceChoice
+        SourceChoice --> EquitySource
+        SourceChoice --> FuturesSource
+        EquitySource --> RawFrame
+        FuturesSource --> RawFrame
+    end
+
+    subgraph Bronze["Bronze contract and quarantine"]
+        direction TB
+        ContractPick{"Resolve contract"}:::gate
+        EqContract["equity_options.v1<br/>key: as_of_date, symbol, expiry, right, strike"]:::clean
+        SettleContract["settlement_options.v1<br/>key includes product_id, root, hub,<br/>type, right, strike, delivery_month, expiry"]:::clean
+        Structural["Structural checks<br/>required columns, dtype coercion, strike rounding"]:::clean
+        Semantic["Semantic checks<br/>price, strike, right, expiry not before as_of"]:::clean
+        PIT["PIT check<br/>available_at not before as_of_date"]:::clean
+        Symbology["Symbology checks<br/>product_id/root/hub orphan guard"]:::clean
+        Distributional["Frame-level checks<br/>null-rate; PSI waits for reference vintage"]:::clean
+        ContractDecision{"Rows pass contract?"}:::gate
+        Quarantine["Quarantine<br/>rows + reason counts + bronze summary"]:::risk
+        ContractPassed["Contract-passed rows"]:::clean
+        CoverageSLA["Coverage and freshness SLA<br/>expected days + max gap break"]:::gate
+        FamilySchema["Family schema guard<br/>reject non-option-chain inputs"]:::gate
+        BronzeReady["Bronze-ready frame<br/>handoff to silver adapters"]:::clean
+
+        RawFrame --> ContractPick
+        ContractPick --> EqContract
+        ContractPick --> SettleContract
+        EqContract --> Structural
+        SettleContract --> Structural
+        Structural --> Semantic --> PIT --> Symbology --> Distributional --> ContractDecision
+        ContractDecision -->|no| Quarantine
+        ContractDecision -->|yes| ContractPassed --> CoverageSLA --> FamilySchema --> BronzeReady
+    end

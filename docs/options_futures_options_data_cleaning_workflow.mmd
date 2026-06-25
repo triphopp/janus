@@ -1,0 +1,108 @@
+flowchart TD
+
+    Start([Start]) --> Config["Load instrument YAML and normalize_config()"]
+    Config --> Family{"family"}
+    Family --> EquityFamily["equity_options"]
+    Family --> FutOptFamily["futures_options"]
+
+    subgraph InputLayer["Input layer"]
+        direction TB
+        EquityFamily --> FixedGuard
+        FutOptFamily --> FixedGuard
+        FixedGuard["Fixed-input guard<br/>data_file_sha256 or immutable data_version"]
+        FixedGuard --> SourceChoice{"source mode"}
+        SourceChoice --> EquitySource["Provider/cache read<br/>yfinance option chain or vendor feed"]
+        SourceChoice --> FutSource["Provider/cache read<br/>settlement futures + option rows"]
+        EquitySource --> RawFrame["Raw provider frame"]
+        FutSource --> RawFrame
+    end
+
+    subgraph BronzeLayer["Bronze data contract and quarantine"]
+        direction TB
+        RawFrame --> ContractPick{"Resolve contract"}
+        ContractPick --> EqContract["equity_options.v1<br/>key: as_of_date, symbol, expiry, right, strike"]
+        ContractPick --> SettleContract["settlement_options.v1<br/>key: as_of_date, product_id, contract_root, hub,<br/>instrument_type, right, strike, delivery_month, expiry"]
+        EqContract --> Structural
+        SettleContract --> Structural
+        Structural["Structural checks<br/>required columns, dtypes, strike rounding, timestamps"]
+        Structural --> Semantic["Semantic checks<br/>price/strike/right, expiry >= as_of_date,<br/>underlying/future fields valid"]
+        Semantic --> PitGate["Point-in-time checks<br/>available_at must be knowable for as_of_date"]
+        PitGate --> Symbology["Symbology and orphan checks"]
+        Symbology --> Distributional["Distributional frame checks<br/>null-rate; PSI needs reference vintage"]
+        Distributional --> ContractDecision{"Rows pass contract?"}
+        ContractDecision -->|no| Quarantine["Quarantine rows<br/>reason counts + bronze report"]
+        ContractDecision -->|yes| ContractPassed["Contract-passed frame"]
+        ContractPassed --> CoverageSLA["Coverage and freshness SLA<br/>expected days + max gap break"]
+        CoverageSLA --> BronzePassed["Bronze-passed frame"]
+    end
+
+    subgraph AdapterLayer["Silver adapter cleaning and standardization"]
+        direction TB
+        BronzePassed --> FamilySchema["Family schema guard<br/>pipeline check + adapter option-chain schema"]
+        FamilySchema --> Normalize["Normalize option columns<br/>dates, numeric fields, right = C/P, option mask"]
+        Normalize --> AdapterBranch{"Adapter"}
+
+        AdapterBranch --> EqAdapter["EquityOptionsAdapter"]
+        EqAdapter --> EqUnderlying["PIT-safe underlying and strike handling<br/>raw_close vs provider adjusted values"]
+        EqUnderlying --> EqModel["BS-Merton inputs<br/>S, F compatibility, option_price, price_std"]
+
+        AdapterBranch --> FutAdapter["FuturesOptionsAdapter"]
+        FutAdapter --> FutContinuous["Build continuous futures<br/>roll, scheduled events, term structure"]
+        FutContinuous --> FutUnderlying["Attach underlying future to option rows<br/>drop or flag missing underlying map"]
+        FutUnderlying --> FutModel["Black-76 inputs<br/>F, option_price, price_std"]
+
+        EqModel --> SharedOptions
+        FutModel --> SharedOptions
+        SharedOptions["Shared OptionsBase transforms"]
+        SharedOptions --> ReturnsVol["Compute underlying returns and vol_std"]
+        ReturnsVol --> DTE["Compute DTE / T using configured day-count"]
+        DTE --> UniverseEarly["Universe filters before pricing<br/>DTE, premium, spread"]
+        UniverseEarly --> IVSurface["Build IV surface<br/>provided IV or solved IV"]
+        IVSurface --> MaxIVFilter["Max-IV universe filter<br/>provided or solved IV"]
+        MaxIVFilter --> Greeks["Compute Greeks<br/>delta, gamma, vega, theta, rho"]
+        Greeks --> DeltaFilter["Delta-band universe filter<br/>provided or computed delta"]
+        DeltaFilter --> OptionDiagnostics["Option diagnostics<br/>VRP sign, skew_25d, PCP pair flags"]
+        OptionDiagnostics --> UniverseNote["Count drop_by_reason<br/>research universe choice, not bad-data quarantine"]
+        UniverseNote --> SilverFlags["Silver option-quality flags<br/>IV, delta sign/range, premium below intrinsic"]
+        SilverFlags --> Prepared["Prepared DataFrame + core_cfg<br/>identity_cols and option_quality summary"]
+    end
+
+    subgraph ValidationLayer["Validators and run-level data quality"]
+        direction TB
+        Prepared --> ReturnClip{"Return clip hook available?"}
+        ReturnClip -->|yes| ReturnPolicy["PIT-MAD return policy<br/>tag-only by default; optional derived winsorized return"]
+        ReturnClip -->|no| Validators
+        ReturnPolicy --> Validators["Stage 1 validators"]
+        Validators --> Bounds["logical_bounds_check()<br/>_bound_flag and _bound_reason"]
+        Bounds --> Completeness["missing_completeness()<br/>_missing_flag and _missing_reason"]
+        Completeness --> OutlierCap["outlier_cap()<br/>price-series cap where policy allows; option premiums stay flagged"]
+        OutlierCap --> Scorecard["Data-quality scorecard<br/>return, price, bounds, missing, quarantine, coverage"]
+        Scorecard --> QualityDecision{"Scorecard enforcement"}
+        QualityDecision -->|fail| DataBreak["Open/record data-quality break"]
+        QualityDecision -->|pass or warn| SilverPassed["Silver-clean frame"]
+    end
+
+    subgraph ObservabilityLayer["CDC, breaks, and reproducible outputs"]
+        direction TB
+        SilverPassed --> CDC["Stage-chain CDC diff<br/>ingestion -> adapter -> return_clip -> validators"]
+        CDC --> Ledger["Change ledger JSONL<br/>schema_add, row_drop, cell_mod, reason"]
+        Ledger --> BreakLedger["Break ledger<br/>UNATTRIBUTED or out-of-tolerance changes"]
+        BreakLedger --> Manifest["Run manifest<br/>code version, config hash, input hashes"]
+        Manifest --> Artifacts["Artifacts<br/>prepared parquet/csv, summary.json,<br/>option_quality, diff summary, quarantine report"]
+        Artifacts --> FinalDataset([Validated prepared option dataset])
+    end
+
+    Quarantine --> BreakLedger
+    DataBreak --> BreakLedger
+
+    classDef startEnd fill:#e8f3ff,stroke:#2b6cb0,stroke-width:1.5px,color:#102a43;
+    classDef gate fill:#fff8db,stroke:#b7791f,stroke-width:1.2px,color:#3d2b00;
+    classDef clean fill:#e9f7ef,stroke:#2f855a,stroke-width:1.2px,color:#123524;
+    classDef risk fill:#fdecea,stroke:#c53030,stroke-width:1.2px,color:#4a1111;
+    classDef artifact fill:#f1f5f9,stroke:#475569,stroke-width:1.2px,color:#0f172a;
+
+    class Start,FinalDataset startEnd;
+    class FixedGuard,SourceChoice,ContractPick,ContractDecision,AdapterBranch,ReturnClip,QualityDecision gate;
+    class Distributional,ContractPassed,CoverageSLA,FamilySchema,Normalize,SharedOptions,ReturnsVol,DTE,UniverseEarly,IVSurface,MaxIVFilter,Greeks,DeltaFilter,OptionDiagnostics,UniverseNote,SilverFlags,Prepared,Validators,Scorecard,SilverPassed clean;
+    class Quarantine,DataBreak,BreakLedger risk;
+    class Ledger,Manifest,Artifacts artifact;

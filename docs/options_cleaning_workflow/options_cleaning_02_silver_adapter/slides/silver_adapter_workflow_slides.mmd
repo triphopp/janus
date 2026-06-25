@@ -1,0 +1,53 @@
+flowchart LR
+    classDef gate fill:#fff8db,stroke:#b7791f,stroke-width:1.2px,color:#3d2b00;
+    classDef clean fill:#e9f7ef,stroke:#2f855a,stroke-width:1.2px,color:#123524;
+    classDef artifact fill:#f1f5f9,stroke:#475569,stroke-width:1.2px,color:#0f172a;
+
+    BronzeReady["Bronze-ready option frame"]:::artifact
+
+    subgraph Entry["Adapter entry guards"]
+        direction TB
+        FamilySchema["Family schema guard<br/>pipeline check + adapter chain schema"]:::gate
+        Normalize["Normalize option columns<br/>dates, numbers, right = C/P, option mask"]:::clean
+        AdapterBranch{"Adapter"}:::gate
+        BronzeReady --> FamilySchema --> Normalize --> AdapterBranch
+    end
+
+    subgraph EquityPath["Equity options path"]
+        direction TB
+        EqAdapter["EquityOptionsAdapter"]:::clean
+        EqUnderlying["PIT-safe underlying and strike handling<br/>raw_close vs provider adjusted values"]:::clean
+        EqModel["BS-Merton inputs<br/>S, F compatibility, option_price, price_std"]:::clean
+        EqAdapter --> EqUnderlying --> EqModel
+    end
+
+    subgraph FuturesPath["Futures options path"]
+        direction TB
+        FutAdapter["FuturesOptionsAdapter"]:::clean
+        FutContinuous["Continuous futures and events<br/>roll, term structure, scheduled event flags"]:::clean
+        FutUnderlying["Attach underlying future rows<br/>drop or flag missing mapping"]:::clean
+        FutModel["Black-76 inputs<br/>F, option_price, price_std"]:::clean
+        FutAdapter --> FutContinuous --> FutUnderlying --> FutModel
+    end
+
+    subgraph Shared["Shared OptionsBase transforms"]
+        direction TB
+        ReturnsVol["Underlying return + vol_std"]:::clean
+        DTE["DTE / T<br/>configured day-count"]:::clean
+        EarlyUniverse["Universe filters before pricing<br/>DTE, premium, relative spread"]:::clean
+        IVSurface["IV surface<br/>provided IV or solved IV"]:::clean
+        MaxIV["Max-IV filter<br/>provided or solved IV"]:::clean
+        Greeks["Greeks<br/>delta, gamma, vega, theta, rho"]:::clean
+        DeltaBand["Delta-band filter<br/>provided or computed delta"]:::clean
+        Diagnostics["Diagnostics<br/>VRP sign, skew_25d, PCP pair flags"]:::clean
+        DropReasons["drop_by_reason summary<br/>research universe, not quarantine"]:::artifact
+        SilverFlags["Silver quality flags<br/>IV, delta, premium intrinsic"]:::clean
+        Prepared["Prepared DataFrame + core_cfg<br/>identity_cols + option_quality"]:::artifact
+
+        ReturnsVol --> DTE --> EarlyUniverse --> IVSurface --> MaxIV --> Greeks --> DeltaBand --> Diagnostics --> DropReasons --> SilverFlags --> Prepared
+    end
+
+    AdapterBranch --> EqAdapter
+    AdapterBranch --> FutAdapter
+    EqModel --> ReturnsVol
+    FutModel --> ReturnsVol

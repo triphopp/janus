@@ -1,0 +1,26 @@
+flowchart TB
+    classDef box fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef gate fill:#f7f7f7,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef risk fill:#ffffff,stroke:#aa0000,stroke-width:1.2px,color:#111111;
+    classDef note fill:#ffffff,stroke:#555555,stroke-width:1px,stroke-dasharray:4 3,color:#111111;
+
+    A["Prepared DataFrame<br/>core_cfg"]:::box
+    B{"return clip hook?"}:::gate
+    C["PIT-MAD policy<br/>tag-only default"]:::box
+    D["Stage 1 validators<br/>bounds, missing, outlier"]:::box
+    E["DQ scorecard<br/>return, price, bounds,<br/>missing, quarantine, coverage"]:::note
+    F{"enforce"}:::gate
+    X["data-quality break"]:::risk
+    G["Silver-clean frame"]:::box
+    H["CDC stage chain<br/>ingestion to validators"]:::box
+    I["Change ledger<br/>reason-coded JSONL"]:::note
+    J["Break ledger<br/>unattributed changes"]:::risk
+    K["Manifest + artifacts<br/>prepared data, summary,<br/>option_quality, diff"]:::box
+    L["Validated prepared dataset"]:::box
+
+    A --> B
+    B -->|yes| C --> D
+    B -->|no| D
+    D --> E --> F
+    F -->|fail| X --> J
+    F -->|pass/warn| G --> H --> I --> J --> K --> L
