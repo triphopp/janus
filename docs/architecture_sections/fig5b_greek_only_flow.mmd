@@ -1,0 +1,27 @@
+sequenceDiagram
+    %% Greek-only execution sequence. This path computes Greeks without running
+    %% splitter, metrics, or reporting stages.
+
+    participant User
+    participant Runner as Greek-only runner
+    participant Loader as Input loader
+    participant Normalizer as Column normalizer
+    participant Resolver as IV/T/r resolver
+    participant Engine as core.greeks.batch_greeks
+    participant Writer as Output writer
+
+    User->>Runner: Request Greek-only computation
+    Runner->>Loader: Load prepared rows or raw chain + config
+    Loader-->>Runner: Option rows
+    Runner->>Normalizer: Normalize names and dtypes
+    Normalizer-->>Runner: Canonical option rows
+    Runner->>Resolver: Resolve model inputs
+    Resolver->>Resolver: Compute T if expiry/as_of_date provided
+    Resolver->>Resolver: Select IV source or existing iv
+    Resolver->>Resolver: Select r, q, model, backend
+    Resolver-->>Runner: Greek input contract + invalid-row reasons
+    Runner->>Engine: batch_greeks(valid rows only)
+    Engine-->>Runner: Computed Greeks for valid rows
+    Runner->>Runner: Recombine with invalid-row NaNs
+    Runner->>Writer: Write row-aligned Greek outputs and quality summary
+    Writer-->>User: greeks.csv/parquet + summary

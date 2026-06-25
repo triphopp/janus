@@ -1,0 +1,41 @@
+flowchart LR
+    classDef gate fill:#fff8db,stroke:#b7791f,stroke-width:1.2px,color:#3d2b00;
+    classDef clean fill:#e9f7ef,stroke:#2f855a,stroke-width:1.2px,color:#123524;
+    classDef risk fill:#fdecea,stroke:#c53030,stroke-width:1.2px,color:#4a1111;
+    classDef artifact fill:#f1f5f9,stroke:#475569,stroke-width:1.2px,color:#0f172a;
+
+    Config["Instrument YAML<br/>normalize_config()"]:::artifact
+    Family{"family"}:::gate
+    FixedGuard["Fixed-input guard<br/>sha256 or immutable data_version"]:::gate
+    EquitySource["Stock source<br/>yfinance price bars or cache"]:::artifact
+    OptionSource["Equity-option source<br/>yfinance snapshot or vendor chain"]:::artifact
+    RawFrame["Raw equity/equity-option frame"]:::artifact
+
+    Config --> Family --> FixedGuard
+    FixedGuard --> EquitySource
+    FixedGuard --> OptionSource
+    EquitySource --> RawFrame
+    OptionSource --> RawFrame
+
+    subgraph Bronze["Bronze contracts and gates"]
+        direction TB
+        Resolve{"Resolve contract"}:::gate
+        EqContract["equity_price.v1<br/>key: as_of_date, symbol"]:::clean
+        OptContract["equity_options.v1<br/>key: as_of_date, symbol, expiry, right, strike"]:::clean
+        Checks["Structural + semantic + PIT checks<br/>price, volume, expiry, right, strike, available_at"]:::clean
+        Distributional["Frame checks<br/>null-rate; reference-vintage checks later"]:::clean
+        Decision{"Rows pass contract?"}:::gate
+        Quarantine["Quarantine<br/>rows + reason counts"]:::risk
+        Coverage["Coverage SLA<br/>expected trading days + max gap"]:::gate
+        FamilySchema["Family schema guard<br/>stock price shape or option-chain shape"]:::gate
+        BronzeReady["Bronze-ready stock/equity-option frame"]:::clean
+
+        RawFrame --> Resolve
+        Resolve --> EqContract
+        Resolve --> OptContract
+        EqContract --> Checks
+        OptContract --> Checks
+        Checks --> Distributional --> Decision
+        Decision -->|no| Quarantine
+        Decision -->|yes| Coverage --> FamilySchema --> BronzeReady
+    end

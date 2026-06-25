@@ -1,0 +1,42 @@
+flowchart LR
+    classDef gate fill:#fff8db,stroke:#b7791f,stroke-width:1.2px,color:#3d2b00;
+    classDef clean fill:#e9f7ef,stroke:#2f855a,stroke-width:1.2px,color:#123524;
+    classDef risk fill:#fdecea,stroke:#c53030,stroke-width:1.2px,color:#4a1111;
+    classDef artifact fill:#f1f5f9,stroke:#475569,stroke-width:1.2px,color:#0f172a;
+
+    Prepared["Prepared stock or equity-option DataFrame + core_cfg"]:::artifact
+
+    subgraph Validation["Validation and data-quality enforcement"]
+        direction TB
+        ReturnHook{"Return clip hook?"}:::gate
+        ReturnPolicy["Stock PIT-MAD return policy<br/>tag-only default; optional derived return"]:::clean
+        CrossProvider["Optional cross-provider validation<br/>confirm genuine stock return events"]:::clean
+        Validators["Stage 1 validators"]:::clean
+        Bounds["Logical value checks<br/>price, premium, intrinsic, IV, strike, bid/ask"]:::clean
+        Completeness["Completeness checks<br/>duplicate identity-date, date_gap, liquidity floors"]:::clean
+        Outlier["PIT outlier treatment<br/>price-series cap where applicable"]:::clean
+        Scorecard["Data-quality scorecard<br/>return, price, bounds, missing, quarantine, coverage"]:::artifact
+        Decision{"scorecard enforcement"}:::gate
+        DataBreak["Data-quality break"]:::risk
+        CleanFrame["Validated prepared frame"]:::clean
+
+        Prepared --> ReturnHook
+        ReturnHook -->|stock equity| ReturnPolicy --> CrossProvider --> Validators
+        ReturnHook -->|equity_options or disabled| Validators
+        Validators --> Bounds --> Completeness --> Outlier --> Scorecard --> Decision
+        Decision -->|fail| DataBreak
+        Decision -->|pass or warn| CleanFrame
+    end
+
+    subgraph Observability["CDC and reproducible artifacts"]
+        direction TB
+        CDC["Stage-chain CDC<br/>ingestion -> adapter -> return_clip -> validators"]:::artifact
+        Ledger["Change ledger JSONL<br/>schema, row, cell changes"]:::artifact
+        BreakLedger["Break ledger<br/>unattributed or unexplained changes"]:::risk
+        Manifest["Run manifest<br/>code, config, input/output hashes"]:::artifact
+        Outputs["Artifacts<br/>prepared data, summary, option_quality when applicable, diff"]:::artifact
+        Final["Validated prepared dataset"]:::clean
+
+        CleanFrame --> CDC --> Ledger --> BreakLedger --> Manifest --> Outputs --> Final
+        DataBreak --> BreakLedger
+    end

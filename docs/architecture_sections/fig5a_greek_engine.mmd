@@ -1,0 +1,41 @@
+flowchart LR
+    %% Shared Greek engine view aligned with feature/greek-pricing-engine-beta.
+    %% Both full-pipeline and Greek-only callers should enter through this boundary.
+
+    OptionRows["Option rows"] --> Resolver["Column resolver"]
+    Resolver --> Model["model: black76 / bsm"]
+    Resolver --> Inputs["S_or_F, K, T, r, sigma, right, q"]
+    Inputs --> Contract{"Row input valid?"}
+    Contract -->|"valid rows only"| Backend{"Backend"}
+    Contract -->|"invalid rows bypass compute"| InvalidRows["Assign NaN Greeks"]
+
+    Backend -->|"numpy"| Numpy["batch_greeks() numpy"]
+    Backend -->|"loop"| Loop["single_leg_greeks() loop"]
+    Backend -->|"auto"| Auto["auto: numpy or cuda"]
+    Backend -->|"cuda"| Cuda["batch_greeks() cuda"]
+
+    Numpy --> ComputedGreeks["Computed Greek values"]
+    Loop --> ComputedGreeks
+    Auto --> ComputedGreeks
+    Cuda --> ComputedGreeks
+    ComputedGreeks --> ValidOutput["valid rows: delta, gamma, vega, theta, rho"]
+    InvalidRows --> InvalidOutput["invalid rows: Greek columns remain NaN"]
+
+    ValidOutput --> AlignedOutput["Final row-aligned output"]
+    InvalidOutput --> AlignedOutput
+    AlignedOutput --> Consumer{"Consumer"}
+    Consumer -->|"Full pipeline"| Pipeline["adapter prepared DataFrame"]
+    Consumer -->|"Greek-only"| GreekFile["greeks CSV/Parquet"]
+
+    Model -.-> FormulaNote["Single source of truth: core.greeks"]
+    Backend -.-> BackendNote["Config: greeks_backend, greeks_batch_size, greeks_dtype"]
+
+    classDef input fill:#f4f7fb,stroke:#5a6f8f,color:#18212f;
+    classDef engine fill:#f7f1df,stroke:#9b7a25,color:#2d2614;
+    classDef output fill:#edf7ee,stroke:#5e8b61,color:#18361d;
+    classDef note fill:#fff,stroke:#999,stroke-dasharray:4 3,color:#333;
+
+    class OptionRows,Resolver,Model,Inputs,Contract input;
+    class Backend,Numpy,Loop,Auto,Cuda engine;
+    class InvalidRows,ComputedGreeks,ValidOutput,InvalidOutput,AlignedOutput,Consumer,Pipeline,GreekFile output;
+    class FormulaNote,BackendNote note;

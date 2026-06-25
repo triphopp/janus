@@ -79,7 +79,7 @@ def single_leg_greeks(
         if right == "C":
             delta = disc * Phi(d1)
             theta = (
-                -F * phi_d1 * sigma / (2 * sqrt_T)
+                -disc * F * phi_d1 * sigma / (2 * sqrt_T)
                 - r * K * disc * Phi(d2)
                 + r * F * disc * Phi(d1)
             )
@@ -87,7 +87,7 @@ def single_leg_greeks(
         else:
             delta = -disc * Phi(-d1)
             theta = (
-                -F * phi_d1 * sigma / (2 * sqrt_T)
+                -disc * F * phi_d1 * sigma / (2 * sqrt_T)
                 + r * K * disc * Phi(-d2)
                 - r * F * disc * Phi(-d1)
             )
@@ -220,8 +220,8 @@ def _batch_greeks_numpy(
         delta = np.where(cv, disc * Phi_d1, -disc * Phi_nd1)
         gamma = disc * phi_d1 / (Sv * sv * sqrt_T)
         vega = disc * Sv * phi_d1 * sqrt_T
-        theta_c = -Sv * phi_d1 * sv / (2 * sqrt_T) - rv * Kv * disc * Phi_d2 + rv * Sv * disc * Phi_d1
-        theta_p = -Sv * phi_d1 * sv / (2 * sqrt_T) + rv * Kv * disc * Phi_nd2 - rv * Sv * disc * Phi_nd1
+        theta_c = -disc * Sv * phi_d1 * sv / (2 * sqrt_T) - rv * Kv * disc * Phi_d2 + rv * Sv * disc * Phi_d1
+        theta_p = -disc * Sv * phi_d1 * sv / (2 * sqrt_T) + rv * Kv * disc * Phi_nd2 - rv * Sv * disc * Phi_nd1
         theta = np.where(cv, theta_c, theta_p)
         rho_c = -Tv * disc * (Sv * Phi_d1 - Kv * Phi_d2)
         rho_p = -Tv * disc * (Kv * Phi_nd2 - Sv * Phi_nd1)
@@ -364,8 +364,8 @@ def _batch_greeks_cuda(
         delta = cp.where(cv, disc * Phi_d1, -disc * Phi_nd1)
         gamma = disc * phi_d1 / (Sv * sv * sqrt_T)
         vega = disc * Sv * phi_d1 * sqrt_T
-        theta_c = -Sv * phi_d1 * sv / (2 * sqrt_T) - rv * Kv * disc * Phi_d2 + rv * Sv * disc * Phi_d1
-        theta_p = -Sv * phi_d1 * sv / (2 * sqrt_T) + rv * Kv * disc * Phi_nd2 - rv * Sv * disc * Phi_nd1
+        theta_c = -disc * Sv * phi_d1 * sv / (2 * sqrt_T) - rv * Kv * disc * Phi_d2 + rv * Sv * disc * Phi_d1
+        theta_p = -disc * Sv * phi_d1 * sv / (2 * sqrt_T) + rv * Kv * disc * Phi_nd2 - rv * Sv * disc * Phi_nd1
         theta = cp.where(cv, theta_c, theta_p)
         rho_c = -Tv * disc * (Sv * Phi_d1 - Kv * Phi_d2)
         rho_p = -Tv * disc * (Kv * Phi_nd2 - Sv * Phi_nd1)
@@ -588,17 +588,19 @@ def bump_greeks(
     p_vdn = price_fn(model, S_or_F, K, T, r, sigma - bump_v, right, q)
     vega = (p_vup - p_vdn) / (2 * bump_v)
 
-    # Theta: bump time
+    # Theta: finance convention is calendar-time decay, i.e. -dV/dT.
     bump_t = 1.0 / 365.0  # 1 day
     if T > bump_t:
-        p_t = price_fn(model, S_or_F, K, T - bump_t, r, sigma, right, q)
-        theta = -(p_t - p0) / bump_t  # negative = decay
+        p_tup = price_fn(model, S_or_F, K, T + bump_t, r, sigma, right, q)
+        p_tdn = price_fn(model, S_or_F, K, T - bump_t, r, sigma, right, q)
+        theta = -(p_tup - p_tdn) / (2 * bump_t)
     else:
         theta = 0.0
 
     # Rho: bump rate
     bump_r = 1e-4  # 1 bp
     p_rup = price_fn(model, S_or_F, K, T, r + bump_r, sigma, right, q)
-    rho = (p_rup - p0) / bump_r
+    p_rdn = price_fn(model, S_or_F, K, T, r - bump_r, sigma, right, q)
+    rho = (p_rup - p_rdn) / (2 * bump_r)
 
     return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho}

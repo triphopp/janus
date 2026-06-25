@@ -1,0 +1,38 @@
+flowchart LR
+    classDef gate fill:#fff8db,stroke:#b7791f,stroke-width:1.2px,color:#3d2b00;
+    classDef clean fill:#e9f7ef,stroke:#2f855a,stroke-width:1.2px,color:#123524;
+    classDef artifact fill:#f1f5f9,stroke:#475569,stroke-width:1.2px,color:#0f172a;
+
+    BronzeReady["Bronze-ready frame"]:::artifact
+    Branch{"family"}:::gate
+    BronzeReady --> Branch
+
+    subgraph Stock["Stock price preparation"]
+        direction TB
+        EquityPrep["Stock price preparation<br/>EquityAdapter"]:::clean
+        PricePolicy["Provider adjustment policy<br/>raw_close, adj_factor, split_factor, dividend"]:::clean
+        Returns["Total return + volatility<br/>return_raw, return_std, vol_std"]:::clean
+        Survivor["Survivorship visibility<br/>is_delisted -> survivor_flag"]:::clean
+        StockPrepared["Prepared stock DataFrame + core_cfg"]:::artifact
+        EquityPrep --> PricePolicy --> Returns --> Survivor --> StockPrepared
+    end
+
+    subgraph Options["Equity-option preparation"]
+        direction TB
+        OptionPrep["Equity-option preparation<br/>EquityOptionsAdapter"]:::clean
+        Normalize["Normalize chain columns<br/>dates, numbers, right = C/P"]:::clean
+        Underlying["PIT-safe underlying and strike handling<br/>raw_close vs provider adjustment"]:::clean
+        BSM["BS-Merton inputs<br/>S, F compatibility, option_price, price_std"]:::clean
+        DTE["DTE / T<br/>configured day-count"]:::clean
+        UniverseEarly["Universe filters<br/>DTE, premium, spread"]:::clean
+        IV["IV selection/solve<br/>provided IV or solved IV"]:::clean
+        MaxIV["IV universe cap<br/>max_iv or missing/unsolved IV"]:::clean
+        Greeks["Greeks<br/>delta, gamma, vega, theta, rho"]:::clean
+        Diagnostics["Diagnostics<br/>VRP sign, PCP flags, skew_25d placeholder"]:::clean
+        OptionFlags["Silver quality flags<br/>IV, delta, premium intrinsic"]:::clean
+        OptionPrepared["Prepared equity-option DataFrame + core_cfg"]:::artifact
+        OptionPrep --> Normalize --> Underlying --> BSM --> DTE --> UniverseEarly --> IV --> MaxIV --> Greeks --> Diagnostics --> OptionFlags --> OptionPrepared
+    end
+
+    Branch -->|equity| EquityPrep
+    Branch -->|equity_options| OptionPrep

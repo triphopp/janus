@@ -1,0 +1,21 @@
+flowchart TB
+    classDef box fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef gate fill:#f7f7f7,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef note fill:#ffffff,stroke:#555555,stroke-width:1px,stroke-dasharray:4 3,color:#111111;
+
+    A["Bronze-ready frame"]:::box
+    B["Schema + normalize<br/>option-chain columns"]:::gate
+    C{"adapter"}:::gate
+    D["Equity options<br/>PIT spot/strike + BSM inputs"]:::box
+    E["Futures options<br/>continuous future + Black-76 inputs"]:::box
+    F["Shared OptionsBase<br/>returns, vol, DTE"]:::box
+    G["Universe filters<br/>DTE, premium, spread, IV, delta"]:::box
+    H["IV + Greeks<br/>provided or solved IV"]:::box
+    I["Diagnostics<br/>VRP, skew_25d, PCP"]:::box
+    J["Quality summary<br/>flags + drop_by_reason"]:::note
+    K["Prepared DataFrame<br/>core_cfg"]:::box
+
+    A --> B --> C
+    C --> D --> F
+    C --> E --> F
+    F --> G --> H --> I --> J --> K

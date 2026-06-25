@@ -1,0 +1,24 @@
+flowchart TB
+    classDef box fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef gate fill:#f7f7f7,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef risk fill:#ffffff,stroke:#aa0000,stroke-width:1.2px,color:#111111;
+    classDef note fill:#ffffff,stroke:#555555,stroke-width:1px,stroke-dasharray:4 3,color:#111111;
+
+    A["Prepared frame<br/>stock or equity option"]:::box
+    B{"return clip hook?"}:::gate
+    C["Stock PIT-MAD policy<br/>optional provider check"]:::box
+    D["Validators<br/>bounds, missing, outlier"]:::box
+    E["DQ scorecard<br/>return, price, bounds,<br/>missing, quarantine, coverage"]:::note
+    F{"enforce"}:::gate
+    X["data-quality break"]:::risk
+    G["Validated prepared frame"]:::box
+    H["CDC + ledgers<br/>change and break records"]:::box
+    I["Manifest + artifacts<br/>prepared data, summary, diff"]:::note
+    J["Validated prepared dataset"]:::box
+
+    A --> B
+    B -->|yes| C --> D
+    B -->|no| D
+    D --> E --> F
+    F -->|fail| X --> H
+    F -->|pass/warn| G --> H --> I --> J
