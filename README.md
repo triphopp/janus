@@ -60,76 +60,78 @@ Recent additions include:
 ## Pipeline Shape
 
 ```mermaid
-stateDiagram-v2
-    direction TB
+flowchart LR
+    %% Janus compact high-level architecture for one-slide placement.
+    %% Source of truth: docs/architecture/high_level_architecture.mmd
 
-    [*] --> Config : load_config()
-    Config --> Provider : get_provider(cfg)
-    Provider --> RawData : provider.fetch()
-    RawData --> AuditIngestion : audit.snapshot("ingestion")
+    classDef lane fill:#ffffff,stroke:#777777,stroke-width:1px,color:#111111;
+    classDef input fill:#f8f2df,stroke:#9b7a25,stroke-width:1px,color:#2d2614;
+    classDef data fill:#f2f2f2,stroke:#555555,stroke-width:1px,color:#111111;
+    classDef proc fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef gate fill:#fff4ed,stroke:#b65f2a,stroke-width:1px,color:#3b1f0e;
+    classDef out fill:#f6f0ff,stroke:#7556a8,stroke-width:1px,color:#28183f;
+    classDef side fill:#ffffff,stroke:#777777,stroke-width:1px,stroke-dasharray:4 3,color:#333333;
 
-    AuditIngestion --> Adapter : get_adapter(cfg)
-    Adapter --> PreparedData : adapter.prepare(raw_df)
-    PreparedData --> AuditAdapter : audit.snapshot("adapter")
-    AuditAdapter --> SchemaGuard : _assert_family_schema()
-
-    SchemaGuard --> Stage1
-    state "Stage 1: Validators" as Stage1 {
+    subgraph C["1. Control Inputs"]
         direction TB
-        [*] --> Bounds : logical_bounds_check()
-        Bounds --> Completeness : missing_completeness()
-        Completeness --> Outliers : outlier_cap()
-        Outliers --> [*]
-    }
+        C1["Instrument file<br/>(YAML)"]:::input
+        C2["Family defaults"]:::input
+        C3["Data rules<br/>(contracts)"]:::input
+        C4["Run mode<br/>full / Greeks"]:::input
+        C1 --> C2 --> C3 --> C4
+    end
 
-    Stage1 --> DataQuality : build_scorecard()
-    DataQuality --> AuditValidators : audit.snapshot("validators")
-    AuditValidators --> WalkForward : walk_forward_split()
-    WalkForward --> PurgedFolds : purge_embargo(label_end_col, event_embargo_bars)
-
-    note right of PurgedFolds
-        Purging removes train rows whose labels
-        overlap validation. Embargo adds a gap
-        before each validation window.
-        PSI and metrics use these same folds.
-    end note
-
-    PurgedFolds --> Stage2 : if return_col exists
-    PurgedFolds --> RegimeLabels : otherwise
-    state "Stage 2: Stability Diagnostics" as Stage2 {
+    subgraph P["2. Data Preparation"]
         direction TB
-        [*] --> ReturnSeries : date-grain return series
-        ReturnSeries --> Stationarity : ADF + KPSS
-        Stationarity --> Volatility : ARCH-LM
-        Volatility --> Distribution : JB + Hurst + VR + Ljung-Box
-        Distribution --> Shift : fold PSI / KS / Wasserstein
-        Shift --> [*]
-    }
+        P1["Source data<br/>providers / files"]:::data
+        P2["Pinned version<br/>+ known-at time (PIT)"]:::data
+        P3{"Bronze gate<br/>schema / PIT / SLA"}:::gate
+        P4["Asset prep<br/>(adapter)"]:::proc
+        P5["Prepared frame"]:::data
+        P6["Quarantine<br/>failed rows + reasons"]:::out
+        P1 --> P2 --> P3
+        P3 -->|pass| P4 --> P5
+        P3 -->|fail| P6
+    end
 
-    Stage2 --> RegimeLabels : assign_regime_labels()
-    RegimeLabels --> DiversityGate : regime_diversity_gate(folds, labels)
-    DiversityGate --> AuditSplitter : audit.snapshot("splitter")
-
-    AuditSplitter --> Stage4
-    state "Stage 4: Metrics and Overfitting" as Stage4 {
+    subgraph V["3. Core Validation Pipeline"]
         direction TB
-        [*] --> AllFoldReturns : validation returns from all purged folds
-        AllFoldReturns --> DiversityAnnotations : attach diversity_pass
-        DiversityAnnotations --> FoldMetrics : per_fold_breakdown()
-        FoldMetrics --> RegimeMetrics : per_regime_breakdown()
-        RegimeMetrics --> StabilityScore : stability_score()
-        StabilityScore --> PassedScore : passed_stability_score()
-        PassedScore --> DSR : deflated_sharpe_ratio()
-        DSR --> [*]
-    }
+        V1["Check values<br/>(validators)"]:::proc
+        V2["Quality score<br/>(DQ)"]:::proc
+        V3["Compare changes<br/>(CDC)"]:::proc
+        V4["Issue log<br/>(break ledger)"]:::proc
+        V5["Time split<br/>+ no overlap"]:::proc
+        V6["Stability<br/>+ metrics"]:::proc
+        V7["Greek engine<br/>(batch_greeks)"]:::side
+        V1 --> V2 --> V3 --> V4 --> V5 --> V6
+    end
 
-    Stage4 --> AuditMetrics : audit.snapshot("metrics")
-    AuditMetrics --> Artifacts : reports, manifests, dashboard files
-    Artifacts --> [*]
+    subgraph O["4. Durable Outputs"]
+        direction TB
+        O1["Run package<br/>summary / report / tables"]:::out
+        O2["Review package<br/>diffs / issues / manifest / lineage"]:::out
+        O3["Dashboard<br/>inspect + investigate"]:::out
+        O1 --> O3
+        O2 --> O3
+    end
+
+    C4 --> P1
+    P5 --> V1
+    V6 --> O1
+    V3 --> O2
+    V4 --> O2
+    V6 --> O2
+
+    C4 -. Greeks only .-> V7
+    P4 -. option prep .-> V7
+    V7 -. Greeks .-> O1
+
+    class C,P,V,O lane
 ```
 
-The full diagram source and paper-friendly section diagrams live in
-`docs/architecture/pipeline_execution.mmd` and `docs/architecture/sections/`.
+The README diagram follows `docs/architecture/high_level_architecture.mmd`, which
+is the source of truth for the high-level pipeline shape. More detailed execution
+and paper-friendly section diagrams live in `docs/architecture/`.
 
 ## Install
 
