@@ -129,7 +129,7 @@ stateDiagram-v2
 ```
 
 The full diagram source and paper-friendly section diagrams live in
-`docs/architecture_diagram.mmd` and `docs/architecture_sections/`.
+`docs/architecture/pipeline_execution.mmd` and `docs/architecture/sections/`.
 
 ## Install
 
@@ -263,7 +263,7 @@ Greek-only mode writes two artifacts beside the output file:
 Invalid rows (missing underlying, IV, T, or bad right) receive `NaN` for all
 Greek columns. The runner never raises on individual bad rows.
 
-See `docs/greek_only_runner.md` for the full API reference.
+See `docs/guides/greek_only_runner.md` for the full API reference.
 
 ## CLI Rules
 
@@ -672,11 +672,14 @@ janus/
 │   │   └── test_greek_external_reference.py  # vs. scipy reference
 │   └── test_run_greeks.py            # CLI, output schema, downstream-skip
 ├── docs/
-│   ├── greek_only_runner.md          # Mode A/B API reference
-│   └── architecture_sections/
-│       ├── fig5_greek_only_workflow.mmd
-│       ├── fig5a_greek_engine.mmd
-│       └── fig5b_greek_only_flow.mmd
+│   ├── README.md                     # documentation map and cleanup policy
+│   ├── architecture/                 # high-level, execution, and paper figures
+│   ├── guides/                       # operating guides such as Greek-only mode
+│   ├── design/                       # data-ops, CDC, leakage, and audit designs
+│   ├── reference/                    # schema/domain reference diagrams
+│   ├── workflows/                    # workflow-specific diagram packs
+│   ├── reports/                      # validation and implementation reports
+│   └── archive/                      # superseded blueprints kept for traceability
 ├── lineage/
 ├── web/
 │   ├── dashboard.py

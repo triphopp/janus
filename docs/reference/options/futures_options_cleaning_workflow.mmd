@@ -1,0 +1,90 @@
+flowchart LR
+    %% Compact options cleaning workflow.
+    %% Covers both equity_options and futures_options, with futures-options notes
+    %% where the flow differs. Labels lead with domain wording and keep technical
+    %% terms in parentheses.
+
+    classDef lane fill:#ffffff,stroke:#777777,stroke-width:1px,color:#111111;
+    classDef input fill:#f8f2df,stroke:#9b7a25,stroke-width:1px,color:#2d2614;
+    classDef data fill:#f2f2f2,stroke:#555555,stroke-width:1px,color:#111111;
+    classDef gate fill:#fff4ed,stroke:#b65f2a,stroke-width:1px,color:#3b1f0e;
+    classDef proc fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef out fill:#f6f0ff,stroke:#7556a8,stroke-width:1px,color:#28183f;
+    classDef risk fill:#fdecea,stroke:#c53030,stroke-width:1px,color:#4a1111;
+    classDef side fill:#ffffff,stroke:#777777,stroke-width:1px,stroke-dasharray:4 3,color:#333333;
+
+    subgraph A["1. Input Selection"]
+        direction TB
+        A1["Instrument file<br/>(YAML)"]:::input
+        A2{"Option family"}:::gate
+        A3["Equity options<br/>stock option chain"]:::data
+        A4["Futures options<br/>settlement futures + options"]:::data
+        A5["Read source<br/>provider / cache / file"]:::data
+        A1 --> A2
+        A2 --> A3 --> A5
+        A2 --> A4 --> A5
+    end
+
+    subgraph B["2. Bronze Checks"]
+        direction TB
+        B1["Raw option rows"]:::data
+        B2["Pick data contract<br/>(equity_options / settlement_options)"]:::gate
+        B3["Check shape + business rules<br/>(schema / semantic rules)"]:::gate
+        B4["Check known-at time + coverage<br/>(PIT / SLA)"]:::gate
+        B5{"Rows pass?"}:::gate
+        B6["Quarantine<br/>failed rows + reasons"]:::risk
+        B7["Bronze-passed rows"]:::data
+        B1 --> B2 --> B3 --> B4 --> B5
+        B5 -->|yes| B7
+        B5 -->|no| B6
+    end
+
+    subgraph C["3. Option Preparation"]
+        direction TB
+        C1["Standardize option fields<br/>right, strike, price, dates"]:::proc
+        C2["Match underlying price<br/>stock price (S) or future price (F)"]:::proc
+        C3["Compute time to expiry<br/>(DTE / T)"]:::proc
+        C4["Apply research filters<br/>DTE, premium, spread, IV, delta"]:::gate
+        C5["Build pricing inputs<br/>IV surface + Greeks"]:::proc
+        C6["Run option checks<br/>PCP, skew, quality flags"]:::proc
+        C7["Prepared frame<br/>+ core config"]:::data
+        C1 --> C2 --> C3 --> C4 --> C5 --> C6 --> C7
+    end
+
+    subgraph D["4. Validation and Review"]
+        direction TB
+        D1["Check value rules<br/>(validators)"]:::proc
+        D2["Score data quality<br/>(DQ scorecard)"]:::proc
+        D3["Compare stage changes<br/>(CDC diff)"]:::proc
+        D4["Log data issues<br/>(break ledger)"]:::risk
+        D5["Clean prepared frame"]:::data
+        D1 --> D2 --> D3 --> D4 --> D5
+    end
+
+    subgraph E["5. Durable Outputs"]
+        direction TB
+        E1["Prepared data<br/>CSV / parquet"]:::out
+        E2["Run summary<br/>quality, filters, option checks"]:::out
+        E3["Review files<br/>change log, issue log, quarantine"]:::out
+        E4["Replay files<br/>manifest + lineage"]:::out
+        E5["Validated option dataset"]:::out
+        E1 --> E5
+        E2 --> E5
+        E3 --> E5
+        E4 --> E5
+    end
+
+    A5 --> B1
+    B7 --> C1
+    C7 --> D1
+    D5 --> E1
+    D2 --> E2
+    D3 --> E3
+    D4 --> E3
+    C7 --> E4
+
+    A4 -. futures options .-> F1["Attach matching future<br/>same date + delivery month"]:::side
+    F1 -. supplies F .-> C2
+    C4 -. filtered out rows are research-scope choices,<br/>not bad-data quarantine .-> E2
+
+    class A,B,C,D,E lane

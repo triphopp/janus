@@ -1,0 +1,24 @@
+flowchart LR
+    %% Compact slide version of futures_options_cleaning_workflow.mmd.
+    %% Keeps only the essential option-cleaning path.
+
+    classDef input fill:#f8f2df,stroke:#9b7a25,stroke-width:1px,color:#2d2614;
+    classDef gate fill:#fff4ed,stroke:#b65f2a,stroke-width:1px,color:#3b1f0e;
+    classDef proc fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
+    classDef out fill:#f6f0ff,stroke:#7556a8,stroke-width:1px,color:#28183f;
+    classDef risk fill:#fdecea,stroke:#c53030,stroke-width:1px,color:#4a1111;
+    classDef side fill:#ffffff,stroke:#777777,stroke-width:1px,stroke-dasharray:4 3,color:#333333;
+
+    A["1 Input<br/>instrument file + option source"]:::input
+    B{"2 Bronze gate<br/>schema + PIT + coverage"}:::gate
+    C["3 Prepare options<br/>clean fields, match S/F,<br/>DTE, IV, Greeks"]:::proc
+    D["4 Validate + review<br/>quality score, change log,<br/>issue log"]:::proc
+    E["5 Outputs<br/>prepared data, summary,<br/>manifest, dashboard"]:::out
+
+    Q["Quarantine<br/>failed rows + reasons"]:::risk
+    F["Futures-options note<br/>match option to future<br/>by date + delivery month"]:::side
+
+    A --> B
+    B -->|pass| C --> D --> E
+    B -->|fail| Q
+    F -. supplies F price .-> C
