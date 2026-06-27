@@ -1244,6 +1244,17 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         option_quality_summary, core_cfg
     )
 
+    # Grain provenance (issue 012): the prepared option chain is contract-grain
+    # (many rows per date); date-level features are reduced to one row per decision
+    # date via core.causal/core.grain before any rolling/regime/fold computation.
+    from core import grain as grain_mod
+    grain_summary = {
+        "prepared_grain": grain_mod.infer_grain(df),
+        "max_rows_per_date": grain_mod.rows_per_date(df),
+        "date_level_feature_grain": "date",
+        "date_level_reduction": "groupby(as_of_date)",
+    }
+
     # Summary
     summary = {
         "run_id": run_id,
@@ -1292,6 +1303,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "data_quality": data_quality,
         "option_quality": option_quality_summary,
         "domain_run_readiness": domain_run_readiness,
+        "grain": grain_summary,
         "unit_assumptions": unit_assumptions,
         "unit_assumptions_status": unit_assumptions_status,
         "settlement_availability": settlement_availability,

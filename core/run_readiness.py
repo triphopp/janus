@@ -26,6 +26,14 @@ from typing import Optional
 # Worst-wins ordering for status escalation.
 _STATUS_RANK = {"ready": 0, "needs_review": 1, "blocked": 2}
 
+# Finance-friendly labels so the dashboard first screen shows option-domain risk
+# in domain language, not internal flag column names (issue 003).
+_DOMAIN_LABELS = {
+    "iv_provider_model_mismatch": "Provider vs model IV disagreement",
+    "pcp_mismatch": "Put-call parity breaks",
+    "delta_sign": "Option delta sign sanity",
+}
+
 # Default thresholds. Conservative: a small mismatch rate already warrants review,
 # a large one blocks an official run. Callers override via
 # cfg["option_market_checks"]["thresholds"].
@@ -116,7 +124,10 @@ def assess_option_market_readiness(
         reasons.append(f"iv_provider_model_mismatch_rate={iv_rate:.4f}>=review")
     else:
         iv_status = "ready"
-    checks["iv_provider_model_mismatch"] = {"rate": iv_rate, "status": iv_status}
+    checks["iv_provider_model_mismatch"] = {
+        "rate": iv_rate, "status": iv_status,
+        "domain_label": _DOMAIN_LABELS["iv_provider_model_mismatch"],
+    }
     status = _escalate(status, iv_status)
 
     # ── Put-call-parity (call/put) mismatch ───────────────────────────────────
@@ -132,7 +143,10 @@ def assess_option_market_readiness(
         reasons.append(f"pcp_mismatch_rate={pcp_rate:.4f}>=review")
     else:
         pcp_status = "ready"
-    checks["pcp_mismatch"] = {"rate": pcp_rate, "status": pcp_status}
+    checks["pcp_mismatch"] = {
+        "rate": pcp_rate, "status": pcp_status,
+        "domain_label": _DOMAIN_LABELS["pcp_mismatch"],
+    }
     status = _escalate(status, pcp_status)
 
     # ── Delta sign sanity ─────────────────────────────────────────────────────
@@ -145,7 +159,10 @@ def assess_option_market_readiness(
         reasons.append(f"delta_bad_sign_count={bad_sign}")
     else:
         delta_status = "ready"
-    checks["delta_sign"] = {"bad_sign_count": bad_sign, "status": delta_status}
+    checks["delta_sign"] = {
+        "bad_sign_count": bad_sign, "status": delta_status,
+        "domain_label": _DOMAIN_LABELS["delta_sign"],
+    }
     status = _escalate(status, delta_status)
 
     return {

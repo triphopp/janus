@@ -1,0 +1,49 @@
+"""Option-market checks affect run readiness with domain labels (issue 003)."""
+
+from core.run_readiness import assess_option_market_readiness
+
+
+def _summary(iv_rate=0.0, pcp_rate=0.0, bad_sign=0, option_rows=100):
+    return {
+        "option_rows": option_rows,
+        "iv": {"flag_rate": iv_rate},
+        "pcp": {"flag_rate": pcp_rate},
+        "delta": {"bad_sign_count": bad_sign},
+    }
+
+
+def test_iv_mismatch_rate_can_block_or_review_run():
+    review = assess_option_market_readiness(_summary(iv_rate=0.10))
+    assert review["checks"]["iv_provider_model_mismatch"]["status"] == "needs_review"
+    assert review["status"] == "needs_review"
+
+    blocked = assess_option_market_readiness(_summary(iv_rate=0.40))
+    assert blocked["checks"]["iv_provider_model_mismatch"]["status"] == "blocked"
+    assert blocked["status"] == "blocked"
+
+
+def test_pcp_mismatch_rate_can_block_or_review_run():
+    review = assess_option_market_readiness(_summary(pcp_rate=0.08))
+    assert review["status"] == "needs_review"
+    blocked = assess_option_market_readiness(_summary(pcp_rate=0.30))
+    assert blocked["status"] == "blocked"
+
+
+def test_missing_eligible_universe_is_not_checked_not_pass():
+    out = assess_option_market_readiness(_summary(option_rows=0))
+    assert out["status"] == "needs_review"
+    assert any("not_checked" in r for r in out["reasons"])
+
+
+def test_checks_carry_domain_labels():
+    out = assess_option_market_readiness(_summary(iv_rate=0.10, pcp_rate=0.10))
+    assert out["checks"]["iv_provider_model_mismatch"]["domain_label"] == \
+        "Provider vs model IV disagreement"
+    assert out["checks"]["pcp_mismatch"]["domain_label"] == "Put-call parity breaks"
+    assert out["checks"]["delta_sign"]["domain_label"] == "Option delta sign sanity"
+
+
+def test_thresholds_are_configurable():
+    cfg = {"option_market_checks": {"thresholds": {"iv_mismatch_block_rate": 0.05}}}
+    out = assess_option_market_readiness(_summary(iv_rate=0.06), cfg)
+    assert out["status"] == "blocked"
