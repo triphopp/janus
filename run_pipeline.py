@@ -1328,6 +1328,24 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "prepared_parquet": str(parquet_path) if parquet_path else None,
     }
 
+    # ── Downstream option-chain Greeks export (issues 023/024) ──
+    # Additive, market-facing clean dataset. Gated by option-market readiness
+    # (run-level) and the per-row release gate inside the writer. Existing
+    # prepared/dashboard/report artifacts above are untouched.
+    if is_options_run:
+        from core import option_chain_export as oce
+
+        export_result = oce.write_option_chain_export(
+            df, core_cfg, domain_run_readiness, run_dir
+        )
+        summary["option_chain_greeks"] = export_result
+        if export_result.get("status") != "blocked":
+            for key in (
+                "option_chain_greeks_csv", "option_chain_greeks_manifest",
+                "option_chain_greeks_schema", "option_chain_greeks_data_dictionary",
+            ):
+                summary["artifacts"][key] = export_result[key]
+
     # ── Run manifest: content-pinned reproducibility (P1, I6) ──
     n_trials_used = core_cfg.get("n_trials", cfg.get("n_trials", 40))
     run_manifest = manifest_mod.build_manifest(

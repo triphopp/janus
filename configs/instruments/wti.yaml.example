@@ -24,6 +24,18 @@ date_grain: eod
 exchange_tz: America/New_York
 settlement_release_time: "14:30"  # NYMEX crude settlement ~2:30pm ET
 exchange_calendar: NYMEX
+
+# Downstream option-chain Greeks export policy (issues 023/024).
+export:
+  product: WTI
+  underlying_root: CL
+  option_root: LO
+  exchange: NYMEX
+  currency: USD
+  price_unit: USD_per_barrel
+  contract_unit: 1000_barrels
+  price_tick: 0.01
+
 data_version: sha256:<fill-with-file-sha256>
 data_file_sha256: <fill-with-file-sha256>
 metrics_mode: strategy_required   # require explicit strategy/P&L returns for Stage 4 performance
