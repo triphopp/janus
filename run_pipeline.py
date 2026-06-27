@@ -54,6 +54,7 @@ from core import attribution as attr
 from core import reporting
 from core import data_quality as dq
 from core import options_quality as opt_quality
+from core import run_readiness as run_readiness_mod
 from core import contracts as contracts_mod
 from core import manifest as manifest_mod
 from core import cdc
@@ -1154,6 +1155,19 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     df.to_csv(csv_path, index=False)
     print(f"  Data export: {csv_path}")
 
+    # ── Option-domain quality + run readiness (issue 001/003) ──
+    # Option-market checks must affect whether the run is trusted; they are no
+    # longer merely "available" technical flags on the dashboard.
+    is_options_run = core_cfg.get("family", cfg.get("family", "equity")).endswith("_options")
+    option_quality_summary = (
+        opt_quality.summarize(df, core_cfg, core_cfg.get("option_quality"))
+        if is_options_run
+        else {}
+    )
+    domain_run_readiness = run_readiness_mod.assess_option_market_readiness(
+        option_quality_summary, core_cfg
+    )
+
     # Summary
     summary = {
         "run_id": run_id,
@@ -1190,6 +1204,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
             "split_adjustments": split_adjustments,
             "contract_gate": contract_gate,
             "coverage_sla": coverage_gate.get("status"),
+            "option_market_readiness": domain_run_readiness["status"] if is_options_run else None,
         },
         "price_adjustments": price_adjustments,
         "split_adjustments": split_adjustments,
@@ -1197,11 +1212,8 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "coverage_gate": coverage_gate,
         "quarantine": quarantine_summary,
         "data_quality": data_quality,
-        "option_quality": (
-            opt_quality.summarize(df, core_cfg, core_cfg.get("option_quality"))
-            if core_cfg.get("family", cfg.get("family", "equity")).endswith("_options")
-            else {}
-        ),
+        "option_quality": option_quality_summary,
+        "domain_run_readiness": domain_run_readiness,
         "cdc": cdc_summary,
         "lineage_purge": lineage_purge,
         "data_cache_mode": cache_mode,
