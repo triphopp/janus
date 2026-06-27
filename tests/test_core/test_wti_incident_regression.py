@@ -109,33 +109,31 @@ def test_incident_iv_and_pcp_mismatches_are_present():
 
 # ── Run readiness: pure-function ladder ───────────────────────────────────────
 
-def test_readiness_ready_when_rates_clean():
+def _clean_summary(**overrides):
     summary = {
         "option_rows": 100,
         "iv": {"flag_rate": 0.0},
         "pcp": {"flag_rate": 0.0},
         "delta": {"bad_sign_count": 0},
+        "premium": {"flag_rate": 0.0},
+        "underlying_map": {"drop_rate": 0.0},
     }
-    assert assess_option_market_readiness(summary)["status"] == "ready"
+    summary.update(overrides)
+    return summary
+
+
+def test_readiness_ready_when_rates_clean():
+    assert assess_option_market_readiness(_clean_summary())["status"] == "ready"
 
 
 def test_readiness_needs_review_band():
-    summary = {
-        "option_rows": 100,
-        "iv": {"flag_rate": 0.10},   # between review (0.05) and block (0.20)
-        "pcp": {"flag_rate": 0.0},
-        "delta": {"bad_sign_count": 0},
-    }
+    # iv flag_rate between review (0.05) and block (0.20)
+    summary = _clean_summary(iv={"flag_rate": 0.10})
     assert assess_option_market_readiness(summary)["status"] == "needs_review"
 
 
 def test_readiness_blocked_band():
-    summary = {
-        "option_rows": 100,
-        "iv": {"flag_rate": 0.50},
-        "pcp": {"flag_rate": 0.0},
-        "delta": {"bad_sign_count": 0},
-    }
+    summary = _clean_summary(iv={"flag_rate": 0.50})
     assert assess_option_market_readiness(summary)["status"] == "blocked"
 
 

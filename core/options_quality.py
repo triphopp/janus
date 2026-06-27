@@ -87,11 +87,16 @@ def summarize(
 
     # ── Universe (from adapter) ───────────────────────────────────────────────
     universe_out: dict = {}
+    underlying_map_out: dict = {}
     if adapter_summary:
         universe_out["drop_rows"] = adapter_summary.get("universe_drop_rows", 0)
         universe_out["drop_by_reason"] = dict(
             adapter_summary.get("universe_drop_by_reason") or {}
         )
+        # Missing-underlying-match rate (Phase 2 exit criteria): option rows that
+        # could not be reconciled to an underlying future. Absent (drop_rate 0.0)
+        # when every option mapped cleanly.
+        underlying_map_out = dict(adapter_summary.get("underlying_map") or {})
 
     # ── Silver quality flags ──────────────────────────────────────────────────
     def _flag_rate(col_name: str) -> float | None:
@@ -141,5 +146,12 @@ def summarize(
             "duplicate_pair_rate": _rate("pcp_duplicate_pair"),
         },
         "universe": universe_out,
+        "underlying_map": {
+            "missing_rows": underlying_map_out.get("missing_rows", 0),
+            "drop_rate": float(underlying_map_out.get("drop_rate", 0.0)),
+        },
+        "premium": {
+            "flag_rate": silver_flags["premium_quality_flag_rate"],
+        },
         "silver_flags": silver_flags,
     }

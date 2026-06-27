@@ -32,6 +32,8 @@ _DOMAIN_LABELS = {
     "iv_provider_model_mismatch": "Provider vs model IV disagreement",
     "pcp_mismatch": "Put-call parity breaks",
     "delta_sign": "Option delta sign sanity",
+    "premium_sanity": "Option premium below intrinsic",
+    "missing_underlying_match": "Options without an underlying future match",
 }
 
 # Default thresholds. Conservative: a small mismatch rate already warrants review,
@@ -43,6 +45,10 @@ DEFAULT_THRESHOLDS = {
     "pcp_mismatch_review_rate": 0.05,
     "pcp_mismatch_block_rate": 0.20,
     "delta_bad_sign_review_count": 1,
+    "premium_sanity_review_rate": 0.02,
+    "premium_sanity_block_rate": 0.10,
+    "missing_underlying_review_rate": 0.02,
+    "missing_underlying_block_rate": 0.10,
 }
 
 
@@ -51,6 +57,20 @@ def _escalate(current: str, candidate: str) -> str:
     if _STATUS_RANK.get(candidate, 0) > _STATUS_RANK.get(current, 0):
         return candidate
     return current
+
+
+def _rate_check(name: str, rate, review_rate: float, block_rate: float, reasons: list) -> str:
+    """Status for a rate-based check; None rate → needs_review (not_checked != pass)."""
+    if rate is None:
+        reasons.append(f"{name}_not_checked")
+        return "needs_review"
+    if rate >= block_rate:
+        reasons.append(f"{name}_rate={rate:.4f}>=block")
+        return "blocked"
+    if rate >= review_rate:
+        reasons.append(f"{name}_rate={rate:.4f}>=review")
+        return "needs_review"
+    return "ready"
 
 
 def _thresholds(cfg: Optional[dict]) -> dict:
@@ -164,6 +184,34 @@ def assess_option_market_readiness(
         "domain_label": _DOMAIN_LABELS["delta_sign"],
     }
     status = _escalate(status, delta_status)
+
+    # ── Premium sanity (premium below intrinsic) ──────────────────────────────
+    premium = option_quality.get("premium") or {}
+    premium_rate = premium.get("flag_rate")
+    premium_status = _rate_check(
+        "premium_sanity", premium_rate,
+        thresholds["premium_sanity_review_rate"], thresholds["premium_sanity_block_rate"],
+        reasons,
+    )
+    checks["premium_sanity"] = {
+        "rate": premium_rate, "status": premium_status,
+        "domain_label": _DOMAIN_LABELS["premium_sanity"],
+    }
+    status = _escalate(status, premium_status)
+
+    # ── Missing underlying match ──────────────────────────────────────────────
+    underlying_map = option_quality.get("underlying_map") or {}
+    missing_rate = underlying_map.get("drop_rate")
+    missing_status = _rate_check(
+        "missing_underlying_match", missing_rate,
+        thresholds["missing_underlying_review_rate"], thresholds["missing_underlying_block_rate"],
+        reasons,
+    )
+    checks["missing_underlying_match"] = {
+        "rate": missing_rate, "status": missing_status,
+        "domain_label": _DOMAIN_LABELS["missing_underlying_match"],
+    }
+    status = _escalate(status, missing_status)
 
     return {
         "status": status,

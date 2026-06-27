@@ -3,12 +3,15 @@
 from core.run_readiness import assess_option_market_readiness
 
 
-def _summary(iv_rate=0.0, pcp_rate=0.0, bad_sign=0, option_rows=100):
+def _summary(iv_rate=0.0, pcp_rate=0.0, bad_sign=0, option_rows=100,
+             premium_rate=0.0, missing_underlying_rate=0.0):
     return {
         "option_rows": option_rows,
         "iv": {"flag_rate": iv_rate},
         "pcp": {"flag_rate": pcp_rate},
         "delta": {"bad_sign_count": bad_sign},
+        "premium": {"flag_rate": premium_rate},
+        "underlying_map": {"drop_rate": missing_underlying_rate},
     }
 
 
@@ -41,6 +44,31 @@ def test_checks_carry_domain_labels():
         "Provider vs model IV disagreement"
     assert out["checks"]["pcp_mismatch"]["domain_label"] == "Put-call parity breaks"
     assert out["checks"]["delta_sign"]["domain_label"] == "Option delta sign sanity"
+
+
+def test_premium_sanity_can_block_or_review_run():
+    review = assess_option_market_readiness(_summary(premium_rate=0.05))
+    assert review["checks"]["premium_sanity"]["status"] == "needs_review"
+    blocked = assess_option_market_readiness(_summary(premium_rate=0.20))
+    assert blocked["checks"]["premium_sanity"]["status"] == "blocked"
+    assert blocked["status"] == "blocked"
+
+
+def test_missing_underlying_match_can_block_or_review_run():
+    review = assess_option_market_readiness(_summary(missing_underlying_rate=0.05))
+    assert review["checks"]["missing_underlying_match"]["status"] == "needs_review"
+    blocked = assess_option_market_readiness(_summary(missing_underlying_rate=0.20))
+    assert blocked["checks"]["missing_underlying_match"]["status"] == "blocked"
+    assert blocked["status"] == "blocked"
+
+
+def test_all_five_phase2_checks_present_with_domain_labels():
+    """Phase 2 exit: IV, PCP, premium, delta, and missing-underlying are all checked."""
+    out = assess_option_market_readiness(_summary())
+    for key in ("iv_provider_model_mismatch", "pcp_mismatch", "premium_sanity",
+                "delta_sign", "missing_underlying_match"):
+        assert key in out["checks"]
+        assert out["checks"][key]["domain_label"]
 
 
 def test_thresholds_are_configurable():
