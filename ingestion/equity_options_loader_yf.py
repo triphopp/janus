@@ -30,9 +30,14 @@ _WIDE_SPREAD_THRESHOLD = 0.5
 class EquityOptionsLoaderYF(ProviderBase):
     """Yahoo Finance option-chain provider (snapshot)."""
 
+    # yfinance reports impliedVolatility already as a decimal fraction (0.25 = 25%).
+    IV_RAW_UNIT = "decimal"
+
     def __init__(self, max_expiries: Optional[int] = None):
         # cap how many expiries to pull (yfinance is one HTTP call per expiry)
         self.max_expiries = max_expiries
+        # Explicit IV unit declaration (issue 002) — consumed by the run manifest.
+        self.unit_assumptions: dict = {}
 
     def list_expired(self, root: str, asof) -> list:
         # yfinance exposes only live (unexpired) expiries; no expired-series archive.
@@ -93,11 +98,24 @@ class EquityOptionsLoaderYF(ProviderBase):
             "raw_close":         float(spot),
             "adj_factor":        1.0,
             "iv_provided":       chain["iv"].astype("float64"),
+            "iv_provided_raw":   chain["iv"].astype("float64"),
+            "iv_raw_unit":       self.IV_RAW_UNIT,
             "volume":            chain["volume"].fillna(0).astype("int64"),
             "open_interest":     chain["open_interest"].fillna(0).astype("int64"),
             "instrument_type":   "option",
             "provider":          "yfinance",
         })
+        # Declare the IV unit assumption explicitly (issue 002): yfinance IV is already
+        # decimal, so canonical == raw (scale 1.0), but the assumption is recorded and
+        # smoke-checked rather than implied.
+        from core import unit_registry
+        self.unit_assumptions["iv"] = {
+            "field": "implied_volatility",
+            "raw_unit": self.IV_RAW_UNIT,
+            "canonical_unit": unit_registry.CANONICAL_IV_UNIT,
+            "scale_factor": unit_registry.iv_scale_factor(self.IV_RAW_UNIT),
+            "smoke": unit_registry.iv_scale_smoke(out["iv_provided"]),
+        }
         # drop unpriced rows (no bid/ask and no last) — they cannot be validated
         out = out[out["price"].notna() & (out["price"] >= 0)].reset_index(drop=True)
 

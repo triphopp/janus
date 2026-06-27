@@ -7,9 +7,17 @@ from ingestion.versioned_cache import VersionedCache, infer_available_at, pit_jo
 
 
 def test_infer_available_at_uses_config_lag():
-    cfg = {"available_at_lag": {"settlement": "3h", "event": "P5D"}}
+    # Settlement availability is anchored to the session release time, not midnight
+    # (issue 022). The configured lag is still applied on top of the anchor.
+    cfg = {
+        "available_at_lag": {"settlement": "3h", "event": "P5D"},
+        "exchange_tz": "America/New_York",
+        "settlement_release_time": "14:30",
+    }
     ts = infer_available_at(pd.Timestamp("2024-09-25"), "settlement", cfg)
-    assert ts == pd.Timestamp("2024-09-25T03:00:00Z")
+    # 14:30 ET + 3h lag = 17:30 ET = 21:30Z (EDT). NOT the old midnight+3h = 03:00Z.
+    assert ts == pd.Timestamp("2024-09-25T21:30:00Z")
+    assert ts > pd.Timestamp("2024-09-25T03:00:00Z")
 
     event_ts = infer_available_at(pd.Timestamp("2024-09-25"), "event", cfg)
     assert event_ts == pd.Timestamp("2024-09-30T00:00:00Z")

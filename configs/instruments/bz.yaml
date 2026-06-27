@@ -14,7 +14,13 @@ columns:
 
 price_field: settlement         # NOT last-trade
 iv_source: provided             # use OPTION_VOLATILITY from exchange (validate first)
+iv_raw_unit: percent            # raw OPTION_VOLATILITY is percent points (issue 002)
 date_grain: eod                 # date-only; no intraday timestamp
+
+# Settlement availability + calendar policy (issues 022, 013). Brent settles on ICE.
+exchange_tz: Europe/London
+settlement_release_time: "16:30"  # ICE Brent settlement window close (London)
+exchange_calendar: ICE
 data_version: latest            # v1.4: latest | YYYY-MM-DD | as_of_backtest_start
 metrics_mode: strategy_required # require explicit strategy/P&L returns for Stage 4 performance
 

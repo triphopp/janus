@@ -93,22 +93,43 @@ def infer_available_at(as_of_date, data_type: str, cfg: dict):
     if data_type == "equity_price":
         market_close = str(cfg.get("market_close_time", "16:00"))
         exchange_tz = cfg.get("exchange_tz", "America/New_York")
-        hour, minute = [int(part) for part in market_close.split(":", 1)]
+        return _anchor_to_session(asof, market_close, exchange_tz, lag, as_of_date)
 
-        dates = pd.Series(asof).dt.normalize()
-        local_close = dates + pd.Timedelta(hours=hour, minutes=minute)
-        if local_close.dt.tz is None:
-            local_close = local_close.dt.tz_localize(exchange_tz)
-        else:
-            local_close = local_close.dt.tz_convert(exchange_tz)
-        values = local_close + lag
-
-        if isinstance(as_of_date, (pd.Series, pd.Index, list, tuple)):
-            return pd.to_datetime(values, utc=True)
-        return pd.to_datetime(values.iloc[0], utc=True)
+    if data_type == "settlement":
+        # Settlement availability MUST anchor to the exchange settlement-release /
+        # session-close time, never midnight of as_of_date (issue 022). A US EOD
+        # settlement for date t is not knowable before the local session for t
+        # closes; anchoring to midnight + a few hours made it appear knowable on
+        # the prior evening, causing a one-day point-in-time leak.
+        release_time = str(
+            cfg.get("settlement_release_time", cfg.get("market_close_time", "16:30"))
+        )
+        exchange_tz = cfg.get("exchange_tz", "America/New_York")
+        return _anchor_to_session(asof, release_time, exchange_tz, lag, as_of_date)
 
     values = asof + lag
     return pd.to_datetime(values, utc=True)
+
+
+def _anchor_to_session(asof, local_time: str, exchange_tz: str, lag, as_of_date):
+    """Anchor as_of_date to a local session time in exchange_tz, return UTC.
+
+    Shared by equity-close and settlement-release availability. Adding ``lag`` to a
+    timezone-aware local instant means DST and the UTC date boundary are handled by
+    the conversion, not by hand.
+    """
+    hour, minute = [int(part) for part in str(local_time).split(":", 1)]
+    dates = pd.Series(asof).dt.normalize()
+    local_anchor = dates + pd.Timedelta(hours=hour, minutes=minute)
+    if local_anchor.dt.tz is None:
+        local_anchor = local_anchor.dt.tz_localize(exchange_tz)
+    else:
+        local_anchor = local_anchor.dt.tz_convert(exchange_tz)
+    values = local_anchor + lag
+
+    if isinstance(as_of_date, (pd.Series, pd.Index, list, tuple)):
+        return pd.to_datetime(values, utc=True)
+    return pd.to_datetime(values.iloc[0], utc=True)
 
 
 def add_availability_columns(

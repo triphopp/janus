@@ -16,7 +16,14 @@ columns:
 
 price_field: settlement         # NOT last-trade
 iv_source: provided             # use OPTION_VOLATILITY from exchange (validate first)
+iv_raw_unit: percent            # raw OPTION_VOLATILITY is percent points (issue 002)
 date_grain: eod
+
+# Settlement availability + calendar policy (issues 022, 013): anchor availability
+# to the NYMEX settlement release, never midnight of as_of_date.
+exchange_tz: America/New_York
+settlement_release_time: "14:30"  # NYMEX crude settlement ~2:30pm ET
+exchange_calendar: NYMEX
 data_version: sha256:<fill-with-file-sha256>
 data_file_sha256: <fill-with-file-sha256>
 metrics_mode: strategy_required   # require explicit strategy/P&L returns for Stage 4 performance
@@ -47,7 +54,7 @@ event_calendars: [configs/events/eia.csv]
 event_regimes: [eia_week]
 
 available_at_lag:
-  settlement: "3h"
+  settlement: "0h"               # availability now anchored to settlement_release_time (issue 022)
   eia_inventory: "P5D"
   realized_vol: "2h"
 

@@ -207,7 +207,7 @@ def get_provider(cfg: dict):
 
     if provider_name == "settlement":
         # settlement files carry both futures + option rows
-        return SettlementLoader(Symbology())
+        return SettlementLoader(Symbology(), cfg=cfg)
     elif provider_name == "yfinance":
         if options_family:
             from ingestion.equity_options_loader_yf import EquityOptionsLoaderYF
@@ -503,6 +503,71 @@ def _enforce_cache_guard(cache_guard: dict, cfg: dict) -> None:
         )
 
 
+def _settlement_availability_status(cfg: dict, provider_name: str) -> dict:
+    """Settlement availability policy (issue 022).
+
+    A settlement run must declare the exchange timezone and a settlement-release /
+    session-close time so availability is anchored to the session, not midnight.
+    """
+    if provider_name != "settlement":
+        return {"status": "not_applicable"}
+    exchange_tz = cfg.get("exchange_tz")
+    release_time = cfg.get("settlement_release_time") or cfg.get("market_close_time")
+    if not exchange_tz or not release_time:
+        return {
+            "status": "fail",
+            "reason": "settlement availability policy missing exchange_tz and/or "
+                      "settlement_release_time",
+        }
+    return {
+        "status": "pass",
+        "policy": "anchored_to_settlement_release_time",
+        "exchange_tz": exchange_tz,
+        "settlement_release_time": str(release_time),
+        "settlement_lag": (cfg.get("available_at_lag") or {}).get("settlement"),
+    }
+
+
+def _unit_assumptions_status(unit_assumptions: dict, is_options: bool) -> dict:
+    """IV unit registry status (issue 002).
+
+    Unknown IV unit, or a canonical IV that fails the scale smoke check, must be
+    visible so an official options run can block.
+    """
+    if not is_options:
+        return {"status": "not_applicable"}
+    iv = (unit_assumptions or {}).get("iv")
+    if not iv:
+        return {"status": "not_checked", "reason": "no IV unit assumption recorded"}
+    known_units = {"decimal", "fraction", "percent", "percentage", "pct", "bps", "basis_points"}
+    if str(iv.get("raw_unit")).lower() not in known_units:
+        return {"status": "fail", "reason": f"unknown IV unit {iv.get('raw_unit')!r}", "iv": iv}
+    smoke = (iv.get("smoke") or {}).get("status")
+    if smoke == "fail":
+        return {"status": "fail", "reason": (iv.get("smoke") or {}).get("reason"), "iv": iv}
+    return {"status": "pass", "iv": iv}
+
+
+def _enforce_data_integrity_gates(
+    cfg: dict, settlement_avail: dict, unit_status: dict
+) -> None:
+    """Block official runs on Phase-1 data-integrity failures (issues 002, 022)."""
+    if not bool(cfg.get("require_fixed_data_version", True)):
+        return
+    if settlement_avail.get("status") == "fail":
+        raise ValueError(
+            "Settlement availability policy is required for backtest-grade runs "
+            f"(issue 022): {settlement_avail.get('reason')}. Set exchange_tz and "
+            "settlement_release_time in the instrument config."
+        )
+    if unit_status.get("status") == "fail":
+        raise ValueError(
+            "IV unit assumption failed for an official options run "
+            f"(issue 002): {unit_status.get('reason')}. Declare a known iv_raw_unit "
+            "and ensure the canonical IV scale passes the smoke check."
+        )
+
+
 def _bool_series(values: pd.Series) -> pd.Series:
     if pd.api.types.is_bool_dtype(values):
         return values.fillna(False)
@@ -678,6 +743,15 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
                 storage_format=cfg.get("data_storage_format", "parquet"),
             )
     print(f"  Ingestion: {len(raw_df)} rows loaded")
+
+    # ── Phase-1 data-integrity gates (issues 002, 022) ──
+    _family = cfg.get("family", "equity")
+    _is_options_run = str(_family).endswith("_options")
+    unit_assumptions = getattr(provider, "unit_assumptions", {}) or {}
+    settlement_availability = _settlement_availability_status(cfg, provider_name)
+    unit_assumptions_status = _unit_assumptions_status(unit_assumptions, _is_options_run)
+    _enforce_data_integrity_gates(cfg, settlement_availability, unit_assumptions_status)
+
     stage_tracker.advance("Ingestion")
 
     # Audit: after ingestion
@@ -728,7 +802,9 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         cov_min_ratio = float(cfg.get("coverage_min_ratio", coverage_mod.DEFAULT_MIN_RATIO))
         cov_max_gap = int(cfg.get("coverage_max_gap_days", coverage_mod.DEFAULT_MAX_GAP_DAYS))
         coverage_gate = coverage_mod.assess_coverage(
-            raw_df, start, end, min_ratio=cov_min_ratio, max_gap_days=cov_max_gap
+            raw_df, start, end, min_ratio=cov_min_ratio, max_gap_days=cov_max_gap,
+            calendar_id=cfg.get("exchange_calendar") or cfg.get("calendar_id"),
+            holidays=cfg.get("calendar_holidays"),
         )
         pipeline_breaks.extend(coverage_mod.coverage_breaks(coverage_gate, run_id, start, end))
         _cov_icon = {"pass": "ok", "warn": "WARN", "fail": "FAIL"}.get(coverage_gate["status"], "?")
@@ -1205,6 +1281,8 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
             "contract_gate": contract_gate,
             "coverage_sla": coverage_gate.get("status"),
             "option_market_readiness": domain_run_readiness["status"] if is_options_run else None,
+            "settlement_availability": settlement_availability.get("status"),
+            "iv_unit_assumption": unit_assumptions_status.get("status"),
         },
         "price_adjustments": price_adjustments,
         "split_adjustments": split_adjustments,
@@ -1214,6 +1292,9 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "data_quality": data_quality,
         "option_quality": option_quality_summary,
         "domain_run_readiness": domain_run_readiness,
+        "unit_assumptions": unit_assumptions,
+        "unit_assumptions_status": unit_assumptions_status,
+        "settlement_availability": settlement_availability,
         "cdc": cdc_summary,
         "lineage_purge": lineage_purge,
         "data_cache_mode": cache_mode,
