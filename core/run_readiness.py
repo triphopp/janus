@@ -133,17 +133,11 @@ def assess_option_market_readiness(
 
     # ── IV provider/model mismatch ────────────────────────────────────────────
     iv_rate = iv.get("flag_rate")
-    if iv_rate is None:
-        iv_status = "needs_review"
-        reasons.append("iv_provider_model_mismatch_not_checked")
-    elif iv_rate >= thresholds["iv_mismatch_block_rate"]:
-        iv_status = "blocked"
-        reasons.append(f"iv_provider_model_mismatch_rate={iv_rate:.4f}>=block")
-    elif iv_rate >= thresholds["iv_mismatch_review_rate"]:
-        iv_status = "needs_review"
-        reasons.append(f"iv_provider_model_mismatch_rate={iv_rate:.4f}>=review")
-    else:
-        iv_status = "ready"
+    iv_status = _rate_check(
+        "iv_provider_model_mismatch", iv_rate,
+        thresholds["iv_mismatch_review_rate"], thresholds["iv_mismatch_block_rate"],
+        reasons,
+    )
     checks["iv_provider_model_mismatch"] = {
         "rate": iv_rate, "status": iv_status,
         "domain_label": _DOMAIN_LABELS["iv_provider_model_mismatch"],
@@ -152,17 +146,11 @@ def assess_option_market_readiness(
 
     # ── Put-call-parity (call/put) mismatch ───────────────────────────────────
     pcp_rate = pcp.get("flag_rate")
-    if pcp_rate is None:
-        pcp_status = "needs_review"
-        reasons.append("pcp_mismatch_not_checked")
-    elif pcp_rate >= thresholds["pcp_mismatch_block_rate"]:
-        pcp_status = "blocked"
-        reasons.append(f"pcp_mismatch_rate={pcp_rate:.4f}>=block")
-    elif pcp_rate >= thresholds["pcp_mismatch_review_rate"]:
-        pcp_status = "needs_review"
-        reasons.append(f"pcp_mismatch_rate={pcp_rate:.4f}>=review")
-    else:
-        pcp_status = "ready"
+    pcp_status = _rate_check(
+        "pcp_mismatch", pcp_rate,
+        thresholds["pcp_mismatch_review_rate"], thresholds["pcp_mismatch_block_rate"],
+        reasons,
+    )
     checks["pcp_mismatch"] = {
         "rate": pcp_rate, "status": pcp_status,
         "domain_label": _DOMAIN_LABELS["pcp_mismatch"],

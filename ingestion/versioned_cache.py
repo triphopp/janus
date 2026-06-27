@@ -122,7 +122,12 @@ def _anchor_to_session(asof, local_time: str, exchange_tz: str, lag, as_of_date)
     dates = pd.Series(asof).dt.normalize()
     local_anchor = dates + pd.Timedelta(hours=hour, minutes=minute)
     if local_anchor.dt.tz is None:
-        local_anchor = local_anchor.dt.tz_localize(exchange_tz)
+        # Resolve DST edge cases deterministically: a release time that lands in a
+        # spring-forward gap shifts forward; a fall-back overlap takes the earlier
+        # (DST) instant. Without this, tz_localize raises on transition dates.
+        local_anchor = local_anchor.dt.tz_localize(
+            exchange_tz, ambiguous=True, nonexistent="shift_forward"
+        )
     else:
         local_anchor = local_anchor.dt.tz_convert(exchange_tz)
     values = local_anchor + lag

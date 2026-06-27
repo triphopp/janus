@@ -327,7 +327,10 @@ def build_option_chain_greeks(df: pd.DataFrame, cfg: dict, readiness: Optional[d
     expiry = pd.to_datetime(rows["expiry"])
     trade_date = pd.to_datetime(rows["as_of_date"])
     opt_price = _option_price_series(rows)
-    dte = pd.to_numeric(rows.get("dte_days"), errors="coerce")
+    if "dte_days" in rows.columns:
+        dte = pd.to_numeric(rows["dte_days"], errors="coerce")
+    else:
+        dte = pd.Series(np.nan, index=rows.index, dtype=float)
     if dte.isna().all():
         dte = (expiry - trade_date).dt.days
 
