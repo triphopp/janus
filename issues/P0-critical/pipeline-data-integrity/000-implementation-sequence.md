@@ -23,6 +23,25 @@ Related issues:
 - `023-downstream-option-chain-greeks-export.md`
 - `024-option-chain-greeks-data-dictionary.md`
 
+## Agent Read Order
+
+Agents implementing or reviewing this release train should read these files in
+this order:
+
+1. `000-implementation-sequence.md` - overall dependency order, guardrails, and
+   required test matrix.
+2. `022-settlement-availability-anchor.md` - authoritative settlement timing and
+   point-in-time availability policy.
+3. `023-downstream-option-chain-greeks-export.md` - downstream CSV, manifest, and
+   artifact contract.
+4. `024-option-chain-greeks-data-dictionary.md` - human/domain data dictionary
+   contract, including timing definitions that must be written beside the CSV.
+
+For implementation, `000` is the entry point. For output-format questions, use
+`023` first and then `024`. For any time-zone, settlement, `available_at`, or
+tradable-time question, use `022` as the policy source and mirror the relevant
+human-readable explanation into the generated `data_dictionary.md`.
+
 ## Summary
 
 Implement the P0 pipeline data-integrity work as one coordinated release train,
@@ -68,6 +87,23 @@ The blockers for a trustworthy downstream export are:
 - option-domain checks that can block export
 
 Once those are in place, the downstream export is mostly an additive writer.
+
+## Real WTI Smoke Evidence
+
+Smoke test on the real WTI file for `2024-09-25` validated the release train
+direction:
+
+- Settlement availability anchored to `14:30 America/New_York`, producing
+  `2024-09-25T18:30:00Z` instead of the old midnight-derived `03:00Z` leak.
+- Raw IV is preserved while canonical IV is normalized from percent to decimal
+  (`58.26%` -> `0.5826`).
+- Option-market readiness blocked the run because IV mismatch was `20.9%`, above
+  the `20%` block threshold.
+- The downstream export path handled the real-window scale quickly; row iteration
+  is not the immediate bottleneck at the observed smoke-test size.
+
+This is expected P0 behavior: the pipeline should refuse to publish a downstream
+market dataset when WTI option checks show a material mismatch.
 
 ## Dependency Order
 
@@ -288,6 +324,9 @@ New artifacts:
 - Do not remove existing prepared/dashboard/report outputs in the first pass.
 - Do not rename existing prepared columns as part of this export.
 - Do not export review/debug columns to the downstream dataset.
+- Do not put instrument-specific defaults such as symbols, exchange names, units,
+  contract units, or calendars in `core/` export code. Those values must come
+  from instrument configs.
 - Do not use raw row index for reconciliation.
 - Do not infer settlement availability from midnight.
 - Do not allow unknown IV unit assumptions into official downstream export.
@@ -398,6 +437,7 @@ Required tests:
 - `test_pcp_mismatch_rate_can_block_export`
 - `test_missing_underlying_match_can_block_export`
 - `test_not_checked_is_not_pass`
+- `test_disabled_option_check_is_visible_not_clean`
 
 Required evidence:
 
@@ -424,6 +464,8 @@ Required tests:
 - `test_option_chain_greeks_formats_wti_prices_to_2_decimals`
 - `test_option_chain_greeks_formats_iv_to_6_decimals`
 - `test_option_chain_greeks_formats_greeks_to_8_decimals`
+- `test_option_chain_greeks_requires_instrument_policy_from_config`
+- `test_option_chain_greeks_schema_units_come_from_config`
 - `test_trade_date_is_not_treated_as_tradable_time`
 - `test_rows_failing_release_gate_are_absent_from_downstream_csv`
 - `test_existing_prepared_summary_dashboard_artifacts_remain_available`
@@ -450,6 +492,9 @@ Required tests:
 - `test_dictionary_documents_domain_labels`
 - `test_dictionary_documents_units_precision_and_allowed_values`
 - `test_dictionary_documents_trade_date_timing_semantics`
+- `test_dictionary_documents_settlement_timing_policy`
+- `test_dictionary_references_settlement_timing_sources`
+- `test_dictionary_distinguishes_ice_brent_from_platts_dated_brent`
 - `test_dictionary_documents_contract_month_raw_to_canonical_display`
 
 Required evidence:

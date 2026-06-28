@@ -61,7 +61,8 @@ In scope:
 - Use date-only market facts in the CSV and move availability/tradable-time policy
   into the manifest/importer.
 - Support WTI futures options using `pricing_model=black76`.
-- Record WTI market conventions in the manifest or product policy.
+- Record market conventions in instrument config and copy them into the manifest
+  or product policy. The core writer must not provide instrument-specific defaults.
 - Add `summary.json` artifact paths for the downstream CSV, manifest, data
   dictionary, and schema.
 
@@ -173,6 +174,13 @@ every row:
   "tradable_time_policy": "next_trading_session_after_trade_date",
   "exchange_calendar": "NYMEX",
   "timezone": "America/New_York",
+  "settlement_timing": {
+    "time_kind": "settlement_period_end",
+    "local_time": "14:30:00",
+    "timezone": "America/New_York",
+    "same_day_file_availability_assumption": "not_assumed",
+    "source_reference": "https://www.cmegroup.com/trading/energy/files/NYMEX_Energy_Futures_Daily_Settlement_Procedure.pdf"
+  },
   "iv_unit": "decimal",
   "iv_decimal_places": 6,
   "greek_decimal_places": 8,
@@ -227,6 +235,12 @@ settlement.
 - [ ] All Greeks export with 8 decimal places.
 - [ ] Manifest records `trade_date_meaning`, `availability_policy`, and
       `tradable_time_policy`.
+- [ ] Manifest records product settlement timing policy, including local time,
+      timezone, time kind, and source reference.
+- [ ] Core export code does not hardcode product symbols, exchange names, price
+      units, contract units, or exchange calendars as defaults.
+- [ ] Export fails with a clear configuration error if required instrument policy
+      is missing.
 - [ ] Tests prove `trade_date` is not treated as tradable consumer time.
 - [ ] Tests prove rows failing release gates do not appear in the downstream CSV.
 

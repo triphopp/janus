@@ -45,6 +45,17 @@ In scope:
 - Add settlement-specific availability logic.
 - Anchor settlement availability to exchange/session close or configured
   settlement release time.
+- Record product-specific settlement timing source references:
+  - NYMEX WTI (`CL`): daily settlement period ends at `14:30 America/New_York`
+    for normal active-month settlement calculation; CME also publishes daily
+    settlement reports later, so same-day availability before 14:30 ET is never
+    allowed and official export should use either an explicit real-time settlement
+    feed policy or next-trading-session policy.
+  - ICE Brent futures: daily settlement uses a two-minute period starting
+    `19:28 Europe/London`, so the settlement-period end is `19:30 Europe/London`.
+  - Platts Dated Brent is a different benchmark/assessment, with assessment time
+    `16:30 Europe/London`; do not apply this to ICE Brent futures/options unless
+    the dataset contract explicitly identifies the source as Platts Dated Brent.
 - Store the calendar/time-zone assumption in manifest or run summary.
 - Add tests for local-date and UTC-date boundaries.
 - Block official runs when settlement availability policy is missing.
@@ -62,11 +73,18 @@ Out of scope:
 ## Acceptance Criteria
 
 - [ ] Settlement `available_at` is never inferred from midnight unless explicitly
-  approved by a data contract.
+      approved by a data contract.
 - [ ] Settlement availability is based on configured exchange timezone and
-  release/settlement time.
+      release/settlement time.
+- [ ] WTI settlement policy source records `14:30 America/New_York` as the
+      settlement-period end, not a midnight anchor.
+- [ ] ICE Brent futures policy source records `19:30 Europe/London` as the
+      settlement-period end.
+- [ ] Platts Dated Brent `16:30 Europe/London` is not reused for ICE Brent
+      futures/options unless the dataset contract explicitly says the source is
+      Platts Dated Brent.
 - [ ] A US settlement for date `t` cannot be available before the local session
-  for date `t` closes.
+      for date `t` closes.
 - [ ] UTC conversion is tested around date boundaries.
 - [ ] Dashboard/run summary shows the settlement availability policy used.
 - [ ] Existing one-day shift regression fails before the fix and passes after.
@@ -76,10 +94,10 @@ Out of scope:
 - availability inference tests
 - PIT boundary fixture
 - run summary field showing settlement availability policy
+- product timing policy with source URL/reference per market
 
 ## Related Checks
 
 - Gate: `G6 PIT + Reproducibility`
 - Metric: `available_at_le_decision_time_rate`
 - Metric: `settlement_available_after_session_close`
-

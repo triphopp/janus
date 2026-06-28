@@ -6,6 +6,7 @@ Status: `draft`
 
 Source plan:
 
+- `issues/P0-critical/pipeline-data-integrity/022-settlement-availability-anchor.md`
 - `issues/P0-critical/pipeline-data-integrity/023-downstream-option-chain-greeks-export.md`
 - `issues/P0-critical/pipeline-data-integrity/000-implementation-sequence.md`
 - `docs/design/csv_storage_bounded_context_redesign.md`
@@ -45,8 +46,13 @@ In scope:
 - Separate technical field definitions from domain display labels.
 - Document raw source mapping for every exported field where applicable.
 - Document units, decimal precision, allowed values, nullability, and examples.
+- Read product units from the run manifest or instrument config, not from
+  hardcoded defaults in core code.
 - Document timing semantics: `trade_date` is market session date, not
   tradable time.
+- Document product timing policy in the data dictionary so domain users can see
+  when settlement data becomes eligible for downstream use.
+- Document timing source references for WTI and ICE Brent policies.
 - Document WTI-specific market conventions used by the export.
 
 Out of scope:
@@ -74,6 +80,14 @@ Recommended artifacts:
 
 - `data/option_chain_greeks/data_dictionary.md`
 - `data/option_chain_greeks/schema.json`
+
+The generated `data_dictionary.md` must be the human-readable file an agent or
+domain reviewer can open beside the CSV to understand:
+
+- what each column means
+- how raw fields map to canonical values
+- which display labels are finance-friendly
+- which time policy prevents one-day settlement leakage
 
 ## Required Fields
 
@@ -148,6 +162,46 @@ The tradable consumer time is derived from the manifest/importer policy:
 tradable_time = next_trading_session_after_trade_date(trade_date, exchange_calendar)
 ```
 
+The downstream CSV remains date-only. Do not add `available_at`,
+`decision_time`, or `tradable_time` as row-level CSV columns unless a downstream
+consumer explicitly requires a timestamped feed. Those values belong in the
+manifest/importer policy and review artifacts.
+
+## Timing and Availability Section
+
+The generated `data_dictionary.md` must include a section named `Timing and
+Availability` with both domain and technical explanations.
+
+It must include at least:
+
+| Policy | Required dictionary explanation |
+| --- | --- |
+| `trade_date` | Market session date described by the row; not the time the row is tradable |
+| `availability_policy` | Settlement rows are not available from midnight; availability is derived from product timing policy |
+| `tradable_time_policy` | Downstream backtests/importers should consume the row no earlier than the next eligible trading session after the settlement policy allows it |
+| `timezone` | Use the exchange/product timezone from the manifest, not the local machine timezone |
+| `settlement_timing.source_reference` | Link or cite the product timing source used for the run |
+
+Product timing examples to document:
+
+| Product/source | Time kind | Local time | Timezone | Dictionary note |
+| --- | --- | --- | --- | --- |
+| NYMEX WTI (`CL`) | settlement period end | `14:30:00` | `America/New_York` | CME WTI daily settlement calculation uses a window ending at 14:30 ET; same-day public file availability is not assumed unless the run declares a real-time settlement feed policy |
+| ICE Brent futures | settlement period end | `19:30:00` | `Europe/London` | ICE Brent futures daily settlement uses a two-minute window starting at 19:28 London time |
+| Platts Dated Brent | assessment time | `16:30:00` | `Europe/London` | Different benchmark; do not use this timing for ICE Brent futures/options unless the data contract explicitly says the source is Platts Dated Brent |
+
+Recommended source references:
+
+- CME WTI settlement procedure:
+  `https://www.cmegroup.com/trading/energy/files/NYMEX_Energy_Futures_Daily_Settlement_Procedure.pdf`
+- ICE Brent futures product specification:
+  `https://www.ice.com/products/219/brent-crude-futures`
+- Platts Dated Brent assessment explanation:
+  `https://www.spglobal.com/energy/en/pricing-benchmarks/assessments/crude-oil/dated-brent-price-explained`
+
+The data dictionary may summarize these policies, but the canonical
+machine-readable values must come from the generated `manifest.json`.
+
 ## Acceptance Criteria
 
 - [ ] A human-readable data dictionary is generated or maintained for the downstream
@@ -159,7 +213,18 @@ tradable_time = next_trading_session_after_trade_date(trade_date, exchange_calen
 - [ ] `contract_month` explicitly documents raw `STRIP` to ISO `YYYY-MM-01`.
 - [ ] `trade_date` explicitly documents market-session semantics and tradable-time
       policy separation.
+- [ ] The dictionary includes a `Timing and Availability` section.
+- [ ] The dictionary documents WTI settlement-period end as
+      `14:30:00 America/New_York` when the run is WTI/NYMEX CL.
+- [ ] The dictionary documents ICE Brent futures settlement-period end as
+      `19:30:00 Europe/London` when the run is ICE Brent futures/options.
+- [ ] The dictionary distinguishes Platts Dated Brent `16:30:00 Europe/London`
+      from ICE Brent futures/options timing.
+- [ ] The dictionary states that `available_at`, `decision_time`, and
+      `tradable_time` are not row-level CSV columns in the date-only export.
 - [ ] Units and precision match `023`.
+- [ ] Price units in `schema.json` and `data_dictionary.md` come from the
+      manifest/instrument config for the run.
 - [ ] Display labels are finance-friendly and do not require pipeline knowledge.
 - [ ] The dictionary is linked from `summary.json` artifacts or the downstream manifest.
 
