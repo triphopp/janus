@@ -49,7 +49,7 @@ metrics_mode: strategy_required   # require explicit strategy/P&L returns for St
 pricing:
   model: black76                # futures options → Black-76
   iv_validate_threshold: 0.005
-  validate_provided_iv: true
+  validate_provided_iv: false   # trust exchange settlement IV; opt in only for a model self-test (issue 025)
   iv_validate_sample_size: 5000
   compute_greeks: false          # enable after universe narrowing if needed
   check_pcp: false               # run as sampled/offline quality check for large chains
