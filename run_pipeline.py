@@ -860,10 +860,6 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
                     _sym, df["as_of_date"].min(), df["as_of_date"].max(),
                     api_key=_av_key,
                 )
-            elif _cv_provider == "stooq" and _sym:
-                from ingestion import stooq_loader
-                _val_df = stooq_loader.fetch(_sym, df["as_of_date"].min(), df["as_of_date"].max())
-
             if not _val_df.empty:
                 df = adapter.validate_clips(df, _val_df, agree_tol=_agree_tol)
                 n_validated = int(
@@ -1392,6 +1388,14 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         )
         summary["html_report"] = html_path
 
+    # Record user-facing CLI provenance (preset, reproducibility, advanced
+    # overrides) so an official/export run is auditable from summary.json alone.
+    for _prov_key in ("preset", "reproducible", "universe", "advanced_overrides"):
+        if _prov_key in cfg and _prov_key not in summary:
+            summary[_prov_key] = cfg[_prov_key]
+    if cfg.get("runtime_overrides"):
+        summary.setdefault("runtime_overrides", cfg["runtime_overrides"])
+
     summary_path = run_dir / "summary.json"
     with open(summary_path, "w") as f:
         json.dump({k: str(v) if isinstance(v, (pd.Timestamp, datetime)) else v
@@ -1537,6 +1541,19 @@ Example (WTI Q4 2024, near-term liquid options + Greeks):
                              "auto = tqdm bar in TTY, plain log lines in CI; "
                              "bar = force tqdm; plain = log lines only; none = silent.")
     args = parser.parse_args()
+
+    # Deprecation notice: the user-facing path is now `janus`. This direct entry
+    # still works (compatibility layer) but emits guidance toward the new CLI.
+    print(
+        "[deprecation] run_pipeline.py is the low-level entry. The supported "
+        "user path is now:\n"
+        f"    python janus.py import {args.instrument.upper()} <file>\n"
+        f"    python janus.py run {args.instrument.upper()} "
+        f"--from {args.start} --to {args.end}\n"
+        "  Old flags still work during migration.",
+        file=sys.stderr,
+    )
+
     if args.min_dte is not None and args.max_dte is not None and args.min_dte > args.max_dte:
         parser.error("--min-dte must be <= --max-dte")
     if (

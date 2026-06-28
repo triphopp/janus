@@ -19,6 +19,9 @@ diagnostics rather than strategy backtest approval.
 
 The actively supported workflows are:
 
+- **Progressive `janus` CLI** — `import` an external file once, then `run`
+  many times by symbol and date window. Advanced pipeline knobs stay out of the
+  default path.
 - Equity diagnostics from provider data.
 - Futures and futures-options diagnostics from pipe-delimited settlement files.
 - WTI futures-options runs using a hash-pinned local settlement file.
@@ -152,75 +155,106 @@ Run the full test suite:
 python3 -m pytest -q
 ```
 
-Expected current result (on `feature/greek-engine`):
+Expected current result (on `main`):
 
 ```text
-468 passed, 3 skipped
+1023 passed, 8 skipped
 ```
 
-## Quick Start: WTI Settlement Options
+> **Windows note:** `.pytest_cache` write errors (`WinError 5`) appear on some
+> Windows setups but do not affect test results. Use `python3 -m pytest -q -p no:cacheprovider`
+> to suppress them.
 
-The local WTI instrument config is intentionally ignored because it contains a
-machine-specific file path. Start from the example:
+## Quick Start: the `janus` CLI
+
+The user-facing entry point is `janus`. The core path is **import once, run many
+times** — you never have to learn `instrument`, `provider`, or `data-file`.
+
+### WTI settlement options (file-backed)
 
 ```bash
-cp configs/instruments/wti.yaml.example configs/instruments/wti.yaml
-shasum -a 256 /absolute/path/to/WTI.csv
+# 1. Register the local settlement file once (computes + pins its SHA-256)
+python janus.py import WTI data/WTI.csv
+
+# 2. Run by symbol + window. --window accepts YYYY, YYYY-MM, or YYYYQn
+python janus.py run WTI --window 2024Q4
+
+# Custom date range instead of a named window
+python janus.py run WTI --from 2024-09-25 --to 2024-12-31
+
+# Enable Greeks + a narrower research universe for downstream export
+python janus.py run WTI --window 2024Q4 --preset export --universe near-term
 ```
 
-Edit `configs/instruments/wti.yaml`:
+`import` detects the delimiter (the WTI file is pipe-delimited despite its
+`.csv` name), records row count and observed date range, and sets the file as
+the active source. Official/export runs refuse to start on an unpinned or
+changed file and tell you the exact next command.
+
+### Equity diagnostics (live provider)
+
+Equity tickers read from a live provider, which is not reproducible — so they
+run under the `diagnostic` preset:
+
+```bash
+python janus.py run NVDA --from 2024-01-01 --to 2024-12-31 --preset diagnostic
+```
+
+### Inspect before / after running
+
+```bash
+python janus.py doctor WTI                 # readiness: source, hash, IV, export, calendars
+python janus.py explain WTI --window 2024Q4  # print the resolved plan, run nothing
+python janus.py list                        # all profiles + readiness + next command
+python janus.py show wti_q4                  # summarize a completed run
+python janus.py data list WTI                # registered sources for a symbol
+python janus.py data use WTI <source_id>     # switch the active source
+```
+
+### Presets and universes
+
+| `--preset` | Posture |
+|---|---|
+| `official` (default) | Hash-pinned source required; reproducible; fail closed on P0 gates |
+| `diagnostic` | Allows live/provider reads; outputs marked non-reproducible |
+| `export` | Like official + Greeks on → downstream `option_chain_greeks` |
+| `research` | Explicit research-universe choices, every override recorded |
+
+| `--universe` | Option rows kept |
+|---|---|
+| `all` (default) | Everything except expiry-day rows |
+| `liquid` | Priced, bounded IV, mid delta band |
+| `near-term` | ≤ 90 DTE |
+| `custom:<name>` | A `universe_presets.<name>` block in the instrument YAML |
+
+### Advanced overrides
+
+Low-level pipeline knobs are hidden from the default help. Reach them
+explicitly; every override is recorded in `summary.json`:
+
+```bash
+python janus.py run WTI --window 2024Q4 --advanced \
+  --override pricing.compute_greeks=true \
+  --override cv.n_folds=4
+```
+
+### Data-source registry
+
+Imported files are recorded in `configs/local/data_sources.yaml` (git-ignored —
+it stores private absolute paths):
 
 ```yaml
-data_file: "/absolute/path/to/WTI.csv"
-data_version: sha256:<file-sha256>
-data_file_sha256: <file-sha256>
-```
-
-Then run a known-good WTI window:
-
-```bash
-python3 run_pipeline.py \
-  --instrument wti \
-  --start 2024-09-25 \
-  --end 2024-12-31 \
-  --run-id wti_q4
-```
-
-The hash-pinned local file satisfies the fixed-input guard. Use
-`--allow-unversioned-data` only for exploratory provider/source reads where you
-explicitly accept non-reproducible raw inputs.
-
-Observed smoke result for the current local WTI file:
-
-```text
-Ingestion: 267185 rows loaded
-Bronze gate: 0 rows quarantined
-Coverage SLA: ok - 59/70 trading days
-Adapter: 179665 rows prepared
-Validators: 0 bound flags, 0 price outliers capped
-CDC: 0 UNATTRIBUTED, 0 breaks
-Splitter: 6 folds
-```
-
-The Q4 smoke still has `0` folds passing the regime diversity gate. That is a
-calibration/sample issue, not a pipeline crash.
-
-## Quick Start: Equity Diagnostics
-
-Exploratory equity runs may read directly from the provider:
-
-```bash
-python3 run_pipeline.py \
-  --instrument TSLA \
-  --start 2020-01-01 \
-  --end 2024-12-31 \
-  --allow-unversioned-data
-```
-
-For a ticker without a YAML file, `--instrument` can be the ticker:
-
-```bash
-python3 run_pipeline.py -i NVDA --start 2024-01-01 --end 2024-12-31 --allow-unversioned-data
+WTI:
+  active: wti_wti
+  sources:
+    wti_wti:
+      path: D:/Agents/Codex/janus/data/WTI.csv
+      sha256: ead277b65f50405e7fa28bf0785b46191e9aaa0a7f5bcef1271cf04e6e50d4ee
+      format: psv
+      provider: settlement
+      rows: 1851596
+      date_range: [2024-09-25, 2026-05-29]
+      imported_at: 2026-06-28T00:00:00+00:00
 ```
 
 ## Quick Start: Greek-only Mode
@@ -267,7 +301,13 @@ Greek columns. The runner never raises on individual bad rows.
 
 See `docs/guides/greek_only_runner.md` for the full API reference.
 
-## CLI Rules
+## Advanced: `run_pipeline.py` (low-level entry)
+
+`janus` is a facade over `run_pipeline.py`. The low-level entry still works as a
+compatibility layer (it prints a deprecation notice steering you to `janus`) and
+remains the place where every individual knob is exposed. Prefer `janus` for
+normal work; reach for `run_pipeline.py` only for one-off knob combinations not
+covered by a preset.
 
 `run_pipeline.py` separates instrument identity from file location:
 
@@ -276,59 +316,27 @@ See `docs/guides/greek_only_runner.md` for the full API reference.
 - `--provider`: optional provider override
 - `--allow-unversioned-data`: bypass fixed-input guard for diagnostics only
 
-Do not pass a CSV path to `--instrument`; Janus will treat it as an instrument
-name or ticker.
-
-Examples:
-
 ```bash
-# Settlement-backed instrument using config data_file
-python3 run_pipeline.py -i wti --start 2024-09-25 --end 2024-12-31
+# Equivalent of: janus run WTI --window 2024Q4  (after janus import)
+python3 run_pipeline.py -i wti --start 2024-10-01 --end 2024-12-31 --run-id wti_q4
 
-# Settlement-backed instrument overriding the file path
+# Narrow a large option chain + enable Greeks, all from the CLI
 python3 run_pipeline.py \
-  -i wti \
-  --provider settlement \
-  --data-file "/absolute/path/to/WTI.csv" \
-  --start 2024-09-25 \
-  --end 2024-12-31
+  -i wti --start 2024-09-25 --end 2024-12-31 \
+  --max-dte 90 --min-option-price 0.00001 --iv-cap 2.0 \
+  --min-abs-delta 0.15 --max-abs-delta 0.80 --compute-greeks
 ```
+
+Supported runtime controls (all map to `janus run --advanced --override …` or a
+preset): `--compute-greeks`, `--metrics-mode`, `--min-dte`, `--max-dte`,
+`--min-option-price`, `--iv-cap`, `--min-abs-delta`, `--max-abs-delta`,
+`--n-folds`, `--embargo-bars`, `--progress`. CLI values override instrument
+YAML, which overrides family defaults.
 
 If `--data-file` points to a different file than the hash pinned in the config,
-the fixed-input guard fails.
-
-### Runtime Overrides
-
-Large option chains can be narrowed from the CLI without editing instrument YAML:
-
-```bash
-python3 run_pipeline.py \
-  -i wti \
-  --start 2024-09-25 \
-  --end 2024-12-31 \
-  --max-dte 90 \
-  --min-option-price 0.00001 \
-  --iv-cap 2.0 \
-  --min-abs-delta 0.15 \
-  --max-abs-delta 0.80 \
-  --compute-greeks
-```
-
-Supported runtime controls:
-
-- `--compute-greeks` / `--no-compute-greeks`
-- `--metrics-mode auto|diagnostic|buy_and_hold|strategy_required`
-- `--min-dte`, `--max-dte`, `--min-option-price`, `--iv-cap`
-- `--min-abs-delta`, `--max-abs-delta`
-- `--n-folds`, `--embargo-bars`
-- `--progress auto|bar|plain|none`
-
-CLI values override instrument YAML, which overrides family defaults.
-
-Progress bars are additive and write to stderr; existing stage logs remain on
-stdout. `--progress auto` shows bars only for an interactive terminal with
-`tqdm` installed, `plain` keeps the historical logs only, and `none` suppresses
-both bars and stdout logs for batch runs.
+the fixed-input guard fails. Progress bars write to stderr; `--progress auto`
+shows a `tqdm` bar in an interactive terminal, `plain` keeps log lines, `none`
+silences both.
 
 ## Greek Engine
 
@@ -645,7 +653,9 @@ Main dashboard/API routes:
 
 ```text
 janus/
-├── run_pipeline.py              # full pipeline CLI
+├── janus.py                     # user-facing CLI entry (import/run/doctor/…)
+├── cli/                         # CLI facade: dates, registry, presets, plan, doctor
+├── run_pipeline.py              # full pipeline (low-level / advanced entry)
 ├── run_greeks.py                # Greek-only CLI (no splitter/metrics/reports)
 ├── run_dashboard.py
 ├── configs/

@@ -42,6 +42,9 @@ memory/
 # Use configs/instruments/wti.yaml.example as a template
 configs/instruments/wti.yaml
 
+# Local data-source registry — stores private absolute paths
+configs/local/
+
 # OS
 .DS_Store
 Thumbs.db
