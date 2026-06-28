@@ -76,9 +76,6 @@ def _add_run_opts(p: argparse.ArgumentParser) -> None:
                    help="trust posture (default: official)")
     p.add_argument("--universe", default=presets.DEFAULT_UNIVERSE,
                    help="option universe: all | liquid | near-term | custom:<name>")
-    p.add_argument("--progress", default="plain",
-                   choices=["plain", "bar", "none", "auto"],
-                   help="pipeline progress display (default: plain logs; use bar for tqdm)")
     p.add_argument("--advanced", action="store_true",
                    help="enable advanced --override pipeline knobs")
     p.add_argument("--override", action="append", default=[], metavar="KEY=VALUE",
@@ -145,8 +142,8 @@ def _build_plan_from_args(args, run_id):
         universe=args.universe, run_id=run_id, overrides=overrides,
         registry_path=args.registry,
     )
-    plan.cfg["progress_mode"] = args.progress
-    plan.cfg.setdefault("runtime_overrides", {})["progress"] = args.progress
+    plan.cfg["progress_mode"] = "plain"
+    plan.cfg.setdefault("runtime_overrides", {})["progress"] = "plain"
     return plan
 
 

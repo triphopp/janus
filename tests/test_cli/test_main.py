@@ -134,26 +134,3 @@ def test_run_defaults_to_plain_progress(tmp_path, capsys, monkeypatch):
     assert rc == 0
     assert captured["cfg"]["progress_mode"] == "plain"
     assert captured["cfg"]["runtime_overrides"]["progress"] == "plain"
-
-
-def test_run_can_opt_into_progress_bar(tmp_path, capsys, monkeypatch):
-    data = _write_wti(tmp_path / "WTI.csv")
-    reg = tmp_path / "r.yaml"
-    _run(["import", "WTI", str(data)], reg)
-    capsys.readouterr()
-
-    captured = {}
-
-    def fake_run_pipeline(cfg, start, end, run_id):
-        captured["cfg"] = cfg
-
-    import run_pipeline as rp
-
-    monkeypatch.setattr(rp, "run_pipeline", fake_run_pipeline)
-    rc = _run([
-        "run", "WTI", "--window", "2024Q4", "--name", "wti_test",
-        "--progress", "bar",
-    ], reg)
-
-    assert rc == 0
-    assert captured["cfg"]["progress_mode"] == "bar"
