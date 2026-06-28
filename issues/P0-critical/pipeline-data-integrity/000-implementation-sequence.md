@@ -22,6 +22,7 @@ Related issues:
 - `022-settlement-availability-anchor.md`
 - `023-downstream-option-chain-greeks-export.md`
 - `024-option-chain-greeks-data-dictionary.md`
+- `025-iv-validation-trust-exchange-primary.md`
 
 ## Agent Read Order
 
@@ -40,7 +41,10 @@ this order:
 For implementation, `000` is the entry point. For output-format questions, use
 `023` first and then `024`. For any time-zone, settlement, `available_at`, or
 tradable-time question, use `022` as the policy source and mirror the relevant
-human-readable explanation into the generated `data_dictionary.md`.
+human-readable explanation into the generated `data_dictionary.md`. For IV
+validation policy (trusting exchange settlement IV vs price-inversion, and the
+~20% deep-ITM exclusion), use `025` — it is the policy half of `002`/`003` and is
+scheduled to land with the backtest dataset universe.
 
 ## Summary
 
