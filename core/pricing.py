@@ -227,5 +227,32 @@ def validate_provided_iv(
     df = df.copy()
     df["iv_solved"] = results
     df["iv_diff"] = (df["iv_solved"] - df.get("iv_provided", np.nan)).abs()
-    df["iv_flag"] = df["iv_diff"] > threshold
+
+    # Price-inversion is only trustworthy where the settlement price carries
+    # recoverable time value (issue 025). Deep ITM/OTM rows settle at ~intrinsic
+    # (time value below one tick), so inverting them yields a meaningless IV; we must
+    # NOT flag the (authoritative) exchange IV there. Only near-the-money rows with
+    # enough time value are eligible for the provider/model mismatch flag.
+    import pandas as pd  # local alias already imported above
+
+    min_ticks = float(cfg.get("iv_validate_min_time_value_ticks", 2.0))
+    price_tick = float(
+        cfg.get("price_tick", (cfg.get("export") or {}).get("price_tick", 0.01))
+    )
+    min_time_value = min_ticks * price_tick
+
+    underlying = pd.to_numeric(
+        df.get("underlying_price", df.get("F", df.get("price_std"))), errors="coerce"
+    )
+    strike = pd.to_numeric(df.get("strike"), errors="coerce")
+    price = pd.to_numeric(df.get("option_price", df.get("price")), errors="coerce")
+    right = df.get("right", pd.Series(index=df.index, dtype="object")).astype("string").str.upper()
+    intrinsic = np.where(
+        right.eq("C"), np.clip(underlying - strike, 0, None),
+        np.clip(strike - underlying, 0, None),
+    )
+    time_value = price - intrinsic
+    df["iv_invertible"] = (time_value >= min_time_value) & df["iv_solved"].notna()
+
+    df["iv_flag"] = df["iv_invertible"] & (df["iv_diff"] > threshold)
     return df

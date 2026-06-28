@@ -141,15 +141,24 @@ def assess_option_market_readiness(
     reasons: list[str] = []
     status = "ready"
 
-    # ── IV provider/model mismatch ────────────────────────────────────────────
-    iv_rate = iv.get("flag_rate")
+    # ── IV provider/model mismatch (near-money aggregate; issue 025) ───────────
+    # Prefer the near-money aggregate mismatch rate — the only trustworthy IV signal.
+    # Deep ITM/OTM price-inversion artifacts are excluded from it. Fall back to the
+    # raw flag rate only when the aggregate is unavailable (older summaries).
+    near_money = option_quality.get("near_money_iv") or {}
+    iv_rate = near_money.get("mismatch_rate")
+    iv_basis = "near_money_aggregate"
+    if iv_rate is None:
+        iv_rate = iv.get("flag_rate")
+        iv_basis = "flag_rate_fallback"
     iv_status = _rate_check(
         "iv_provider_model_mismatch", iv_rate,
         thresholds["iv_mismatch_review_rate"], thresholds["iv_mismatch_block_rate"],
         reasons,
     )
     checks["iv_provider_model_mismatch"] = {
-        "rate": iv_rate, "status": iv_status,
+        "rate": iv_rate, "status": iv_status, "basis": iv_basis,
+        "invertible_rows": near_money.get("invertible_rows"),
         "domain_label": _DOMAIN_LABELS["iv_provider_model_mismatch"],
     }
     status = _escalate(status, iv_status)

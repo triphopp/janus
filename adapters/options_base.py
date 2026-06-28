@@ -291,7 +291,15 @@ class OptionsBase(AdapterBase):
             if "iv_solved" in df.columns:
                 iv_solved = pd.to_numeric(df["iv_solved"], errors="coerce")
                 diff = (iv - iv_solved).abs()
-                mask = opt & diff.notna() & (diff > iv_diff_threshold)
+                # Only near-the-money rows have a trustworthy price-inverted IV
+                # (issue 025); deep ITM/OTM disagreement is an inversion artifact and
+                # must not flag the authoritative exchange IV.
+                invertible = (
+                    df["iv_invertible"].fillna(False)
+                    if "iv_invertible" in df.columns
+                    else pd.Series(True, index=df.index)
+                )
+                mask = opt & diff.notna() & (diff > iv_diff_threshold) & invertible
                 df.loc[mask, "_iv_quality_flag"] = True
                 df.loc[mask, "_iv_quality_reason"] += "provided_iv_diff_above_threshold;"
 
@@ -433,6 +441,8 @@ class OptionsBase(AdapterBase):
             )
             if "iv_flag" not in df.columns:
                 df["iv_flag"] = False
+            if "iv_invertible" not in df.columns:
+                df["iv_invertible"] = False
             for col in ("iv_solved", "iv_diff"):
                 if col not in df.columns:
                     df[col] = np.nan
@@ -453,6 +463,7 @@ class OptionsBase(AdapterBase):
                 df.loc[checked.index, "iv_solved"] = checked["iv_solved"]
                 df.loc[checked.index, "iv_diff"] = checked["iv_diff"]
                 df.loc[checked.index, "iv_flag"] = checked["iv_flag"]
+                df.loc[checked.index, "iv_invertible"] = checked["iv_invertible"]
             df.loc[option_mask, "iv"] = df.loc[option_mask, "iv_provided"].copy()
 
         elif iv_source == "solve" and option_mask.any():

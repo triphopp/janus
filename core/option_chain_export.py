@@ -251,9 +251,14 @@ def _clean_release_mask(df: pd.DataFrame) -> pd.Series:
     if "T" in df.columns:
         mask &= pd.to_numeric(df["T"], errors="coerce").fillna(0) > 0
 
-    # Drop any row carrying a quality/quarantine flag.
-    for flag in ("_iv_quality_flag", "_delta_quality_flag", "_premium_quality_flag",
-                 "_pcp_flag", "_underlying_map_flag", "iv_flag", "quarantine", "held_back"):
+    # Drop rows carrying a genuine quality/quarantine flag. IV provider/model
+    # disagreement (iv_flag / _iv_quality_flag) is deliberately NOT an exclusion
+    # under exchange-authoritative IV (issue 025): a deep ITM/OTM price-inversion
+    # mismatch is an artifact, not bad exchange data. It only moves run readiness via
+    # the near-money aggregate. Genuine corruption (premium below intrinsic, bad
+    # delta sign, PCP break, missing underlying, quarantine) still excludes.
+    for flag in ("_delta_quality_flag", "_premium_quality_flag",
+                 "_pcp_flag", "_underlying_map_flag", "quarantine", "held_back"):
         if flag in df.columns:
             mask &= ~df[flag].fillna(False).astype(bool)
     return mask
