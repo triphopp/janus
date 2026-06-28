@@ -41,9 +41,18 @@ def _prepared_frame():
 
 _CFG = {
     "family": "futures_options", "pricing_model": "black76", "rf_rate": 0.05,
+    "exchange_tz": "America/New_York",
+    "settlement_release_time": "14:30",
+    "exchange_calendar": "NYMEX",
+    "settlement_timing": {
+        "time_kind": "settlement_period_end",
+        "source_reference": "https://example.test/settlement-policy",
+    },
     "symbol": {"product_id": 425, "contract_root": "T", "hub": "WTI"},
     "export": {"product": "WTI", "underlying_root": "CL", "option_root": "LO",
-               "exchange": "NYMEX"},
+               "exchange": "NYMEX", "currency": "USD",
+               "price_unit": "USD_per_barrel", "contract_unit": "1000_barrels",
+               "price_tick": 0.01},
 }
 
 
@@ -163,6 +172,44 @@ def test_manifest_declares_product_precision_and_iv_unit():
     assert manifest["quality_gate"] == "ready"
 
 
+def test_manifest_declares_settlement_timing_policy():
+    manifest = oce.build_export_manifest(_CFG, {"status": "ready"})
+    timing = manifest["settlement_timing"]
+    assert timing["time_kind"] == "settlement_period_end"
+    assert timing["local_time"] == "14:30:00"
+    assert timing["timezone"] == "America/New_York"
+    assert timing["same_day_file_availability_assumption"] == "not_assumed"
+    assert timing["source_reference"] == "https://example.test/settlement-policy"
+
+
+def test_export_config_requires_instrument_policy_in_config():
+    incomplete = {"family": "futures_options", "export": {"product": "Example"}}
+    with pytest.raises(ValueError, match="underlying_root"):
+        oce.export_config(incomplete)
+
+
+def test_schema_units_come_from_export_config():
+    cfg = {
+        **_CFG,
+        "exchange_calendar": "EXCHANGE",
+        "exchange_tz": "UTC",
+        "export": {
+            **_CFG["export"],
+            "product": "Example",
+            "underlying_root": "EX",
+            "option_root": "EO",
+            "exchange": "EXCHANGE",
+            "price_unit": "points",
+            "contract_unit": "1_contract",
+        },
+    }
+    schema = oce.build_export_schema(cfg)
+    units = {c["name"]: c["unit"] for c in schema["columns"]}
+    assert units["strike_price"] == "points"
+    assert units["option_settlement_price"] == "points"
+    assert units["underlying_settlement_price"] == "points"
+
+
 # ── Data dictionary + schema (issue 024) ──────────────────────────────────────
 
 def test_data_dictionary_exists_and_covers_every_column():
@@ -183,6 +230,16 @@ def test_dictionary_documents_source_mapping_and_domain_labels():
     assert "OPTION_VOLATILITY" in text          # iv raw source
     assert "Implied Volatility" in text         # domain label
     assert "market session date" in text        # trade_date timing semantics
+
+
+def test_dictionary_documents_timing_and_availability_policy():
+    text = oce.build_data_dictionary(_CFG)
+    assert "Timing and Availability" in text
+    assert "available_at" in text
+    assert "decision_time" in text
+    assert "tradable_time" in text
+    assert "14:30:00 America/New_York" in text
+    assert "https://example.test/settlement-policy" in text
 
 
 def test_dictionary_documents_contract_month_raw_to_canonical():
@@ -207,7 +264,13 @@ def test_export_excludes_corrupted_rows_end_to_end():
     )
 
     cfg = {**incident_pipeline_cfg(),
-           "export": {"product": "WTI", "underlying_root": "CL", "option_root": "LO"}}
+           "exchange_tz": "America/New_York",
+           "settlement_release_time": "14:30",
+           "exchange_calendar": "NYMEX",
+           "export": {"product": "WTI", "underlying_root": "CL", "option_root": "LO",
+                      "exchange": "NYMEX", "currency": "USD",
+                      "price_unit": "USD_per_barrel", "contract_unit": "1000_barrels",
+                      "price_tick": 0.01}}
     df, prepared_cfg = FuturesOptionsAdapter(cfg).prepare(build_wti_incident_frame())
 
     built = oce.build_option_chain_greeks(df, prepared_cfg)

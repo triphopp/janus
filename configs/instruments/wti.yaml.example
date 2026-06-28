@@ -24,6 +24,12 @@ date_grain: eod
 exchange_tz: America/New_York
 settlement_release_time: "14:30"  # NYMEX crude settlement ~2:30pm ET
 exchange_calendar: NYMEX
+settlement_timing:
+  time_kind: settlement_period_end
+  local_time: "14:30:00"
+  timezone: America/New_York
+  same_day_file_availability_assumption: not_assumed
+  source_reference: https://www.cmegroup.com/trading/energy/files/NYMEX_Energy_Futures_Daily_Settlement_Procedure.pdf
 
 # Downstream option-chain Greeks export policy (issues 023/024).
 export:

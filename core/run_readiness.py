@@ -1,6 +1,6 @@
 """Domain run readiness — option-market checks must affect whether a run is trusted.
 
-Issue 001 (WTI incident regression) and issue 003 (option market checks must affect
+Issue 001 (incident regression) and issue 003 (option market checks must affect
 run readiness): the pipeline must never present an option run as normal when the
 option-domain checks are severely unreliable. Provider/model IV mismatch and
 put-call-parity (call/put) mismatch must be able to push a run to ``needs_review``
@@ -59,8 +59,18 @@ def _escalate(current: str, candidate: str) -> str:
     return current
 
 
-def _rate_check(name: str, rate, review_rate: float, block_rate: float, reasons: list) -> str:
+def _rate_check(
+    name: str,
+    rate,
+    review_rate: float,
+    block_rate: float,
+    reasons: list,
+    check_status: str | None = None,
+) -> str:
     """Status for a rate-based check; None rate → needs_review (not_checked != pass)."""
+    if check_status == "disabled":
+        reasons.append(f"{name}_disabled")
+        return "needs_review"
     if rate is None:
         reasons.append(f"{name}_not_checked")
         return "needs_review"
@@ -150,9 +160,11 @@ def assess_option_market_readiness(
         "pcp_mismatch", pcp_rate,
         thresholds["pcp_mismatch_review_rate"], thresholds["pcp_mismatch_block_rate"],
         reasons,
+        pcp.get("status"),
     )
     checks["pcp_mismatch"] = {
         "rate": pcp_rate, "status": pcp_status,
+        "check_status": pcp.get("status", "checked"),
         "domain_label": _DOMAIN_LABELS["pcp_mismatch"],
     }
     status = _escalate(status, pcp_status)

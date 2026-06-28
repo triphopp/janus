@@ -17,10 +17,16 @@ iv_source: provided             # use OPTION_VOLATILITY from exchange (validate 
 iv_raw_unit: percent            # raw OPTION_VOLATILITY is percent points (issue 002)
 date_grain: eod                 # date-only; no intraday timestamp
 
-# Settlement availability + calendar policy (issues 022, 013). Brent settles on ICE.
+# Settlement availability + calendar policy (issues 022, 013). Brent futures settle on ICE.
 exchange_tz: Europe/London
-settlement_release_time: "16:30"  # ICE Brent settlement window close (London)
+settlement_release_time: "19:30"  # ICE Brent futures settlement window close (London)
 exchange_calendar: ICE
+settlement_timing:
+  time_kind: settlement_period_end
+  local_time: "19:30:00"
+  timezone: Europe/London
+  same_day_file_availability_assumption: not_assumed
+  source_reference: https://www.ice.com/products/219/brent-crude-futures
 
 # Downstream option-chain Greeks export policy (issues 023/024).
 export:
@@ -52,7 +58,7 @@ event_calendars: [configs/events/eia.csv, configs/events/opec.csv]  # No "EIA" i
 event_regimes: [eia_week]
 
 available_at_lag:                # v1.4: fallback if provider lacks release timestamp
-  settlement: "3h"
+  settlement: "0h"
   eia_inventory: "P5D"
   opec_report: "P2D"
   realized_vol: "2h"

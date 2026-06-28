@@ -57,7 +57,7 @@ COLUMN_SPEC: list[dict] = [
         "source_transform": "uppercase market label",
         "dtype": "string", "format": "string", "unit": None, "precision": None,
         "nullable": False, "allowed_values": None,
-        "example_canonical": "WTI", "example_display": "WTI",
+        "example_canonical": "PRODUCT", "example_display": "Product",
     },
     {
         "name": "underlying_symbol", "domain_label": "Underlying Futures",
@@ -66,7 +66,7 @@ COLUMN_SPEC: list[dict] = [
         "source_transform": "root + month code + 2-digit year",
         "dtype": "string", "format": "string", "unit": None, "precision": None,
         "nullable": False, "allowed_values": None,
-        "example_canonical": "CLX24", "example_display": "CLX24",
+        "example_canonical": "ROOTX24", "example_display": "ROOTX24",
     },
     {
         "name": "option_symbol", "domain_label": "Option Contract",
@@ -75,7 +75,7 @@ COLUMN_SPEC: list[dict] = [
         "source_transform": "derived contract identity",
         "dtype": "string", "format": "string", "unit": None, "precision": None,
         "nullable": False, "allowed_values": None,
-        "example_canonical": "LOX24C70", "example_display": "LO Nov24 70 Call",
+        "example_canonical": "OPTX24C70", "example_display": "OPT Nov24 70 Call",
     },
     {
         "name": "contract_month", "domain_label": "Contract Month",
@@ -109,27 +109,27 @@ COLUMN_SPEC: list[dict] = [
         "description": "Option strike.",
         "source_field": "strike (raw STRIKE)",
         "source_transform": f"round to {PRICE_DP} decimals",
-        "dtype": "number", "format": "decimal", "unit": "USD_per_barrel",
+        "dtype": "number", "format": "decimal", "unit": "price_unit",
         "precision": PRICE_DP, "nullable": False, "allowed_values": None,
-        "example_canonical": "70.00", "example_display": "$70.00/bbl",
+        "example_canonical": "70.00", "example_display": "70.00 price units",
     },
     {
         "name": "option_settlement_price", "domain_label": "Option Settlement Price",
         "description": "Option settlement premium.",
         "source_field": "option_price / price on option rows (raw SETTLEMENT PRICE)",
         "source_transform": f"round to {PRICE_DP} decimals",
-        "dtype": "number", "format": "decimal", "unit": "USD_per_barrel",
+        "dtype": "number", "format": "decimal", "unit": "price_unit",
         "precision": PRICE_DP, "nullable": False, "allowed_values": None,
-        "example_canonical": "2.10", "example_display": "$2.10/bbl",
+        "example_canonical": "2.10", "example_display": "2.10 price units",
     },
     {
         "name": "underlying_settlement_price", "domain_label": "Underlying Settlement Price",
         "description": "Underlying futures settlement used for Greeks.",
         "source_field": "matched futures settlement (underlying_price)",
         "source_transform": f"round to {PRICE_DP} decimals",
-        "dtype": "number", "format": "decimal", "unit": "USD_per_barrel",
+        "dtype": "number", "format": "decimal", "unit": "price_unit",
         "precision": PRICE_DP, "nullable": False, "allowed_values": None,
-        "example_canonical": "70.00", "example_display": "$70.00/bbl",
+        "example_canonical": "70.00", "example_display": "70.00 price units",
     },
     {
         "name": "implied_volatility", "domain_label": "Implied Volatility",
@@ -193,7 +193,7 @@ COLUMN_SPEC: list[dict] = [
         "name": "pricing_model", "domain_label": "Pricing Model",
         "description": "Pricing model used for Greeks.",
         "source_field": "product policy",
-        "source_transform": "black76 for WTI futures options",
+        "source_transform": "configured product pricing model",
         "dtype": "string", "format": "enum", "unit": None, "precision": None,
         "nullable": False, "allowed_values": ["black76", "bsm"],
         "example_canonical": "black76", "example_display": "Black-76",
@@ -201,6 +201,18 @@ COLUMN_SPEC: list[dict] = [
 ]
 
 EXPORT_COLUMNS = [c["name"] for c in COLUMN_SPEC]
+_REQUIRED_EXPORT_POLICY = (
+    "product",
+    "underlying_root",
+    "option_root",
+    "exchange",
+    "currency",
+    "price_unit",
+    "contract_unit",
+    "price_tick",
+    "exchange_calendar",
+    "timezone",
+)
 
 # Columns that must NEVER reach the downstream CSV (review/debug/raw-vendor).
 FORBIDDEN_COLUMNS = {
@@ -272,21 +284,73 @@ def _symbol_parts(delivery_month: pd.Timestamp):
     return mc, yy
 
 
+def _normalize_local_time(value) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value)
+    if len(text.split(":")) == 2:
+        return f"{text}:00"
+    return text
+
+
 def export_config(cfg: dict) -> dict:
-    """Resolve the export/product policy block with WTI-style defaults."""
+    """Resolve the export/product policy block from config only.
+
+    Core export code must not provide instrument-specific defaults. If a market
+    convention is required for symbols, units, or calendars, it belongs in the
+    instrument YAML or merged runtime config.
+    """
     export = dict((cfg or {}).get("export") or {})
     symbol = (cfg or {}).get("symbol") or {}
     export.setdefault("product", symbol.get("hub") or cfg.get("product") or "UNKNOWN")
-    export.setdefault("underlying_root", symbol.get("contract_root") or "CL")
+    export.setdefault("underlying_root", symbol.get("contract_root"))
     export.setdefault("option_root", export["underlying_root"])
-    export.setdefault("exchange", "NYMEX")
-    export.setdefault("currency", "USD")
-    export.setdefault("price_unit", "USD_per_barrel")
-    export.setdefault("contract_unit", "1000_barrels")
-    export.setdefault("price_tick", 0.01)
-    export.setdefault("exchange_calendar", cfg.get("exchange_calendar", "NYMEX"))
-    export.setdefault("timezone", cfg.get("exchange_tz", "America/New_York"))
+    export.setdefault("exchange", cfg.get("exchange"))
+    export.setdefault("currency", cfg.get("currency"))
+    export.setdefault("price_unit", cfg.get("price_unit"))
+    export.setdefault("contract_unit", cfg.get("contract_unit"))
+    export.setdefault("price_tick", cfg.get("price_tick"))
+    export.setdefault("exchange_calendar", cfg.get("exchange_calendar") or export.get("exchange"))
+    export.setdefault("timezone", cfg.get("exchange_tz") or cfg.get("timezone"))
+    missing = [key for key in _REQUIRED_EXPORT_POLICY if export.get(key) in (None, "")]
+    if missing:
+        raise ValueError(
+            "Downstream option-chain export requires instrument policy in config: "
+            + ", ".join(missing)
+        )
     return export
+
+
+def _settlement_timing_policy(cfg: dict, exp: dict) -> dict:
+    timing = dict((cfg or {}).get("settlement_timing") or exp.get("settlement_timing") or {})
+    local_time = _normalize_local_time(
+        timing.get("local_time") or timing.get("release_time") or cfg.get("settlement_release_time")
+    )
+    timezone = timing.get("timezone") or cfg.get("exchange_tz") or exp.get("timezone")
+    if not local_time or not timezone:
+        return {}
+    out = {
+        "time_kind": timing.get("time_kind", "settlement_period_end"),
+        "local_time": local_time,
+        "timezone": timezone,
+        "same_day_file_availability_assumption": timing.get(
+            "same_day_file_availability_assumption", "not_assumed"
+        ),
+    }
+    if timing.get("source_reference"):
+        out["source_reference"] = timing["source_reference"]
+    return out
+
+
+def _resolve_column_spec(cfg: Optional[dict] = None) -> list[dict]:
+    spec = [dict(c) for c in COLUMN_SPEC]
+    if cfg is None:
+        return spec
+    exp = export_config(cfg)
+    for col in spec:
+        if col.get("unit") == "price_unit":
+            col["unit"] = exp["price_unit"]
+    return spec
 
 
 def build_option_chain_greeks(df: pd.DataFrame, cfg: dict, readiness: Optional[dict] = None) -> dict:
@@ -369,9 +433,8 @@ def build_export_manifest(cfg: dict, readiness: Optional[dict] = None) -> dict:
     """Build the downstream manifest carrying per-dataset policy (issue 023)."""
     exp = export_config(cfg)
     gate = (readiness or {}).get("status", "not_checked")
-    return {
-        "product": f"{exp['product']} Crude Oil Options"
-                   if exp["product"] != "UNKNOWN" else "UNKNOWN",
+    manifest = {
+        "product": exp["product"],
         "exchange": exp["exchange"],
         "underlying_root": exp["underlying_root"],
         "option_root": exp["option_root"],
@@ -396,10 +459,15 @@ def build_export_manifest(cfg: dict, readiness: Optional[dict] = None) -> dict:
         "greek_decimal_places": GREEK_DP,
         "quality_gate": gate,
     }
+    timing = _settlement_timing_policy(cfg, exp)
+    if timing:
+        manifest["settlement_timing"] = timing
+    return manifest
 
 
-def build_export_schema() -> dict:
+def build_export_schema(cfg: Optional[dict] = None) -> dict:
     """Machine-readable schema covering every exported column (issue 024)."""
+    spec = _resolve_column_spec(cfg) if cfg else COLUMN_SPEC
     return {
         "name": "option_chain_greeks",
         "primary_key": ["trade_date", "option_symbol"],
@@ -409,20 +477,24 @@ def build_export_schema() -> dict:
                 "unit": c["unit"], "precision": c["precision"],
                 "nullable": c["nullable"], "allowed_values": c["allowed_values"],
             }
-            for c in COLUMN_SPEC
+            for c in spec
         ],
     }
 
 
 def build_data_dictionary(cfg: Optional[dict] = None) -> str:
     """Human-readable data dictionary covering every exported column (issue 024)."""
+    exp = export_config(cfg) if cfg else {}
+    manifest = build_export_manifest(cfg, {"status": "not_checked"}) if cfg else {}
+    timing = manifest.get("settlement_timing") or {}
+    price_unit = exp.get("price_unit", "configured price unit")
     lines = [
         "# Option Chain Greeks — Data Dictionary",
         "",
         "Downstream-ready daily option chain with full Black-76 Greeks. Canonical CSV "
         "values are for machines; display values are for humans.",
         "",
-        "## Timing semantics",
+        "## Timing and Availability",
         "",
         "`trade_date` is the **market session date** described by the data. It is **not** "
         "the time a downstream consumer may act on the row. Tradable consumer time is "
@@ -432,6 +504,26 @@ def build_data_dictionary(cfg: Optional[dict] = None) -> str:
         "tradable_time = next_trading_session_after_trade_date(trade_date, exchange_calendar)",
         "```",
         "",
+        "`available_at`, `decision_time`, and `tradable_time` are not row-level columns "
+        "in this date-only downstream CSV. They belong in the manifest/importer policy "
+        "and review artifacts.",
+        "",
+        f"- **Availability policy:** {manifest.get('availability_policy', 'configured in manifest')}",
+        f"- **Tradable-time policy:** {manifest.get('tradable_time_policy', 'configured in manifest')}",
+        f"- **Exchange calendar:** {manifest.get('exchange_calendar', 'configured in manifest')}",
+        f"- **Timezone:** {manifest.get('timezone', 'configured in manifest')}",
+    ]
+    if timing:
+        lines.extend([
+            f"- **Settlement time kind:** {timing.get('time_kind')}",
+            f"- **Settlement local time:** {timing.get('local_time')} {timing.get('timezone')}",
+            "- **Same-day file availability assumption:** "
+            f"{timing.get('same_day_file_availability_assumption')}",
+        ])
+        if timing.get("source_reference"):
+            lines.append(f"- **Timing source:** {timing['source_reference']}")
+    lines.extend([
+        "",
         "## Display rules",
         "",
         "| Concept | Raw | Canonical CSV | Domain display |",
@@ -439,12 +531,12 @@ def build_data_dictionary(cfg: Optional[dict] = None) -> str:
         "| Contract month | `11/1/2024` | `2024-11-01` | `Nov 2024` |",
         "| Option type | `C` | `call` | `Call` |",
         "| IV | `30.0` percent | `0.300000` | `30.00%` |",
-        "| Price | `34.69000` | `34.69` | `$34.69/bbl` |",
+        f"| Price | `34.69000` | `34.69` | `34.69 {price_unit}` |",
         "",
         "## Columns",
         "",
-    ]
-    for c in COLUMN_SPEC:
+    ])
+    for c in _resolve_column_spec(cfg) if cfg else COLUMN_SPEC:
         lines.append(f"### `{c['name']}` — {c['domain_label']}")
         lines.append("")
         lines.append(f"- **Description:** {c['description']}")
@@ -491,7 +583,7 @@ def write_option_chain_export(
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     schema_path = out_dir / "schema.json"
-    schema_path.write_text(json.dumps(build_export_schema(), indent=2), encoding="utf-8")
+    schema_path.write_text(json.dumps(build_export_schema(cfg), indent=2), encoding="utf-8")
 
     dict_path = out_dir / "data_dictionary.md"
     dict_path.write_text(build_data_dictionary(cfg), encoding="utf-8")

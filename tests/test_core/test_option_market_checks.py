@@ -75,3 +75,12 @@ def test_thresholds_are_configurable():
     cfg = {"option_market_checks": {"thresholds": {"iv_mismatch_block_rate": 0.05}}}
     out = assess_option_market_readiness(_summary(iv_rate=0.06), cfg)
     assert out["status"] == "blocked"
+
+
+def test_disabled_pcp_check_is_visible_not_clean():
+    summary = _summary(pcp_rate=None)
+    summary["pcp"]["status"] = "disabled"
+    out = assess_option_market_readiness(summary)
+    assert out["checks"]["pcp_mismatch"]["status"] == "needs_review"
+    assert out["checks"]["pcp_mismatch"]["check_status"] == "disabled"
+    assert "pcp_mismatch_disabled" in out["reasons"]
