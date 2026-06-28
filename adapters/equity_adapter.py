@@ -208,7 +208,7 @@ class EquityAdapter(AdapterBase):
             else:
                 # Providers disagree — keep the tag visible for review.
                 df.at[idx, "_return_outlier_reason"] = (
-                    f"provider_conflict(stooq={val_ret:.4f},raw={raw_ret:.4f})"
+                    f"provider_conflict(provider={val_ret:.4f},raw={raw_ret:.4f})"
                 )
                 df.at[idx, "_return_validation_status"] = "needs_review"
                 df.at[idx, "_return_outlier_evidence"] = f"provider_return={val_ret:.4f}"

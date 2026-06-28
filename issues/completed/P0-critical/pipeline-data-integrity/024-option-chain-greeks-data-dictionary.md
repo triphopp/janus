@@ -6,9 +6,9 @@ Status: `draft`
 
 Source plan:
 
-- `issues/P0-critical/pipeline-data-integrity/022-settlement-availability-anchor.md`
-- `issues/P0-critical/pipeline-data-integrity/023-downstream-option-chain-greeks-export.md`
-- `issues/P0-critical/pipeline-data-integrity/000-implementation-sequence.md`
+- `issues/completed/P0-critical/pipeline-data-integrity/022-settlement-availability-anchor.md`
+- `issues/completed/P0-critical/pipeline-data-integrity/023-downstream-option-chain-greeks-export.md`
+- `issues/completed/P0-critical/pipeline-data-integrity/000-implementation-sequence.md`
 - `docs/design/csv_storage_bounded_context_redesign.md`
 - `docs/design/data_structure_reading_map.md`
 

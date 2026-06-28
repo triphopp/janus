@@ -57,12 +57,9 @@ Options frame has many rows per `(as_of_date, strike, expiry)`. But:
 ## 🟠 Data-integrity weaknesses
 
 ### H1 — Caching dead + inconsistent.
-- `run_pipeline` imports `get_cache` (`run_pipeline.py:21`), never calls it → refetch every run.
-- Two impls: `ingestion/cache.py` (`Cache`) and `ingestion/versioned_cache.py`
-  (`VersionedCache` — PIT-correct, immutable, manifest). **Neither wired in.**
-- `Cache.write` sorts by `["as_of_date","product_id"]` (`ingestion/cache.py:46`) →
-  **KeyError on equity** (no `product_id`).
-- **Fix direction:** keep `VersionedCache`, delete `Cache`, wire into `run_pipeline`.
+- Legacy `ingestion/cache.py` was removed after this audit; `VersionedCache` is the
+  remaining PIT-correct, immutable, manifest-backed cache implementation.
+- `run_pipeline` still needs deeper versioned-cache wiring for provider reads.
 
 ### H2 — Symbology validation never enforced.
 - `SettlementLoader` accepts a `Symbology` (`ingestion/settlement_loader.py:45-46`) but

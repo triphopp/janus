@@ -15,6 +15,9 @@ samples, or screenshots containing licensed data.
 | `P1-high` | Important hardening needed before broad use | Plan and implement after P0 is stable |
 | `P2-medium` | Compatibility, reporting, or polish work | Implement once core trust gates exist |
 
+Completed issues are moved under `completed/<urgency>/...` so active urgency
+folders contain only open work.
+
 ## Issue Naming
 
 Use this format:
@@ -46,6 +49,9 @@ unless the work needs a narrower one.
 | `observability-diff` | `codex/observability-diff` | CDC/diff hardening and review evidence |
 | `infra-ci` | `codex/infra-ci` | dependency profile and CI |
 | `greeks-performance` | `codex/greeks-performance` | CUDA verification and Greek benchmark work |
+| `cli-simplification` | `codex/cli-simplification` | progressive CLI, ticker-first UX, data-source import/registry |
+| `project-refactor` | `codex/project-refactor` | scope reduction, package boundaries, runtime/app/lab separation |
+| `output-artifacts` | `codex/output-artifacts` | human-first run folders, artifact index, output profiles |
 
 ## Public-Safe Rules
 
@@ -72,21 +78,8 @@ unless the work needs a narrower one.
 
 ### P0 Critical
 
-`pipeline-data-integrity`
-
-- `P0-critical/pipeline-data-integrity/001-wti-incident-regression.md`
-- `P0-critical/pipeline-data-integrity/002-unit-registry-iv-scaling.md`
-- `P0-critical/pipeline-data-integrity/003-option-market-checks-run-status.md`
-- `P0-critical/pipeline-data-integrity/004-pit-reproducibility-official-runs.md`
-- `P0-critical/pipeline-data-integrity/012-split-date-and-contract-grain.md`
-- `P0-critical/pipeline-data-integrity/013-exchange-calendar-coverage.md`
-- `P0-critical/pipeline-data-integrity/014-versioned-cache-wiring.md`
-- `P0-critical/pipeline-data-integrity/015-event-calendar-pit-normalization.md`
-- `P0-critical/pipeline-data-integrity/022-settlement-availability-anchor.md`
-
-`strategy-metrics`
-
-- `P0-critical/strategy-metrics/011-strategy-pnl-layer-required.md`
+No active P0 issues. Completed P0 issues are tracked under
+`completed/P0-critical`.
 
 ### P1 High
 
@@ -116,6 +109,18 @@ unless the work needs a narrower one.
 
 - `P1-high/strategy-metrics/018-transaction-cost-calibration.md`
 
+`cli-simplification`
+
+- `P1-high/cli-simplification/026-progressive-cli-and-data-source-registry.md`
+
+`project-refactor`
+
+- `P1-high/project-refactor/027-janus-scope-and-package-refactor.md`
+
+`output-artifacts`
+
+- `P1-high/output-artifacts/028-run-output-artifact-simplification.md`
+
 ### P2 Medium
 
 `storage-contracts`
@@ -133,3 +138,30 @@ unless the work needs a narrower one.
 `greeks-performance`
 
 - `P2-medium/greeks-performance/021-greek-cuda-verification-and-benchmark.md`
+
+## Completed Issue Index
+
+### P0 Critical
+
+Moved to `completed/P0-critical` on 2026-06-28 after the full repository test
+suite reported `953 passed, 8 skipped`.
+
+`pipeline-data-integrity`
+
+- `completed/P0-critical/pipeline-data-integrity/000-implementation-sequence.md`
+- `completed/P0-critical/pipeline-data-integrity/001-wti-incident-regression.md`
+- `completed/P0-critical/pipeline-data-integrity/002-unit-registry-iv-scaling.md`
+- `completed/P0-critical/pipeline-data-integrity/003-option-market-checks-run-status.md`
+- `completed/P0-critical/pipeline-data-integrity/004-pit-reproducibility-official-runs.md`
+- `completed/P0-critical/pipeline-data-integrity/012-split-date-and-contract-grain.md`
+- `completed/P0-critical/pipeline-data-integrity/013-exchange-calendar-coverage.md`
+- `completed/P0-critical/pipeline-data-integrity/014-versioned-cache-wiring.md`
+- `completed/P0-critical/pipeline-data-integrity/015-event-calendar-pit-normalization.md`
+- `completed/P0-critical/pipeline-data-integrity/022-settlement-availability-anchor.md`
+- `completed/P0-critical/pipeline-data-integrity/023-downstream-option-chain-greeks-export.md`
+- `completed/P0-critical/pipeline-data-integrity/024-option-chain-greeks-data-dictionary.md`
+- `completed/P0-critical/pipeline-data-integrity/025-iv-validation-trust-exchange-primary.md`
+
+`strategy-metrics`
+
+- `completed/P0-critical/strategy-metrics/011-strategy-pnl-layer-required.md`

@@ -9,8 +9,8 @@ Source plan:
 - `docs/design/csv_storage_bounded_context_redesign.md`
 - `docs/design/data_structure_reading_map.md`
 - `docs/design/data_test_measurement_criteria.md`
-- `issues/P0-critical/pipeline-data-integrity/012-split-date-and-contract-grain.md`
-- `issues/P0-critical/pipeline-data-integrity/022-settlement-availability-anchor.md`
+- `issues/completed/P0-critical/pipeline-data-integrity/012-split-date-and-contract-grain.md`
+- `issues/completed/P0-critical/pipeline-data-integrity/022-settlement-availability-anchor.md`
 - CME WTI contract policy reference:
   `https://www.cmegroup.com/markets/energy/crude-oil/light-sweet-crude.contractSpecs.html`
 

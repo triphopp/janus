@@ -16,9 +16,9 @@ after : option exclusion 0 / 9,616 (0.0%);     run readiness NEEDS_REVIEW (expor
 
 Source plan:
 
-- `issues/P0-critical/pipeline-data-integrity/002-unit-registry-iv-scaling.md`
-- `issues/P0-critical/pipeline-data-integrity/003-option-market-checks-run-status.md`
-- `issues/P0-critical/pipeline-data-integrity/000-implementation-sequence.md`
+- `issues/completed/P0-critical/pipeline-data-integrity/002-unit-registry-iv-scaling.md`
+- `issues/completed/P0-critical/pipeline-data-integrity/003-option-market-checks-run-status.md`
+- `issues/completed/P0-critical/pipeline-data-integrity/000-implementation-sequence.md`
 - Smoke evidence: WTI settlement run, window `2024-09-25 .. 2024-10-04`
 - CME settlement methodology (exchange-published settlement volatility surface)
 

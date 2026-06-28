@@ -64,4 +64,4 @@ cross_validate:
   agree_tol: 0.02
   # api_key: YOUR_KEY_HERE   ← or set env var ALPHA_VANTAGE_API_KEY
   # Free tier: 25 req/day at https://www.alphavantage.co/support/#api-key
-  # Set provider: stooq to disable (Stooq is currently blocked by Cloudflare)
+  # Set provider: null to disable.

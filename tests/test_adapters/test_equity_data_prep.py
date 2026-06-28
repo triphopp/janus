@@ -182,7 +182,7 @@ def _make_equity_df(symbol: str, stable_close: float, n_stable: int,
 def test_validate_clips_unclips_genuine_event():
     """validate_clips must confirm rows where both providers agree on a large return.
 
-    Scenario: COVID crash. Both yfinance and Stooq show KO -9.7%.
+    Scenario: COVID crash. Both the primary and secondary providers show KO -9.7%.
     pit_mad tags it (low historical vol -> tight threshold).
     validate_clips sees agreement -> genuine event, not bad tick.
     """
@@ -195,9 +195,9 @@ def test_validate_clips_unclips_genuine_event():
     df = adapter.apply_return_clip(df)
     assert df.iloc[-1]["_return_outlier_flag"], "spike must be flagged before validation"
 
-    # Stooq also shows the same crash — same closes
+    # Secondary provider also shows the same crash — same closes.
     val_df = df_primary.rename(columns={}).copy()
-    val_df["provider"] = "stooq"
+    val_df["provider"] = "secondary"
     val_df = val_df[["as_of_date", "symbol", "raw_close", "provider"]]
 
     df_val = adapter.validate_clips(df, val_df, agree_tol=0.02)
@@ -212,7 +212,7 @@ def test_validate_clips_unclips_genuine_event():
 def test_validate_clips_keeps_clip_on_provider_conflict():
     """When providers disagree on a flagged return, keep it tagged provider_conflict.
 
-    Scenario: bad tick in yfinance — 100→180 (+79%). Stooq shows calm 100→100.4.
+    Scenario: bad tick in yfinance — 100→180 (+79%). Secondary provider shows calm 100→100.4.
     Providers disagree -> needs review, label provider_conflict.
     """
     from adapters.equity_adapter import EquityAdapter
@@ -223,9 +223,9 @@ def test_validate_clips_keeps_clip_on_provider_conflict():
     df = adapter.apply_return_clip(df)
     assert df.iloc[-1]["_return_outlier_flag"], "bad tick must be flagged"
 
-    # Stooq shows a calm day — providers disagree
+    # Secondary provider shows a calm day — providers disagree.
     val_df = _make_equity_df("TEST", stable_close=100.0, n_stable=25, spike_close=100.4)
-    val_df = val_df[["as_of_date", "symbol", "raw_close"]].assign(provider="stooq")
+    val_df = val_df[["as_of_date", "symbol", "raw_close"]].assign(provider="secondary")
 
     df_val = adapter.validate_clips(df, val_df, agree_tol=0.02)
     last = df_val.index[-1]
