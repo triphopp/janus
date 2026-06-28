@@ -2,7 +2,17 @@
 
 Urgency: `P0-critical`
 
-Status: `draft`
+Status: `implemented` (2026-06-28)
+
+Implementation evidence (WTI smoke, window `2024-09-25 .. 2024-10-04`):
+
+```text
+before: option exclusion 2,012 / 9,616 (20.9%); run readiness BLOCKED (export withheld)
+after : option exclusion 0 / 9,616 (0.0%);     run readiness NEEDS_REVIEW (export proceeds)
+        near_money_iv: invertible_rows=4,592  mismatch_rate=0.100 (thr 0.05)
+                       median_abs_diff=0.0026  p95_abs_diff=0.084
+        deep-ITM record (strike 36 call) recovered, exported with exchange IV 0.559373
+```
 
 Source plan:
 

@@ -217,6 +217,33 @@ def summarize(
         "by_reason": by_reason,
     }
 
+    # ── Near-money IV aggregate (issue 025) ───────────────────────────────────
+    # The trustworthy provider/model comparison: aggregate |iv_provided - iv_solved|
+    # over rows where price-inversion is valid (near the money, enough time value).
+    # This is the IV signal that should move run readiness; deep ITM/OTM inversion
+    # artifacts are excluded from it.
+    near_money_iv: dict = {
+        "invertible_rows": 0, "mismatch_rate": None,
+        "median_abs_diff": None, "p95_abs_diff": None,
+    }
+    if "iv_invertible" in options.columns and n_options > 0:
+        inv_mask = options["iv_invertible"].fillna(False).astype(bool)
+        diffs = (
+            pd.to_numeric(options.loc[inv_mask, "iv_diff"], errors="coerce").dropna()
+            if "iv_diff" in options.columns else pd.Series(dtype=float)
+        )
+        n_inv = int(len(diffs))
+        near_money_iv["invertible_rows"] = n_inv
+        if n_inv > 0:
+            # Aggregate band for the systemic-mismatch detector. Wider than the tight
+            # per-row iv_validate_threshold (0.005): the aggregate asks "is exchange IV
+            # systematically off near the money?", not "does every row match to 0.5 vol
+            # points". Configurable per instrument.
+            thr = float((cfg or {}).get("near_money_iv_mismatch_threshold", 0.05))
+            near_money_iv["mismatch_rate"] = float((diffs > thr).mean())
+            near_money_iv["median_abs_diff"] = float(diffs.median())
+            near_money_iv["p95_abs_diff"] = float(diffs.quantile(0.95))
+
     return {
         "option_rows": n_options,
         "support_future_rows": n_futures,
@@ -226,6 +253,7 @@ def summarize(
             "flag_rate": iv_flag_rate,
             "max": iv_max,
         },
+        "near_money_iv": near_money_iv,
         "delta": {
             "coverage_rate": delta_coverage,
             "bad_sign_count": bad_sign_count,

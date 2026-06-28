@@ -21,21 +21,22 @@ def _prepared_frame():
          "expiry": pd.Timestamp("2024-11-01"), "price": 70.0, "underlying_price": np.nan,
          "iv": np.nan, "dte_days": np.nan, "_iv_quality_flag": False, "_pcp_flag": False},
     ]
+    def _row(**kw):
+        return {**base, "instrument_type": "option", "expiry": pd.Timestamp("2024-10-17"),
+                "dte_days": 22.0, "_iv_quality_flag": False, "_premium_quality_flag": False,
+                "_pcp_flag": False, **kw}
+
     # clean option rows
     for strike, right, iv in [(65.0, "C", 0.30), (70.0, "C", 0.31), (70.0, "P", 0.31)]:
-        rows.append({
-            **base, "instrument_type": "option", "right": right, "strike": strike,
-            "expiry": pd.Timestamp("2024-10-17"), "price": 2.10, "option_price": 2.10,
-            "underlying_price": 70.0, "iv": iv, "dte_days": 22.0,
-            "_iv_quality_flag": False, "_pcp_flag": False,
-        })
-    # dirty option row (carries an IV quality flag) — must be excluded
-    rows.append({
-        **base, "instrument_type": "option", "right": "C", "strike": 75.0,
-        "expiry": pd.Timestamp("2024-10-17"), "price": 0.50, "option_price": 0.50,
-        "underlying_price": 70.0, "iv": 2.5, "dte_days": 22.0,
-        "_iv_quality_flag": True, "_pcp_flag": False,
-    })
+        rows.append(_row(right=right, strike=strike, price=2.10, option_price=2.10,
+                         underlying_price=70.0, iv=iv))
+    # IV-disagreement row (exchange IV vs price-inversion) — under issue 025 this is
+    # NOT excluded; it keeps its exchange IV and is exported.
+    rows.append(_row(right="C", strike=75.0, price=0.50, option_price=0.50,
+                     underlying_price=70.0, iv=2.5, _iv_quality_flag=True))
+    # genuinely corrupt row (premium below intrinsic) — still excluded.
+    rows.append(_row(right="P", strike=60.0, price=0.01, option_price=0.01,
+                     underlying_price=70.0, iv=0.30, _premium_quality_flag=True))
     return pd.DataFrame(rows)
 
 
@@ -80,10 +81,20 @@ def test_has_no_review_or_raw_vendor_columns():
 
 def test_rows_failing_release_gate_are_absent_from_downstream_csv():
     built = _built()
-    assert built["n_exported"] == 3      # 3 clean option rows
-    assert built["n_excluded"] == 1      # the flagged 75C
-    # the dirty strike/iv never appears
-    assert "75" not in "".join(built["frame"]["option_symbol"])
+    # 3 clean + 1 IV-disagreement (kept under issue 025) = 4; genuine corruption excluded.
+    assert built["n_exported"] == 4
+    assert built["n_excluded"] == 1
+    syms = "".join(built["frame"]["option_symbol"])
+    assert "C75" in syms          # IV-disagreement row IS exported (exchange IV)
+    assert "P60" not in syms      # premium-below-intrinsic row excluded
+
+
+def test_iv_disagreement_row_exported_with_exchange_iv():
+    """Issue 025: a row flagged only for provider/model IV disagreement is kept,
+    carrying the exchange IV (2.5), not dropped."""
+    frame = _built()["frame"]
+    c75 = frame[frame["option_symbol"].str.contains("C75")].iloc[0]
+    assert c75["implied_volatility"] == "2.500000"
 
 
 def test_exports_full_greeks():
@@ -143,7 +154,7 @@ def test_write_creates_all_artifacts_and_summary_paths(tmp_path):
         from pathlib import Path
         assert Path(result[key]).exists()
     assert result["status"] == "needs_review"
-    assert result["n_exported"] == 3
+    assert result["n_exported"] == 4
 
 
 def test_blocked_readiness_withholds_export(tmp_path):
@@ -276,14 +287,15 @@ def test_export_excludes_corrupted_rows_end_to_end():
     built = oce.build_option_chain_greeks(df, prepared_cfg)
     frame = built["frame"]
 
-    # Some clean rows export; the corrupted 75C (bad IV) and 65C (PCP break) do not.
+    # Under issue 025: the IV-mismatch 75C is KEPT (exchange IV authoritative); only
+    # the PCP-break 65 pair is excluded (genuine market-consistency failure).
     assert built["n_exported"] > 0
     calls_75 = frame[(frame["option_type"] == "call")
                      & (frame["strike_price"] == "75.00")]
     calls_65 = frame[(frame["option_type"] == "call")
                      & (frame["strike_price"] == "65.00")]
-    assert calls_75.empty   # IV-mismatch contract excluded
-    assert calls_65.empty   # PCP-break contract excluded
+    assert not calls_75.empty   # IV-mismatch contract now exported with exchange IV
+    assert calls_65.empty       # PCP-break contract still excluded
     # full Greeks present on every exported row
     for g in ("delta", "gamma", "vega", "theta", "rho"):
         assert frame[g].astype(float).notna().all()
