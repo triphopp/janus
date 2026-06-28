@@ -7,7 +7,82 @@ Missing optional columns produce None or 0, never crash.
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
+
+# Diagnostic columns for the IV-mismatch review artifact (dashboard drill-down).
+IV_MISMATCH_REVIEW_COLUMNS = [
+    "as_of_date", "contract_root", "right", "strike",
+    "underlying_price", "option_price", "intrinsic", "time_value",
+    "moneyness", "iv_provided", "iv_solved", "iv_diff", "dte_days", "reason",
+]
+
+
+def iv_mismatch_review(df: pd.DataFrame) -> pd.DataFrame:
+    """Per-contract diagnostics for IV-flagged option rows (issue 003 drill-down).
+
+    Answers *where* and *why* provider IV disagrees with our price-inverted IV, so a
+    reviewer can see at a glance that most mismatches are deep ITM/OTM rows whose
+    settlement price is essentially all intrinsic (no recoverable IV) rather than bad
+    exchange data. Returns an empty frame (with the expected columns) when nothing is
+    flagged or the inputs are absent.
+    """
+    if "iv_flag" not in df.columns:
+        return pd.DataFrame(columns=IV_MISMATCH_REVIEW_COLUMNS)
+
+    it = df.get("instrument_type", pd.Series(index=df.index, dtype="object"))
+    opt = it.astype("string").str.lower().eq("option").fillna(False)
+    flagged = df[opt & df["iv_flag"].fillna(False).astype(bool)].copy()
+    if flagged.empty:
+        return pd.DataFrame(columns=IV_MISMATCH_REVIEW_COLUMNS)
+
+    underlying = pd.to_numeric(
+        flagged.get("underlying_price", flagged.get("F")), errors="coerce"
+    )
+    strike = pd.to_numeric(flagged.get("strike"), errors="coerce")
+    opt_price = pd.to_numeric(
+        flagged.get("option_price", flagged.get("price")), errors="coerce"
+    )
+    right = flagged.get("right").astype("string").str.upper()
+    intrinsic = np.where(
+        right.eq("C"), (underlying - strike).clip(lower=0),
+        (strike - underlying).clip(lower=0),
+    )
+    time_value = opt_price - intrinsic
+    moneyness = underlying / strike.replace(0, np.nan)
+
+    out = pd.DataFrame({
+        "as_of_date": flagged.get("as_of_date"),
+        "contract_root": flagged.get("contract_root"),
+        "right": right,
+        "strike": strike,
+        "underlying_price": underlying.round(4),
+        "option_price": opt_price.round(4),
+        "intrinsic": np.round(intrinsic, 4),
+        "time_value": time_value.round(4),
+        "moneyness": moneyness.round(4),
+        "iv_provided": pd.to_numeric(flagged.get("iv"), errors="coerce").round(6),
+        "iv_solved": pd.to_numeric(flagged.get("iv_solved"), errors="coerce").round(6),
+        "iv_diff": pd.to_numeric(flagged.get("iv_diff"), errors="coerce").round(6),
+        "dte_days": pd.to_numeric(flagged.get("dte_days"), errors="coerce"),
+    })
+    # Plain-language reason so the dashboard can group the mismatch causes.
+    out["reason"] = np.where(
+        out["time_value"] <= 0.01, "no_time_value_deep_itm_otm",
+        np.where(out["moneyness"].sub(1).abs() > 0.15,
+                 "deep_itm_otm_unstable_inversion", "near_money_genuine_diff"),
+    )
+    return out.reset_index(drop=True)
+
+
+def iv_mismatch_review_summary(review: pd.DataFrame) -> dict:
+    """Aggregate the review frame by reason for summary.json / dashboard headline."""
+    total = int(len(review))
+    by_reason = review["reason"].value_counts().to_dict() if total else {}
+    return {
+        "flagged_rows": total,
+        "by_reason": {k: int(v) for k, v in by_reason.items()},
+    }
 
 
 def summarize(

@@ -62,7 +62,22 @@ _KNOWN_TOP_KEYS = {
     "option_quality", "quarantine", "contract_gate", "coverage",
     "cdc", "lineage_purge", "summary_schema_version",
     "vol_surface_ref",
+    # P0 data-integrity sections (rendered explicitly below, not as raw_json).
+    "domain_run_readiness", "iv_mismatch_review", "grain",
+    "unit_assumptions", "unit_assumptions_status", "settlement_availability",
+    "event_availability", "option_chain_greeks",
 }
+
+# Domain readiness vocabulary -> the dashboard's pass/warn/fail color scale.
+_READINESS_TO_SCORE = {
+    "ready": "pass", "needs_review": "warn", "blocked": "fail",
+    "checked": "pass", "not_checked": "warn", "not_applicable": None,
+    "pass": "pass", "fail": "fail",
+}
+
+
+def _score(status):
+    return _READINESS_TO_SCORE.get(status, status)
 
 
 # ── Safe path traversal ───────────────────────────────────────────────────────
@@ -142,17 +157,99 @@ def _build_sections(summary: dict, artifacts: dict) -> list[dict]:
         "empty_reason": None if pa else "no price adjustment data",
     })
 
-    # Option quality
+    # Option-market readiness (issue 003) — first-class, status-colored. Reflects the
+    # domain checks (IV/PCP/premium/delta/missing-underlying), not a flat "available".
+    readiness = summary.get("domain_run_readiness")
+    if isinstance(readiness, dict) and readiness.get("checks"):
+        dims = []
+        for chk in readiness["checks"].values():
+            rate = chk.get("rate")
+            if rate is None and chk.get("bad_sign_count") is not None:
+                rate = chk["bad_sign_count"]
+            dims.append({
+                "name": chk.get("domain_label", "check"),
+                "rate": rate if rate is not None else 0,
+                "status": _score(chk.get("status")),
+            })
+        sections.append({
+            "id": "option_market_readiness",
+            "title": "Option-market readiness",
+            "kind": "scorecard",
+            "status": _score(readiness.get("status")),
+            "metrics": [],
+            "payload": {"status": _score(readiness.get("status")),
+                        "dimensions": dims,
+                        "reasons": readiness.get("reasons", [])},
+            "source_artifacts": ["summary.json"],
+            "empty_reason": None,
+        })
+
+    # Option quality — status now follows readiness instead of a flat "available".
     oq = summary.get("option_quality")
     if oq:
         sections.append({
             "id": "option_quality",
             "title": "Option universe quality",
             "kind": "metric_grid",
-            "status": "available",
+            "status": _score(readiness.get("status")) if isinstance(readiness, dict) else "available",
             "metrics": [],
             "payload": oq,
             "source_artifacts": ["summary.json"],
+            "empty_reason": None,
+        })
+
+    # Data-integrity gates (issues 002/013/015/022) — colored chips.
+    gate_items = {
+        "settlement_availability": summary.get("settlement_availability"),
+        "iv_unit_assumption": summary.get("unit_assumptions_status"),
+        "event_availability": summary.get("event_availability"),
+    }
+    gate_payload = {k: v for k, v in gate_items.items() if isinstance(v, dict)}
+    if gate_payload:
+        worst = None
+        for v in gate_payload.values():
+            s = _score(v.get("status"))
+            if s == "fail" or (s == "warn" and worst != "fail"):
+                worst = s
+        sections.append({
+            "id": "data_integrity_gates",
+            "title": "Data integrity gates",
+            "kind": "metric_grid",
+            "status": worst or "pass",
+            "metrics": [],
+            "payload": gate_payload,
+            "source_artifacts": ["summary.json"],
+            "empty_reason": None,
+        })
+
+    # IV-mismatch drill-down (issue 003) — where/why provider IV disagrees.
+    ivm = summary.get("iv_mismatch_review")
+    ivm_path = (summary.get("artifacts") or {}).get("iv_mismatch_review")
+    if isinstance(ivm, dict) and ivm.get("flagged_rows"):
+        sections.append({
+            "id": "iv_mismatch_review",
+            "title": "IV mismatch review (provider vs model)",
+            "kind": "metric_grid",
+            "status": "warn",
+            "metrics": [],
+            "payload": {**ivm, "artifact": ivm_path},
+            "source_artifacts": ["tables/iv_mismatch_review.csv"]
+                if ivm_path else ["summary.json"],
+            "empty_reason": None,
+        })
+
+    # Downstream option-chain Greeks export (issues 023/024).
+    oce = summary.get("option_chain_greeks")
+    if isinstance(oce, dict):
+        export_status = "fail" if oce.get("status") == "blocked" else _score(oce.get("status"))
+        sections.append({
+            "id": "option_chain_greeks",
+            "title": "Downstream option-chain Greeks export",
+            "kind": "metric_grid",
+            "status": export_status or "available",
+            "metrics": [],
+            "payload": oce,
+            "source_artifacts": ["data/option_chain_greeks/"],
             "empty_reason": None,
         })
 

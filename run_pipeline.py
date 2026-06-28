@@ -1244,6 +1244,18 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         option_quality_summary, core_cfg
     )
 
+    # IV-mismatch review artifact (issue 003 drill-down): per-contract diagnostics so
+    # the dashboard can show *where* provider/model IV disagrees and *why* (deep
+    # ITM/OTM with no recoverable time value vs genuine near-money diff).
+    iv_mismatch_review_path = None
+    iv_mismatch_review_summary = {}
+    if is_options_run:
+        review_df = opt_quality.iv_mismatch_review(df)
+        iv_mismatch_review_summary = opt_quality.iv_mismatch_review_summary(review_df)
+        if not review_df.empty:
+            iv_mismatch_review_path = run_dir / "tables" / "iv_mismatch_review.csv"
+            review_df.to_csv(iv_mismatch_review_path, index=False)
+
     # Grain provenance (issue 012): the prepared option chain is contract-grain
     # (many rows per date); date-level features are reduced to one row per decision
     # date via core.causal/core.grain before any rolling/regime/fold computation.
@@ -1309,6 +1321,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "data_quality": data_quality,
         "option_quality": option_quality_summary,
         "domain_run_readiness": domain_run_readiness,
+        "iv_mismatch_review": iv_mismatch_review_summary,
         "grain": grain_summary,
         "event_availability": event_availability,
         "unit_assumptions": unit_assumptions,
@@ -1334,6 +1347,8 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "prepared_csv": str(csv_path),
         "prepared_parquet": str(parquet_path) if parquet_path else None,
     }
+    if iv_mismatch_review_path is not None:
+        summary["artifacts"]["iv_mismatch_review"] = str(iv_mismatch_review_path)
 
     # ── Downstream option-chain Greeks export (issues 023/024) ──
     # Additive, market-facing clean dataset. Gated by option-market readiness
