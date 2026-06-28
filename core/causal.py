@@ -135,8 +135,17 @@ def validate_pit_timing(
 
 def _require_ordered_series(series: pd.Series) -> pd.Series:
     out = pd.to_numeric(series, errors="coerce")
-    if isinstance(out.index, pd.DatetimeIndex) and not out.index.is_monotonic_increasing:
-        raise ValueError("causal series index must be monotonic increasing")
+    if isinstance(out.index, pd.DatetimeIndex):
+        if not out.index.is_unique:
+            # Mixed-grain guard (issue 012): a rolling/expanding op over a date index
+            # with duplicate dates is mixing many option-chain rows per decision date.
+            raise ValueError(
+                "causal series index has duplicate dates (mixed-grain option chain); "
+                "reduce to one row per date with core.causal.to_causal_series / "
+                "core.grain.to_date_grain before a rolling/expanding op"
+            )
+        if not out.index.is_monotonic_increasing:
+            raise ValueError("causal series index must be monotonic increasing")
     return out
 
 

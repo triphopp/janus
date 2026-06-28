@@ -42,8 +42,11 @@ class SettlementLoader(ProviderBase):
     Disambiguates via CONTRACT TYPE (C/P = option, empty/F = future) + STRIKE presence.
     """
 
-    def __init__(self, symbology: Optional[Symbology] = None):
+    def __init__(self, symbology: Optional[Symbology] = None, cfg: Optional[dict] = None):
         self.symbology = symbology or Symbology()
+        self.cfg = cfg or {}
+        # Populated during fetch(); consumed by the run manifest (issue 002).
+        self.unit_assumptions: dict = {}
 
     def fetch(self, path_or_symbol: str, start, end) -> pd.DataFrame:
         """Parse pipe-delimited settlement file → RAW_SCHEMA DataFrame.
@@ -86,9 +89,24 @@ class SettlementLoader(ProviderBase):
         # ── Rename to standardized schema ──
         df = df.rename(columns=SETTLEMENT_COLUMN_MAP)
 
-        # ── Normalize IV: source stores as percent (e.g. 29.14 → 0.2914) ──
+        # ── Normalize IV via the unit registry (issue 002) ──
+        # Preserve raw IV + declared raw unit; write canonical decimal IV and record
+        # the scale factor so a silent 100x/0.01x mistake cannot pass unnoticed.
         if "iv_provided" in df.columns:
-            df["iv_provided"] = df["iv_provided"] / 100.0
+            from core import unit_registry
+
+            declared_unit = self.cfg.get("iv_raw_unit", "percent")
+            df["iv_provided_raw"] = df["iv_provided"]
+            df["iv_raw_unit"] = declared_unit
+            normalized = unit_registry.normalize_iv(df["iv_provided"], declared_unit)
+            df["iv_provided"] = normalized["canonical"].to_numpy()
+            self.unit_assumptions["iv"] = {
+                "field": "implied_volatility",
+                "raw_unit": normalized["raw_unit"],
+                "canonical_unit": normalized["canonical_unit"],
+                "scale_factor": normalized["scale_factor"],
+                "smoke": normalized["smoke"],
+            }
 
         # ── Enforce symbology before any downstream adapter logic ──
         violations = self.symbology.validate_uniqueness()
@@ -114,10 +132,19 @@ class SettlementLoader(ProviderBase):
         # ── Add metadata ──
         df["provider"] = "settlement"
         df["timestamp"] = None  # EOD = no intraday timestamp
+        # Settlement availability is anchored to the exchange settlement-release time
+        # in exchange_tz, never midnight of as_of_date (issue 022).
+        avail_cfg = {
+            "available_at_lag": self.cfg.get("available_at_lag", {"settlement": "0h"}),
+            "exchange_tz": self.cfg.get("exchange_tz", "America/New_York"),
+            "settlement_release_time": self.cfg.get(
+                "settlement_release_time", self.cfg.get("market_close_time", "16:30")
+            ),
+        }
         df = add_availability_columns(
             df,
             data_type="settlement",
-            cfg={"available_at_lag": {"settlement": "3h"}},
+            cfg=avail_cfg,
         )
         # Earliest actionable moment for an EOD settlement row. Strategies that
         # decide later can overwrite this downstream.

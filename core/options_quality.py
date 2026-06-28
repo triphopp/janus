@@ -80,18 +80,38 @@ def summarize(
         bad_sign_count = int((bad_call | bad_put).sum())
 
     # ── PCP ──────────────────────────────────────────────────────────────────
+    pricing_cfg = (cfg or {}).get("pricing") or {}
+    pcp_enabled = bool((cfg or {}).get("check_pcp", pricing_cfg.get("check_pcp", True)))
+
     def _rate(col_name: str) -> float | None:
         if col_name not in options.columns or n_options == 0:
             return None
         return float(options[col_name].fillna(False).astype(bool).sum() / n_options)
 
+    pcp_status = "checked"
+    pcp_flag_rate = _rate("_pcp_flag")
+    pcp_pair_missing_rate = _rate("pcp_pair_missing")
+    pcp_duplicate_pair_rate = _rate("pcp_duplicate_pair")
+    if not pcp_enabled:
+        pcp_status = "disabled"
+        pcp_flag_rate = None
+        pcp_pair_missing_rate = None
+        pcp_duplicate_pair_rate = None
+    elif pcp_flag_rate is None:
+        pcp_status = "not_checked"
+
     # ── Universe (from adapter) ───────────────────────────────────────────────
     universe_out: dict = {}
+    underlying_map_out: dict = {}
     if adapter_summary:
         universe_out["drop_rows"] = adapter_summary.get("universe_drop_rows", 0)
         universe_out["drop_by_reason"] = dict(
             adapter_summary.get("universe_drop_by_reason") or {}
         )
+        # Missing-underlying-match rate (Phase 2 exit criteria): option rows that
+        # could not be reconciled to an underlying future. Absent (drop_rate 0.0)
+        # when every option mapped cleanly.
+        underlying_map_out = dict(adapter_summary.get("underlying_map") or {})
 
     # ── Silver quality flags ──────────────────────────────────────────────────
     def _flag_rate(col_name: str) -> float | None:
@@ -136,10 +156,18 @@ def summarize(
             "bad_sign_count": bad_sign_count,
         },
         "pcp": {
-            "flag_rate": _rate("_pcp_flag"),
-            "pair_missing_rate": _rate("pcp_pair_missing"),
-            "duplicate_pair_rate": _rate("pcp_duplicate_pair"),
+            "status": pcp_status,
+            "flag_rate": pcp_flag_rate,
+            "pair_missing_rate": pcp_pair_missing_rate,
+            "duplicate_pair_rate": pcp_duplicate_pair_rate,
         },
         "universe": universe_out,
+        "underlying_map": {
+            "missing_rows": underlying_map_out.get("missing_rows", 0),
+            "drop_rate": float(underlying_map_out.get("drop_rate", 0.0)),
+        },
+        "premium": {
+            "flag_rate": silver_flags["premium_quality_flag_rate"],
+        },
         "silver_flags": silver_flags,
     }

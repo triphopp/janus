@@ -28,6 +28,7 @@ In scope:
 - Add `option_market_checks` or equivalent run-level summary.
 - Compute status using eligible universes.
 - Escalate `not_checked` as visible review risk.
+- Distinguish a deliberately disabled check from a clean zero-mismatch result.
 - Map technical checks to domain labels.
 
 Out of scope:
@@ -41,6 +42,8 @@ Out of scope:
 - [ ] IV mismatch rate can set run status to `needs_review` or `blocked`.
 - [ ] Call/put mismatch rate can set run status to `needs_review` or `blocked`.
 - [ ] Missing eligible universe produces `not_checked`, not pass.
+- [ ] Disabled checks, such as `check_pcp: false`, are visible as disabled or
+      not-checked risk and are not reported as `0%` clean.
 - [ ] Dashboard first screen shows domain labels for option-market risk.
 
 ## Evidence Required
@@ -55,4 +58,3 @@ Out of scope:
 - Gate: `G7 Dashboard Status`
 - Metric: `iv_provider_model_mismatch_rate`
 - Metric: `pcp_mismatch_rate`
-

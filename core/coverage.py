@@ -58,11 +58,22 @@ def assess_coverage(
     date_col: str = "as_of_date",
     min_ratio: float = DEFAULT_MIN_RATIO,
     max_gap_days: int = DEFAULT_MAX_GAP_DAYS,
+    calendar_id: str | None = None,
+    holidays=None,
 ) -> dict:
-    """Return a coverage report: status (pass|warn|fail), ratios, gaps, reasons."""
+    """Return a coverage report: status (pass|warn|fail), ratios, gaps, reasons.
+
+    Expected trading days come from the resolved exchange/provider calendar when one
+    is available (issue 013); otherwise a generic business-day calendar is used and
+    labelled ``calendar_id == "generic"`` so the fallback is never mistaken for
+    exchange truth.
+    """
+    from core.exchange_calendar import resolve_calendar
+
     start = pd.Timestamp(start)
     end = pd.Timestamp(end)
-    expected = pd.bdate_range(start, end)
+    calendar = resolve_calendar(calendar_id, start, end, holidays=holidays)
+    expected = calendar["trading_days"]
     n_expected = len(expected)
 
     days = _present_days(df, date_col)
@@ -120,6 +131,9 @@ def assess_coverage(
         "max_internal_gap_bdays": internal_gap,
         "min_ratio": min_ratio,
         "max_gap_days": max_gap_days,
+        "calendar_id": calendar["calendar_id"],
+        "calendar_source": calendar["source"],
+        "calendar_holidays_in_window": calendar["holidays"],
         "reasons": reasons,
         "window": [str(start.date()), str(end.date())],
     }

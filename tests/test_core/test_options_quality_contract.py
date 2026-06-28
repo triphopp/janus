@@ -49,3 +49,24 @@ def test_options_quality_summary_reports_iv_delta_and_pcp_rates():
     assert out["delta"]["bad_sign_count"] == 1
     assert out["pcp"]["flag_rate"] == pytest.approx(1 / 3)
     assert out["pcp"]["pair_missing_rate"] == pytest.approx(2 / 3)
+    assert out["pcp"]["status"] == "checked"
+
+
+def test_options_quality_marks_disabled_pcp_as_disabled():
+    from core import options_quality
+
+    df = pd.DataFrame({
+        "instrument_type": ["option", "option"],
+        "right": ["C", "P"],
+        "iv": [0.2, 0.3],
+        "delta": [0.5, -0.4],
+        "_pcp_flag": [False, False],
+        "pcp_pair_missing": [False, False],
+        "pcp_duplicate_pair": [False, False],
+    })
+
+    out = options_quality.summarize(df, {"pricing": {"check_pcp": False}}, None)
+
+    assert out["pcp"]["status"] == "disabled"
+    assert out["pcp"]["flag_rate"] is None
+    assert out["pcp"]["pair_missing_rate"] is None
