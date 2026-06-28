@@ -1255,6 +1255,11 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "date_level_reduction": "groupby(as_of_date)",
     }
 
+    # Event-calendar PIT availability (issue 015): a missing event-availability
+    # policy surfaces as not_checked rather than silently passing.
+    from core import event_calendar as event_cal
+    event_availability = event_cal.assess_event_availability(core_cfg)
+
     # Summary
     summary = {
         "run_id": run_id,
@@ -1294,6 +1299,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
             "option_market_readiness": domain_run_readiness["status"] if is_options_run else None,
             "settlement_availability": settlement_availability.get("status"),
             "iv_unit_assumption": unit_assumptions_status.get("status"),
+            "event_availability": event_availability.get("status"),
         },
         "price_adjustments": price_adjustments,
         "split_adjustments": split_adjustments,
@@ -1304,6 +1310,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "option_quality": option_quality_summary,
         "domain_run_readiness": domain_run_readiness,
         "grain": grain_summary,
+        "event_availability": event_availability,
         "unit_assumptions": unit_assumptions,
         "unit_assumptions_status": unit_assumptions_status,
         "settlement_availability": settlement_availability,
