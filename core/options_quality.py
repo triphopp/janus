@@ -137,6 +137,13 @@ def summarize(
 
     iv_max = float(iv.max()) if n_options > 0 and iv.notna().any() else None
 
+    # IV validation provenance (issue 025): "trusted_exchange" (default — exchange
+    # settlement IV used as-is, no price-inversion) or "checked" (model self-test run).
+    iv_validation = None
+    if "iv_validation" in options.columns and n_options > 0:
+        vals = options["iv_validation"].dropna()
+        iv_validation = vals.mode().iloc[0] if not vals.empty else None
+
     # ── Delta ────────────────────────────────────────────────────────────────
     delta = (
         pd.to_numeric(options["delta"], errors="coerce")
@@ -252,6 +259,7 @@ def summarize(
             "solve_fail_rate": iv_solve_fail_rate,
             "flag_rate": iv_flag_rate,
             "max": iv_max,
+            "validation": iv_validation,
         },
         "near_money_iv": near_money_iv,
         "delta": {

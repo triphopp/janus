@@ -435,20 +435,25 @@ class OptionsBase(AdapterBase):
 
         if iv_source == "provided" and "iv_provided" in df.columns and option_mask.any():
             pricing_cfg = self.cfg.get("pricing") or {}
-            validate_iv = self.cfg.get(
+            # Exchange settlement IV is authoritative (issue 025): by default we do NOT
+            # re-derive IV by inverting the settlement price. Price-inversion is only a
+            # reliable cross-check near the money and merely reproduces the exchange IV
+            # there, while corrupting the wings/deep-ITM. Opt in with
+            # validate_provided_iv: true only when an explicit model self-test is wanted.
+            validate_iv = bool(self.cfg.get(
                 "validate_provided_iv",
-                pricing_cfg.get("validate_provided_iv", True),
-            )
-            if "iv_flag" not in df.columns:
-                df["iv_flag"] = False
-            if "iv_invertible" not in df.columns:
-                df["iv_invertible"] = False
-            for col in ("iv_solved", "iv_diff"):
-                if col not in df.columns:
-                    df[col] = np.nan
+                pricing_cfg.get("validate_provided_iv", False),
+            ))
             if validate_iv:
-                # Validate provided IV against self-solved. Large historical chains can
-                # sample this check while still using exchange-provided IV for all rows.
+                if "iv_flag" not in df.columns:
+                    df["iv_flag"] = False
+                if "iv_invertible" not in df.columns:
+                    df["iv_invertible"] = False
+                for col in ("iv_solved", "iv_diff"):
+                    if col not in df.columns:
+                        df[col] = np.nan
+                # Large historical chains can sample this self-test while still using
+                # exchange-provided IV for all rows.
                 check_df = df.loc[option_mask]
                 sample_size = self.cfg.get(
                     "iv_validate_sample_size",
@@ -464,6 +469,9 @@ class OptionsBase(AdapterBase):
                 df.loc[checked.index, "iv_diff"] = checked["iv_diff"]
                 df.loc[checked.index, "iv_flag"] = checked["iv_flag"]
                 df.loc[checked.index, "iv_invertible"] = checked["iv_invertible"]
+                df.loc[option_mask, "iv_validation"] = "checked"
+            else:
+                df.loc[option_mask, "iv_validation"] = "trusted_exchange"
             df.loc[option_mask, "iv"] = df.loc[option_mask, "iv_provided"].copy()
 
         elif iv_source == "solve" and option_mask.any():

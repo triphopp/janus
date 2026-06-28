@@ -84,6 +84,22 @@ The threshold is also an absolute band: 0.5 vol points is applied identically to
 15% IV and an 80% IV, so flag rate is highly threshold-sensitive (40% at 0.005 vs
 15% at 0.05 on the validated sample).
 
+## Final Decision (option #1 — do not invert by default)
+
+Smoke analysis showed the near-money aggregate only reproduces the exchange IV
+(median diff 0.26 vol pts) and its residual tail is concentrated entirely in the
+wings (>20% from ATM: 26.5% mismatch) and long-dated rows — exactly where
+price-inversion is ill-conditioned. Since inversion is unreliable wherever it
+disagrees and merely echoes the exchange where it agrees, it adds no information.
+
+Decision: **price-inversion is OFF by default** (`validate_provided_iv: false`).
+The exchange settlement IV is used as-is. `validate_provided_iv` is retained as an
+opt-in model self-test (near-money-only, aggregate) for debugging a suspected
+systemic error (rate/forward/model/units); when off, the readiness IV check is
+`ready` with basis `exchange_authoritative`, not `needs_review`. Unit-scaling
+integrity remains owned by the unit registry (002); broader surface sanity is
+deferred to arbitrage-free checks (future), not price-inversion.
+
 ## Scope
 
 In scope:

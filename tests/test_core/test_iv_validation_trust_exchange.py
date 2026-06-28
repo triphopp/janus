@@ -130,3 +130,42 @@ def test_missing_or_nonpositive_iv_still_excluded():
     frame.loc[frame["strike"] == 36.0, "iv"] = 0.0   # non-positive IV
     built = oce.build_option_chain_greeks(frame, _CFG)
     assert "C36" not in "".join(built["frame"]["option_symbol"])
+
+
+# ── Default: trust exchange IV (no inversion at all) ──────────────────────────
+
+def _prepare(cfg_extra=None):
+    from adapters.futures_options_adapter import FuturesOptionsAdapter
+    from tests.fixtures.wti_incident_fixture import build_wti_incident_frame, incident_pipeline_cfg
+    cfg = {**incident_pipeline_cfg(), **(cfg_extra or {})}
+    return FuturesOptionsAdapter(cfg).prepare(build_wti_incident_frame())
+
+
+def test_default_trusts_exchange_iv_no_inversion():
+    # incident cfg minus the explicit self-test → default policy = trust exchange.
+    df, pcfg = _prepare({"validate_provided_iv": False})
+    assert "iv_solved" not in df.columns          # inversion never computed
+    opt = df[df["instrument_type"] == "option"]
+    assert (opt["iv_validation"] == "trusted_exchange").all()
+    # canonical iv == exchange provided iv
+    assert (opt["iv"] == opt["iv_provided"]).all()
+
+
+def test_readiness_iv_ready_when_trusting_exchange():
+    df, pcfg = _prepare({"validate_provided_iv": False})
+    summary = oq.summarize(df, pcfg, pcfg.get("option_quality"))
+    assert summary["iv"]["validation"] == "trusted_exchange"
+    readiness = assess_option_market_readiness(summary, pcfg)
+    iv_chk = readiness["checks"]["iv_provider_model_mismatch"]
+    assert iv_chk["status"] == "ready"
+    assert iv_chk["basis"] == "exchange_authoritative"
+
+
+def test_self_test_opt_in_still_detects_mismatch():
+    # Explicitly enabling the model self-test reinstates detection (issues 001/003).
+    df, pcfg = _prepare({"validate_provided_iv": True})
+    assert "iv_solved" in df.columns
+    summary = oq.summarize(df, pcfg, pcfg.get("option_quality"))
+    assert summary["iv"]["validation"] == "checked"
+    readiness = assess_option_market_readiness(summary, pcfg)
+    assert readiness["checks"]["iv_provider_model_mismatch"]["status"] != "ready"
