@@ -277,7 +277,7 @@ def validate(
             report["distributional"][key] = {"status": "unknown_check"}
 
     # split passed / quarantined
-    q_mask = reasons.str.len() > 0
+    q_mask = reasons.ne("")
     quarantined = df[q_mask].copy()
     if not quarantined.empty:
         quarantined[QUARANTINE_REASON_COL] = reasons[q_mask].str.rstrip(";")
@@ -290,7 +290,7 @@ def validate(
     report["rows_passed"] = rows_in - rows_q
     report["rows_quarantined"] = rows_q
     report["quarantine_rate"] = (rows_q / rows_in) if rows_in else 0.0
-    report["quarantine_by_reason"] = _reason_counts(reasons[q_mask])
+    report["quarantine_by_reason"] = _reason_counts(reasons[q_mask]) if rows_q else {}
 
     # enforcement: block raises on frame-level breaks (missing required col / drift)
     if enforcement == "block":

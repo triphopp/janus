@@ -522,12 +522,16 @@ def test_compute_greeks_reads_pricing_backend_config():
     from adapters.futures_options_adapter import FuturesOptionsAdapter
 
     df = pd.DataFrame([_option_row("C", 80.0, 80.0, 0.5, 0.05, 0.25)])
-    out = FuturesOptionsAdapter({
+    adapter = FuturesOptionsAdapter({
         "pricing_model": "black76",
         "pricing": {"compute_greeks": True, "greeks_backend": "numpy", "greeks_batch_size": 2},
-    }).compute_greeks(df)
+    })
+    out = adapter.compute_greeks(df)
 
     assert pd.notna(out.iloc[0]["delta"])
+    assert adapter._option_quality["greeks_runtime"]["requested_backend"] == "numpy"
+    assert adapter._option_quality["greeks_runtime"]["resolved_backend"] == "numpy"
+    assert adapter._option_quality["greeks_runtime"]["rows"] == 1
 
 
 def test_compute_greeks_backend_loop_matches_numpy():

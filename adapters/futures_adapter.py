@@ -136,17 +136,29 @@ class FuturesAdapter(AdapterBase):
             df["term_structure_slope"] = 0.0
             return df
 
-        df = df.sort_values(["as_of_date", "delivery_month"])
-
         # Compute spread only from futures rows; options share the same date index
         # and would create duplicates when set_index("as_of_date") is called.
-        fut_only = df[df.get("instrument_type", "future") == "future"] if "instrument_type" in df.columns else df
-        fut_only = fut_only.sort_values(["as_of_date", "delivery_month"])
-        fut_only["_rank"] = fut_only.groupby("as_of_date")["delivery_month"].rank("dense")
+        if "instrument_type" in df.columns:
+            future_mask = df["instrument_type"].eq("future")
+            if not future_mask.any():
+                future_mask = df["instrument_type"].astype("string").str.lower().eq("future").fillna(False)
+            fut_only = df.loc[future_mask, ["as_of_date", "delivery_month", "price_std"]].copy()
+        else:
+            fut_only = df[["as_of_date", "delivery_month", "price_std"]].copy()
 
-        # One price per (date, rank) — take first to drop any duplicates within same month
-        front = fut_only[fut_only["_rank"] == 1].groupby("as_of_date")["price_std"].first()
-        second = fut_only[fut_only["_rank"] == 2].groupby("as_of_date")["price_std"].first()
+        if fut_only.empty:
+            df["term_structure_slope"] = 0.0
+            return df
+
+        fut_only = (
+            fut_only.dropna(subset=["as_of_date", "delivery_month"])
+            .sort_values(["as_of_date", "delivery_month"], kind="mergesort")
+            .drop_duplicates(["as_of_date", "delivery_month"], keep="first")
+        )
+        fut_only["_rank"] = fut_only.groupby("as_of_date", sort=False).cumcount() + 1
+
+        front = fut_only.loc[fut_only["_rank"] == 1].set_index("as_of_date")["price_std"]
+        second = fut_only.loc[fut_only["_rank"] == 2].set_index("as_of_date")["price_std"]
 
         # Spread as fraction of front
         spread = (second - front) / front.replace(0, np.nan)

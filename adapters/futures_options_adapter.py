@@ -128,7 +128,11 @@ class FuturesOptionsAdapter(OptionsBase):
         """Attach PIT futures prices to each option row."""
         df = df.copy()
         option_mask = self._option_mask(df)
-        future_mask = self._future_mask(df)
+        future_mask = (
+            self._instrument_type_is(df, "future")
+            if "instrument_type" in df.columns
+            else ~option_mask
+        )
 
         if not future_mask.any():
             raise ValueError("futures options require underlying future rows for F mapping")

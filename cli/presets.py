@@ -195,7 +195,60 @@ def apply_overrides(cfg: dict, overrides: list[str] | None) -> tuple[dict, dict]
                 node[part] = nxt
             node = nxt
         node[parts[-1]] = value
+        _sync_normalized_override(out, key, value)
     if recorded:
         out.setdefault("runtime_overrides", {}).update(recorded)
         out["advanced_overrides"] = recorded
     return out, recorded
+
+
+def _sync_normalized_override(cfg: dict, dotted_key: str, value: object) -> None:
+    """Keep advanced nested overrides aligned with normalized flat keys.
+
+    Profiles are normalized before presets/overrides are applied. Without this
+    sync, ``--override pricing.compute_greeks=true`` can coexist with an older
+    top-level ``compute_greeks=false`` and the pipeline will read the stale flat
+    value. The CLI should treat the advanced override as authoritative.
+    """
+    aliases = {
+        "pricing.compute_greeks": "compute_greeks",
+        "pricing.div_yield": "div_yield",
+        "pricing.iv_validate_threshold": "iv_validate_threshold",
+        "pricing.iv_solver_bounds": "iv_solver_bounds",
+        "pricing.vega_bucket_cutoff": "vega_bucket_cutoff",
+        "pricing.vega_beta": "vega_beta",
+        "pricing.greeks_backend": "greeks_backend",
+        "pricing.greeks_batch_size": "greeks_batch_size",
+        "pricing.greeks_dtype": "greeks_dtype",
+        "pricing.greeks_cuda_min_rows": "greeks_cuda_min_rows",
+        "cv.n_folds": "n_folds",
+        "cv.purge_bars": "purge_bars",
+        "cv.event_embargo_bars": "event_embargo_bars",
+        "cv.regime_axes": "regime_axes",
+        "cv.max_concentration": "max_concentration",
+        "cv.kl_threshold": "kl_threshold",
+        "cv.js_threshold": "js_threshold",
+        "validation.min_oi": "min_oi",
+        "validation.outlier_k": "outlier_k",
+        "validation.iv_cap": "iv_cap",
+        "validation.min_volume": "min_volume",
+        "validation.futures_oi_floor": "futures_oi_floor",
+        "validation.roll_days": "roll_days",
+        "performance.n_trials": "n_trials",
+        "performance.rf_rate_source": "rf_rate_col",
+        "stability.psi_threshold": "psi_threshold",
+        "stability.psi_bins": "psi_bins",
+        "stability.feature_cols": "feature_cols",
+        "stability.target_col": "target_col",
+        "stability.forward_return_col": "forward_return_col",
+        "stability.stability_grain": "stability_grain",
+        "columns.price_col": "price_col",
+        "columns.vol_col": "vol_col",
+        "columns.return_col": "return_col",
+        "outlier_policy.return_action": "return_action",
+        "outlier_policy.derived_return_col": "derived_return_col",
+        "outlier_policy.metrics_return_col": "metrics_return_col",
+    }
+    flat_key = aliases.get(dotted_key)
+    if flat_key:
+        cfg[flat_key] = value

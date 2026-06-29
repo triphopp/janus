@@ -34,6 +34,19 @@ SETTLEMENT_COLUMN_MAP = {
 
 DATE_COLUMNS = ["TRADE DATE", "STRIP", "EXPIRATION DATE"]
 
+SETTLEMENT_READ_DTYPES = {
+    "HUB": "category",
+    "PRODUCT": "string",
+    "CONTRACT": "category",
+    "CONTRACT TYPE": "category",
+    "STRIKE": "float64",
+    "SETTLEMENT PRICE": "float64",
+    "NET CHANGE": "float64",
+    "PRODUCT_ID": "Int64",
+    "OPTION_VOLATILITY": "float64",
+    "DELTA_FACTOR": "float64",
+}
+
 
 class SettlementLoader(ProviderBase):
     """Load pipe-delimited EOD settlement files.
@@ -59,7 +72,7 @@ class SettlementLoader(ProviderBase):
         if not path.exists():
             raise FileNotFoundError(f"Settlement file not found: {path}")
 
-        df = pd.read_csv(path, sep="|")
+        df = pd.read_csv(path, sep="|", dtype=SETTLEMENT_READ_DTYPES, low_memory=False)
 
         # ── Parse dates (US format M/D/YYYY — never let pandas guess) ──
         for c in DATE_COLUMNS:
@@ -161,18 +174,19 @@ class SettlementLoader(ProviderBase):
                 if col in df.columns
             ]
             sort_cols = [*identity_cols, "as_of_date"] if identity_cols else ["as_of_date"]
-            df = df.sort_values(sort_cols)
+            df = df.sort_values(sort_cols, kind="mergesort")
             group_key = identity_cols[0] if len(identity_cols) == 1 else identity_cols
-            groups = df.groupby(group_key, dropna=False) if identity_cols else [(None, df)]
-            for _, grp in groups:
-                grp = grp.sort_values("as_of_date")
-                price_diff = grp["price"].diff()
-                net_change_diff = (price_diff - grp["net_change"]).abs()
-                # Flag rows where |price.diff() - net_change| > 1 tick
-                bad = net_change_diff > 0.02  # ~2 cents tolerance
-                if bad.any():
-                    idx = grp.index[bad]
-                    df.loc[idx, "net_change_flag"] = True
+            if identity_cols:
+                price_diff = df.groupby(
+                    group_key, dropna=False, sort=False, observed=False
+                )["price"].diff()
+            else:
+                price_diff = df["price"].diff()
+            net_change_diff = (price_diff - df["net_change"]).abs()
+            # Flag rows where |price.diff() - net_change| > 1 tick.
+            bad = (net_change_diff > 0.02).fillna(False)
+            if bad.any():
+                df.loc[bad, "net_change_flag"] = True
 
         # ── Tag provider ──
         df["provider"] = "settlement"

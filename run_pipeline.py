@@ -407,6 +407,52 @@ def _fmt_float(value, digits: int = 4) -> str:
     return f"{float(value):.{digits}f}"
 
 
+def _requested_greeks_backend(cfg: dict) -> str | None:
+    pricing_cfg = cfg.get("pricing") or {}
+    if not str(cfg.get("family", "")).endswith("_options"):
+        return None
+    if not bool(cfg.get("compute_greeks", pricing_cfg.get("compute_greeks", True))):
+        return "disabled"
+    return str(cfg.get("greeks_backend", pricing_cfg.get("greeks_backend", "numpy")))
+
+
+def _format_greeks_runtime(core_cfg: dict) -> str | None:
+    runtime = ((core_cfg or {}).get("option_quality") or {}).get("greeks_runtime") or {}
+    if not runtime:
+        return None
+
+    status = runtime.get("status")
+    requested = runtime.get("requested_backend")
+    resolved = runtime.get("resolved_backend")
+    rows = int(runtime.get("rows") or 0)
+    dtype = runtime.get("dtype")
+    batch_size = runtime.get("batch_size")
+    cuda_min_rows = runtime.get("cuda_min_rows")
+
+    if status == "disabled":
+        return "Greeks=disabled"
+    if status == "skipped":
+        reason = runtime.get("reason") or "no_valid_rows"
+        return f"Greeks=skipped ({reason}, requested={requested})"
+
+    backend_text = str(resolved or requested or "unknown")
+    if requested and resolved and requested != resolved:
+        backend_text = f"{requested} -> {resolved}"
+
+    method = {
+        "cuda": "GPU/CuPy",
+        "numpy": "CPU/NumPy",
+        "loop": "CPU/scalar",
+    }.get(str(resolved), "unknown")
+
+    extra = [f"rows={rows:,}", f"dtype={dtype}", f"method={method}"]
+    if batch_size:
+        extra.append(f"batch={int(batch_size):,}")
+    if cuda_min_rows is not None:
+        extra.append(f"cuda_min_rows={int(cuda_min_rows):,}")
+    return f"Greeks backend={backend_text} ({', '.join(extra)})"
+
+
 def _safe_run_id(run_id: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(run_id)).strip("._")
     if not safe:
@@ -709,8 +755,19 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     stage_tracker = StageTracker(total=8, mode=cfg.get("progress_mode", "auto"))
 
     symbol = cfg.get("symbol", {}).get("ticker") or str(cfg.get("symbol", {}).get("product_id", "unknown"))
+    requested_backend = _requested_greeks_backend(cfg)
+    backend_plan = (
+        f"; Greeks requested={requested_backend} (actual after adapter)"
+        if requested_backend and requested_backend != "disabled"
+        else f"; Greeks={requested_backend or 'not_applicable'}"
+    )
+    print(
+        f"  Runtime plan: pipeline=CPU/pandas; progress={cfg.get('progress_mode', 'auto')}"
+        f"{backend_plan}"
+    )
 
     # ── Phase 1: Ingestion ──
+    stage_tracker.start("Ingestion")
     print(f"[{run_id}] Loading {symbol} from {start} to {end}...")
     provider = get_provider(cfg)
 
@@ -760,6 +817,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     raw_df_ingested = raw_df  # pre-gate provider input — pinned in the run manifest (I6)
 
     # ── Bronze gate: Data Contract + quarantine (P0) ──
+    stage_tracker.start("Data gates")
     # Validate raw against its versioned contract; divert failing rows to
     # quarantine instead of letting them poison the backtest. Subsumes H2/H3.
     contract_gate = {"status": "not_checked", "reason": "no contract resolved"}
@@ -822,10 +880,14 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     stage_tracker.advance("Data gates")
 
     # ── Phase 2: Adapter ──
+    stage_tracker.start("Adapter")
     frame_ingestion = raw_df.copy()  # post-bronze-gate provider input — CDC chain head
     adapter = get_adapter(cfg)
     df, core_cfg = adapter.prepare(raw_df)
     print(f"  Adapter ({cfg['family']}): {len(df)} rows prepared")
+    greeks_runtime_text = _format_greeks_runtime(core_cfg)
+    if greeks_runtime_text:
+        print(f"  Runtime actual: pipeline=CPU/pandas; {greeks_runtime_text}")
 
     # Audit: after adapter
     snap_adapter = aud.snapshot(df, "adapter", cfg, run_id)
@@ -876,6 +938,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     stage_tracker.advance("Adapter")
 
     # ── Stage 1: Validators ──
+    stage_tracker.start("Validators")
     df = validators.logical_bounds_check(df, core_cfg)
     df = validators.missing_completeness(df, core_cfg)
     df = validators.outlier_cap(df, core_cfg)
@@ -900,6 +963,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     snap_v1 = aud.snapshot(df, "validators", cfg, run_id)
 
     # ── Change Data Capture + break ledger (P2, §6/§7) ──
+    stage_tracker.start("CDC")
     # Diff adapter→validators at cell level; attribute price caps via _outlier_flag;
     # anything unexplained becomes an UNATTRIBUTED high-severity break.
     cdc_summary = {"status": "not_run"}
@@ -1005,6 +1069,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
 
     # Build date-grouped folds before stability so Stage 2 diagnostics use
     # the same validation windows that metrics will score.
+    stage_tracker.start("Stability/splitter")
     folds = spl.walk_forward_split(df, core_cfg)
     folds = spl.purge_embargo(folds, df, core_cfg)
     _assert_validation_folds(folds, df, core_cfg)
@@ -1102,12 +1167,13 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     diversity = spl.regime_diversity_gate(folds, regime_labels, core_cfg)
     passed_folds = int(diversity["pass"].sum()) if "pass" in diversity.columns else 0
     print(f"  Stage 3 (splitter): {len(folds)} folds, {passed_folds} passed diversity gate")
-    stage_tracker.advance("Splitter")
+    stage_tracker.advance("Stability/splitter")
 
     # Audit: after stage 3
     snap_v3 = aud.snapshot(df, "splitter", cfg, run_id)
 
     # ── Stage 4: Metrics + Overfitting ──
+    stage_tracker.start("Metrics")
     strategy_return_col = _strategy_return_col(df, core_cfg)
     strategy_metrics_available = strategy_return_col is not None
     metrics_mode = str(core_cfg.get("metrics_mode", cfg.get("metrics_mode", "auto")))
@@ -1200,6 +1266,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     stage_tracker.advance("Metrics")
 
     # ── Write outputs ──
+    stage_tracker.start("Outputs")
     outputs_root = Path("outputs")
     run_dir = reporting.run_output_dir(outputs_root, run_id, symbol, cfg["family"], start, end)
     for subdir in ["tables", "attribution", "data", "report"]:
@@ -1289,6 +1356,11 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "derived_return_col": core_cfg.get("derived_return_col", cfg.get("derived_return_col")),
         "strategy_metrics_available": bool(strategy_metrics_available),
         "strategy_return_col": strategy_return_col,
+        "runtime_method": {
+            "pipeline": "CPU/pandas",
+            "progress_mode": cfg.get("progress_mode", "auto"),
+            "greeks": ((core_cfg or {}).get("option_quality") or {}).get("greeks_runtime"),
+        },
         "metric_warning": "; ".join(filter(None, [
             sample_warning,
             metrics_skipped_reason,

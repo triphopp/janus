@@ -117,6 +117,72 @@ def _attribute(reason_map: Optional[dict], column: str, after_row) -> tuple[str,
     return UNATTRIBUTED, None
 
 
+def _index_difference(left: pd.Index, right: pd.Index) -> pd.Index:
+    """Pandas-version-safe index difference without needless sorting."""
+    try:
+        return left.difference(right, sort=False)
+    except TypeError:  # pragma: no cover - older pandas
+        return left.difference(right)
+
+
+def _index_intersection(left: pd.Index, right: pd.Index) -> pd.Index:
+    """Pandas-version-safe index intersection without needless sorting."""
+    try:
+        return left.intersection(right, sort=False)
+    except TypeError:  # pragma: no cover - older pandas
+        return left.intersection(right)
+
+
+def _changed_mask(before: pd.Series, after: pd.Series, atol: float, rtol: float) -> pd.Series:
+    """Vectorized equivalent of _is_changed() for one aligned column."""
+    b_na = before.isna()
+    a_na = after.isna()
+    one_na = b_na ^ a_na
+
+    if pd.api.types.is_numeric_dtype(before) and pd.api.types.is_numeric_dtype(after):
+        b = pd.to_numeric(before, errors="coerce")
+        a = pd.to_numeric(after, errors="coerce")
+        changed = (a - b).abs() > (atol + rtol * b.abs())
+        return (one_na | (changed & ~(b_na | a_na))).fillna(False).astype(bool)
+
+    changed = before.ne(after)
+    return (one_na | (changed & ~(b_na | a_na))).fillna(False).astype(bool)
+
+
+def _boolish(series: pd.Series) -> pd.Series:
+    """Interpret bool-like flag columns without turning the string 'False' true."""
+    if pd.api.types.is_bool_dtype(series):
+        return series.fillna(False).astype(bool)
+    return (
+        series.astype("string")
+        .str.strip()
+        .str.lower()
+        .isin({"1", "true", "t", "yes", "y"})
+        .fillna(False)
+    )
+
+
+def _attribute_many(
+    reason_map: Optional[dict],
+    column: str,
+    after_indexed: pd.DataFrame,
+    changed_index: pd.Index,
+) -> tuple[pd.Series, Optional[str]]:
+    """Vectorized reason attribution for one changed column."""
+    reasons = pd.Series(UNATTRIBUTED, index=changed_index, dtype=object)
+    flag_col = None
+    if reason_map and column in reason_map:
+        spec = reason_map[column]
+        flag_col = spec.get("flag_col")
+        reason = spec.get("reason", "attributed")
+        if flag_col is not None and flag_col in after_indexed.columns:
+            flag = _boolish(after_indexed.loc[changed_index, flag_col])
+            reasons.loc[flag] = reason
+        else:
+            reasons.loc[:] = reason
+    return reasons, flag_col
+
+
 def diff_frames(
     before: pd.DataFrame,
     after: pd.DataFrame,
@@ -154,49 +220,48 @@ def diff_frames(
     bidx = _key_frame(before, key_cols, key_round)
     aidx = _key_frame(after, key_cols, key_round)
 
-    bkeys, akeys = set(bidx.index), set(aidx.index)
-
     def _key_dict(k):
         if not isinstance(k, tuple):
             k = (k,)
         return {col: _jsonable(v) for col, v in zip(key_cols, k)}
 
-    for k in akeys - bkeys:
+    for k in _index_difference(aidx.index, bidx.index):
         records.append(ChangeRecord(stage_from, stage_to, "row_add", key=_key_dict(k), run_id=run_id))
-    for k in bkeys - akeys:
+    for k in _index_difference(bidx.index, aidx.index):
         records.append(ChangeRecord(stage_from, stage_to, "row_drop", key=_key_dict(k),
                                     reason=_drop_reason(reason_map), run_id=run_id))
 
     # cell modifications on shared keys + shared non-key columns
     shared_cols = [c for c in after.columns if c in before.columns and c not in key_cols]
-    common_keys = bkeys & akeys
-    if common_keys and shared_cols:
-        b_common = bidx.loc[list(common_keys), shared_cols]
-        a_common = aidx.loc[list(common_keys), shared_cols]
-        key_iter = progress_iter(
-            common_keys,
+    common_keys = _index_intersection(bidx.index, aidx.index)
+    if len(common_keys) and shared_cols:
+        b_common = bidx.reindex(common_keys)[shared_cols]
+        a_common = aidx.reindex(common_keys)[shared_cols]
+        col_iter = progress_iter(
+            shared_cols,
             f"CDC {stage_from}->{stage_to}",
-            total=len(common_keys),
+            total=len(shared_cols),
             enabled=should_show_progress(progress or "plain", total=len(common_keys)),
         )
-        for k in key_iter:
-            b_row = b_common.loc[k]
-            a_row = a_common.loc[k]
-            after_full = aidx.loc[k]
-            for col in shared_cols:
-                bv, av = b_row[col], a_row[col]
-                atol = tol.get(col, {}).get("atol", DEFAULT_ATOL)
-                rtol = tol.get(col, {}).get("rtol", DEFAULT_RTOL)
-                if _is_changed(bv, av, atol, rtol):
-                    reason, flag_col = _attribute(reason_map, col, after_full)
-                    delta, pct = _delta_pct(bv, av)
-                    records.append(ChangeRecord(
-                        stage_from, stage_to, "cell_mod",
-                        key=_key_dict(k), column=col,
-                        before=_jsonable(bv), after=_jsonable(av),
-                        delta=delta, pct=pct, reason=reason, reason_flag_col=flag_col,
-                        run_id=run_id,
-                    ))
+        for col in col_iter:
+            atol = tol.get(col, {}).get("atol", DEFAULT_ATOL)
+            rtol = tol.get(col, {}).get("rtol", DEFAULT_RTOL)
+            changed = _changed_mask(b_common[col], a_common[col], atol, rtol)
+            if not changed.any():
+                continue
+            changed_index = changed[changed].index
+            reasons, flag_col = _attribute_many(reason_map, col, aidx, changed_index)
+            before_values = b_common.loc[changed_index, col]
+            after_values = a_common.loc[changed_index, col]
+            for k, bv, av in zip(changed_index, before_values, after_values):
+                delta, pct = _delta_pct(bv, av)
+                records.append(ChangeRecord(
+                    stage_from, stage_to, "cell_mod",
+                    key=_key_dict(k), column=col,
+                    before=_jsonable(bv), after=_jsonable(av),
+                    delta=delta, pct=pct, reason=reasons.loc[k], reason_flag_col=flag_col,
+                    run_id=run_id,
+                ))
     return records
 
 

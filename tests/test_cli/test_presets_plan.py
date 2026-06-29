@@ -91,8 +91,25 @@ def test_parse_override_coerces_types():
 def test_apply_overrides_sets_nested_and_records():
     cfg, recorded = presets.apply_overrides({}, ["pricing.compute_greeks=true"])
     assert cfg["pricing"]["compute_greeks"] is True
+    assert cfg["compute_greeks"] is True
     assert recorded == {"pricing.compute_greeks": True}
     assert cfg["advanced_overrides"] == {"pricing.compute_greeks": True}
+
+
+def test_apply_overrides_syncs_pricing_backend_aliases():
+    cfg, recorded = presets.apply_overrides(
+        {"compute_greeks": False, "greeks_backend": "numpy"},
+        ["pricing.compute_greeks=true", "pricing.greeks_backend=cuda"],
+    )
+
+    assert cfg["pricing"]["compute_greeks"] is True
+    assert cfg["compute_greeks"] is True
+    assert cfg["pricing"]["greeks_backend"] == "cuda"
+    assert cfg["greeks_backend"] == "cuda"
+    assert recorded == {
+        "pricing.compute_greeks": True,
+        "pricing.greeks_backend": "cuda",
+    }
 
 
 def test_apply_override_bad_token():

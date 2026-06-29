@@ -62,11 +62,10 @@ class OptionsBase(AdapterBase):
         """Return True for rows that are option contracts."""
         inferred = pd.Series(False, index=df.index)
         if "right" in df.columns and "strike" in df.columns:
-            right = df["right"].astype("string").str.upper()
-            inferred = right.isin(["C", "P"]).fillna(False) & df["strike"].notna()
+            inferred = self._right_is_option(df["right"]) & df["strike"].notna()
 
         if "instrument_type" in df.columns:
-            typed = df["instrument_type"].astype("string").str.lower().eq("option").fillna(False)
+            typed = self._instrument_type_is(df, "option")
             return typed | inferred
 
         return inferred
@@ -74,9 +73,72 @@ class OptionsBase(AdapterBase):
     def _future_mask(self, df: pd.DataFrame) -> pd.Series:
         """Return True for rows that are futures/underlying rows."""
         if "instrument_type" in df.columns:
-            typed = df["instrument_type"].astype("string").str.lower().eq("future").fillna(False)
+            typed = self._instrument_type_is(df, "future")
             return typed & ~self._option_mask(df)
         return ~self._option_mask(df)
+
+    @staticmethod
+    def _right_is_option(series: pd.Series) -> pd.Series:
+        """Fast C/P test that only case-folds non-canonical values."""
+        canonical_cp = pd.Series(series.isin(["C", "P"]), index=series.index).fillna(False).astype(bool)
+        mask = canonical_cp.copy()
+        noncanonical = (
+            pd.Series(series.notna(), index=series.index).fillna(False).astype(bool)
+            & ~canonical_cp
+        )
+        if noncanonical.any():
+            fallback = (
+                series.loc[noncanonical]
+                .astype("string")
+                .str.upper()
+                .isin(["C", "P"])
+                .fillna(False)
+                .astype(bool)
+            )
+            mask.loc[noncanonical] = fallback.to_numpy()
+        return mask
+
+    @staticmethod
+    def _right_eq(series: pd.Series, value: str) -> pd.Series:
+        """Fast option right equality for canonical C/P labels."""
+        mask = pd.Series(series.eq(value), index=series.index).fillna(False).astype(bool)
+        canonical_cp = pd.Series(series.isin(["C", "P"]), index=series.index).fillna(False).astype(bool)
+        noncanonical = (
+            pd.Series(series.notna(), index=series.index).fillna(False).astype(bool)
+            & ~canonical_cp
+        )
+        if noncanonical.any():
+            fallback = (
+                series.loc[noncanonical]
+                .astype("string")
+                .str.upper()
+                .eq(value)
+                .fillna(False)
+                .astype(bool)
+            )
+            mask.loc[noncanonical] = fallback.to_numpy()
+        return mask
+
+    @staticmethod
+    def _instrument_type_is(df: pd.DataFrame, value: str) -> pd.Series:
+        """Fast instrument_type equality for canonical option/future labels."""
+        if "instrument_type" not in df.columns:
+            return pd.Series(False, index=df.index)
+        series = df["instrument_type"]
+        mask = pd.Series(series.eq(value), index=df.index).fillna(False).astype(bool)
+        canonical = pd.Series(series.isin(["option", "future"]), index=df.index).fillna(False).astype(bool)
+        noncanonical = pd.Series(series.notna(), index=df.index).fillna(False).astype(bool) & ~canonical
+        if noncanonical.any():
+            fallback = (
+                series.loc[noncanonical]
+                .astype("string")
+                .str.lower()
+                .eq(value)
+                .fillna(False)
+                .astype(bool)
+            )
+            mask.loc[noncanonical] = fallback.to_numpy()
+        return mask
 
     def _require_option_chain_schema(self, df: pd.DataFrame, context: str = "option chain") -> pd.Series:
         """Fail fast when an options adapter receives non-chain data."""
@@ -306,13 +368,14 @@ class OptionsBase(AdapterBase):
         # ── Delta ─────────────────────────────────────────────────────────────
         if "delta" in df.columns and "right" in df.columns:
             delta = pd.to_numeric(df["delta"], errors="coerce")
-            right = df["right"].astype("string").str.upper()
+            is_call = self._right_eq(df["right"], "C")
+            is_put = self._right_eq(df["right"], "P")
 
-            mask = opt & right.eq("C") & delta.notna() & (delta < 0)
+            mask = opt & is_call & delta.notna() & (delta < 0)
             df.loc[mask, "_delta_quality_flag"] = True
             df.loc[mask, "_delta_quality_reason"] += "call_delta_negative;"
 
-            mask = opt & right.eq("P") & delta.notna() & (delta > 0)
+            mask = opt & is_put & delta.notna() & (delta > 0)
             df.loc[mask, "_delta_quality_flag"] = True
             df.loc[mask, "_delta_quality_reason"] += "put_delta_positive;"
 
@@ -324,15 +387,16 @@ class OptionsBase(AdapterBase):
         if "price" in df.columns and "strike" in df.columns and "right" in df.columns:
             price = pd.to_numeric(df["price"], errors="coerce")
             K = pd.to_numeric(df["strike"], errors="coerce")
-            right = df["right"].astype("string").str.upper()
+            is_call = self._right_eq(df["right"], "C")
+            is_put = self._right_eq(df["right"], "P")
             underlying_col = next(
                 (c for c in ("F", "underlying_price", "spot") if c in df.columns), None
             )
             if underlying_col is not None:
                 F = pd.to_numeric(df[underlying_col], errors="coerce")
                 below = (
-                    (opt & right.eq("C") & price.notna() & (price < (F - K).clip(lower=0) - 0.001))
-                    | (opt & right.eq("P") & price.notna() & (price < (K - F).clip(lower=0) - 0.001))
+                    (opt & is_call & price.notna() & (price < (F - K).clip(lower=0) - 0.001))
+                    | (opt & is_put & price.notna() & (price < (K - F).clip(lower=0) - 0.001))
                 )
                 df.loc[below, "_premium_quality_flag"] = True
                 df.loc[below, "_premium_quality_reason"] += "premium_below_intrinsic;"
@@ -365,11 +429,18 @@ class OptionsBase(AdapterBase):
         vol_window = self.cfg.get("vol_window", 21)
 
         if "as_of_date" in df.columns and "underlying_price" in df.columns:
+            source_cols = ["as_of_date", "underlying_price"]
+            if "instrument_type" in df.columns:
+                source_mask = self._instrument_type_is(df, "future") & df["underlying_price"].notna()
+                source = df.loc[source_mask, source_cols]
+                if source.empty:
+                    source = df.loc[df["underlying_price"].notna(), source_cols]
+            else:
+                source = df.loc[df["underlying_price"].notna(), source_cols]
             underlying = (
-                df.dropna(subset=["underlying_price"])
-                .sort_values(["as_of_date"])
-                .groupby("as_of_date")["underlying_price"]
-                .first()
+                source.sort_values(["as_of_date"], kind="mergesort")
+                .drop_duplicates(["as_of_date"], keep="first")
+                .set_index("as_of_date")["underlying_price"]
             )
             if not underlying.empty:
                 underlying_ret = underlying.pct_change().rename("return_std")
@@ -421,10 +492,16 @@ class OptionsBase(AdapterBase):
         div_yield = self.cfg.get("div_yield", 0.0)
         solver_bounds = tuple(self.cfg.get("iv_solver_bounds", (1e-4, 5.0)))
 
+        option_mask = self._option_mask(df)
         if "expiry" in df.columns and "as_of_date" in df.columns:
-            df["T"] = _dte.compute_dte_series(df, dte_cfg)
-            df["dte_days"] = (df["expiry"] - df["as_of_date"]).dt.days
-            df.loc[df["as_of_date"] > df["expiry"], "dte_days"] = np.nan
+            df["T"] = np.nan
+            df["dte_days"] = np.nan
+            if option_mask.any():
+                option_rows = df.loc[option_mask]
+                df.loc[option_mask, "T"] = _dte.compute_dte_series(option_rows, dte_cfg)
+                dte_days = (option_rows["expiry"] - option_rows["as_of_date"]).dt.days
+                dte_days = dte_days.where(option_rows["as_of_date"] <= option_rows["expiry"], np.nan)
+                df.loc[option_mask, "dte_days"] = dte_days
             df["r"] = rf_rate
 
         df = self._filter_option_universe(df)
@@ -521,18 +598,37 @@ class OptionsBase(AdapterBase):
 
         pricing_cfg = self.cfg.get("pricing") or {}
         if not bool(self.cfg.get("compute_greeks", pricing_cfg.get("compute_greeks", True))):
+            self._option_quality["greeks_runtime"] = {
+                "status": "disabled",
+                "requested_backend": None,
+                "resolved_backend": None,
+                "rows": 0,
+            }
             return df
 
         backend = self.cfg.get("greeks_backend", pricing_cfg.get("greeks_backend", "numpy"))
         batch_size = self.cfg.get("greeks_batch_size", pricing_cfg.get("greeks_batch_size", None))
         dtype = self.cfg.get("greeks_dtype", pricing_cfg.get("greeks_dtype", "float64"))
+        cuda_min_rows = self.cfg.get("greeks_cuda_min_rows", pricing_cfg.get("greeks_cuda_min_rows", None))
         if batch_size is not None:
             batch_size = int(batch_size)
+        if cuda_min_rows is not None:
+            cuda_min_rows = int(cuda_min_rows)
 
         option_mask = self._option_mask(df)
         option_rows = df.loc[option_mask]
 
         if option_rows.empty:
+            self._option_quality["greeks_runtime"] = {
+                "status": "skipped",
+                "reason": "no_option_rows",
+                "requested_backend": str(backend),
+                "resolved_backend": None,
+                "rows": 0,
+                "dtype": str(dtype),
+                "batch_size": batch_size,
+                "cuda_min_rows": cuda_min_rows,
+            }
             if not self._has_usable_option_values(df, "delta_provided"):
                 df = self._filter_delta_band(df, "delta")
             return df
@@ -549,6 +645,24 @@ class OptionsBase(AdapterBase):
         )
         valid_mask = valid_T & valid_iv
         valid_rows = option_rows.loc[valid_mask]
+        resolved_backend = None
+        if not valid_rows.empty:
+            resolved_backend = _greeks._resolve_greeks_backend(
+                str(backend),
+                len(valid_rows),
+                cuda_min_rows=cuda_min_rows,
+            )
+        self._option_quality["greeks_runtime"] = {
+            "status": "computed" if not valid_rows.empty else "skipped",
+            "reason": None if not valid_rows.empty else "no_valid_t_iv_rows",
+            "requested_backend": str(backend),
+            "resolved_backend": resolved_backend,
+            "rows": int(len(valid_rows)),
+            "option_rows": int(len(option_rows)),
+            "dtype": str(dtype),
+            "batch_size": batch_size,
+            "cuda_min_rows": cuda_min_rows,
+        }
 
         if not valid_rows.empty:
             # Vectorized underlying precedence: underlying_price → S → F → price_std
@@ -577,6 +691,7 @@ class OptionsBase(AdapterBase):
                 backend=backend,
                 batch_size=batch_size,
                 dtype=str(dtype),
+                cuda_min_rows=cuda_min_rows,
             )
 
             for col in greeks_cols:
@@ -607,8 +722,10 @@ class OptionsBase(AdapterBase):
         else:
             df["vrp"] = 0.0
 
-        df["vrp_sign"] = df["vrp"].apply(
-            lambda x: "vrp_positive" if x > 0.01 else ("vrp_negative" if x < -0.01 else "vrp_neutral")
+        df["vrp_sign"] = np.select(
+            [df["vrp"] > 0.01, df["vrp"] < -0.01],
+            ["vrp_positive", "vrp_negative"],
+            default="vrp_neutral",
         )
         return df
 

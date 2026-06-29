@@ -185,6 +185,7 @@ def summarize(
     # ── Universe (from adapter) ───────────────────────────────────────────────
     universe_out: dict = {}
     underlying_map_out: dict = {}
+    greeks_runtime_out: dict = {}
     if adapter_summary:
         universe_out["drop_rows"] = adapter_summary.get("universe_drop_rows", 0)
         universe_out["drop_by_reason"] = dict(
@@ -194,6 +195,7 @@ def summarize(
         # could not be reconciled to an underlying future. Absent (drop_rate 0.0)
         # when every option mapped cleanly.
         underlying_map_out = dict(adapter_summary.get("underlying_map") or {})
+        greeks_runtime_out = dict(adapter_summary.get("greeks_runtime") or {})
 
     # ── Silver quality flags ──────────────────────────────────────────────────
     def _flag_rate(col_name: str) -> float | None:
@@ -266,6 +268,7 @@ def summarize(
             "coverage_rate": delta_coverage,
             "bad_sign_count": bad_sign_count,
         },
+        "greeks_runtime": greeks_runtime_out,
         "pcp": {
             "status": pcp_status,
             "flag_rate": pcp_flag_rate,

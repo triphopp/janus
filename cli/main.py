@@ -142,8 +142,9 @@ def _build_plan_from_args(args, run_id):
         universe=args.universe, run_id=run_id, overrides=overrides,
         registry_path=args.registry,
     )
-    plan.cfg["progress_mode"] = "plain"
-    plan.cfg.setdefault("runtime_overrides", {})["progress"] = "plain"
+    progress = getattr(args, "progress", "plain") or "plain"
+    plan.cfg["progress_mode"] = progress
+    plan.cfg.setdefault("runtime_overrides", {})["progress"] = progress
     return plan
 
 
@@ -300,6 +301,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_date_args(p_run)
     _add_run_opts(p_run)
     p_run.add_argument("--name", help="run id (default: <symbol>_<timestamp>)")
+    p_run.add_argument("--progress", default="plain", choices=["auto", "bar", "plain", "none"],
+                       help="progress display: plain ETA lines (default), bar, auto, or none")
     p_run.set_defaults(func=cmd_run)
 
     p_exp = sub.add_parser("explain", help="print the resolved plan without running")

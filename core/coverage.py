@@ -38,7 +38,7 @@ def _present_days(df: pd.DataFrame, date_col: str) -> list[pd.Timestamp]:
     except (TypeError, AttributeError):
         pass
     dts = dts.dropna().dt.normalize()
-    return sorted(set(dts.tolist()))
+    return pd.Index(dts).drop_duplicates().sort_values().tolist()
 
 
 def _max_internal_gap(days: list[pd.Timestamp]) -> int:

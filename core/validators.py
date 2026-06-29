@@ -131,29 +131,43 @@ def missing_completeness(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
             reasons = reasons.where(~duplicates, reasons + "duplicate_identity_date;")
 
         series_identity_cols = [col for col in identity_cols if col != "as_of_date"]
-        groups = (
-            df.groupby(series_identity_cols, dropna=False)
-            if series_identity_cols else [(None, df)]
-        )
         gap_threshold = int(cfg.get("date_gap_days", cfg.get("max_gap_days", 5)))
         gap_basis = str(cfg.get("date_gap_basis", "business")).lower()
         holidays = cfg.get("calendar_holidays", cfg.get("holidays", [])) or []
         holidays = np.array(pd.to_datetime(holidays, errors="coerce").dropna().date, dtype="datetime64[D]")
 
-        for _, grp in groups:
-            grp = grp.sort_values("as_of_date")
-            if gap_basis in {"business", "trading"}:
-                dates = pd.to_datetime(grp["as_of_date"]).dt.date.to_numpy(dtype="datetime64[D]")
-                elapsed = pd.Series(0, index=grp.index, dtype="int64")
-                if len(dates) > 1:
-                    elapsed.iloc[1:] = np.busday_count(dates[:-1], dates[1:], holidays=holidays).astype("int64")
-                gaps = elapsed > gap_threshold
-            else:
-                gaps = grp["as_of_date"].diff().dt.days > gap_threshold
-            if gaps.any():
-                idx = grp.index[gaps]
-                flags.loc[idx] = True
-                reasons.loc[idx] = reasons.loc[idx] + f"date_gap>{gap_threshold}{gap_basis[0]}d;"
+        date_series = pd.to_datetime(df["as_of_date"], errors="coerce")
+        work = pd.DataFrame({"_date": date_series}, index=df.index)
+        for col in series_identity_cols:
+            work[col] = df[col]
+        sort_cols = [*series_identity_cols, "_date"] if series_identity_cols else ["_date"]
+        work = work.sort_values(sort_cols, kind="mergesort")
+
+        if series_identity_cols:
+            group_key = series_identity_cols[0] if len(series_identity_cols) == 1 else series_identity_cols
+            prev_dates = work.groupby(
+                group_key, dropna=False, sort=False, observed=False
+            )["_date"].shift(1)
+        else:
+            prev_dates = work["_date"].shift(1)
+
+        if gap_basis in {"business", "trading"}:
+            valid = prev_dates.notna() & work["_date"].notna()
+            elapsed = pd.Series(0, index=work.index, dtype="int64")
+            if valid.any():
+                prev_days = prev_dates.loc[valid].dt.date.to_numpy(dtype="datetime64[D]")
+                curr_days = work.loc[valid, "_date"].dt.date.to_numpy(dtype="datetime64[D]")
+                elapsed.loc[valid] = np.busday_count(
+                    prev_days, curr_days, holidays=holidays
+                ).astype("int64")
+            gaps = elapsed > gap_threshold
+        else:
+            gaps = (work["_date"] - prev_dates).dt.days > gap_threshold
+
+        if gaps.any():
+            idx = gaps[gaps].index
+            flags.loc[idx] = True
+            reasons.loc[idx] = reasons.loc[idx] + f"date_gap>{gap_threshold}{gap_basis[0]}d;"
 
     # Open interest floor
     oi_col = "open_interest"
@@ -225,25 +239,6 @@ def outlier_cap(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
             )
             group_cols = [group_col] if group_col is not None else []
 
-    def _cap_series(idx: list) -> None:
-        """Apply expanding-window MAD clip to one instrument's price series."""
-        if "as_of_date" in df.columns:
-            idx = df.loc[idx].sort_values("as_of_date").index.tolist()
-        else:
-            idx = sorted(idx)
-        series = df.loc[idx, price_col]
-        rolling_median = series.expanding(min_periods=20).median()
-        rolling_mad = (series - rolling_median).abs().expanding(min_periods=20).median()
-        threshold = k * rolling_mad * 1.4826      # MAD → std conversion
-        upper = rolling_median + threshold
-        lower = rolling_median - threshold
-        outliers = (series > upper) | (series < lower)
-        hit = outliers[outliers].index
-        df.loc[hit, "_outlier_flag"] = True
-        df.loc[hit, price_col] = df.loc[hit].apply(
-            lambda r: np.clip(r[price_col], lower[r.name], upper[r.name]), axis=1
-        )
-
     # Equity frames use non-stationary price levels — expanding median on a trending
     # stock (e.g. TSLA 3× rally) anchors to early-year prices, clipping genuine
     # late-year highs as false outliers. Return-level clipping (stationary) is already
@@ -252,13 +247,49 @@ def outlier_cap(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     if group_cols == ["symbol"] and "product_id" not in work.columns:
         return df
 
+    if len(work) == 0:
+        return df
+
+    sort_cols = []
+    if group_cols:
+        sort_cols.extend(group_cols)
+    if "as_of_date" in work.columns:
+        sort_cols.append("as_of_date")
+    ordered = work.sort_values(sort_cols, kind="mergesort") if sort_cols else work.sort_index()
+    price = pd.to_numeric(ordered[price_col], errors="coerce")
+
     if group_cols:
         group_key = group_cols[0] if len(group_cols) == 1 else group_cols
-        for _gid, grp_idx in work.groupby(group_key, dropna=False).groups.items():
-            _cap_series(list(grp_idx))
-    elif len(work) > 0:
+        tmp = ordered[group_cols].copy()
+        tmp["_price"] = price
+        rolling_median = (
+            tmp.groupby(group_key, dropna=False, sort=False, observed=False)["_price"]
+            .expanding(min_periods=20)
+            .median()
+            .reset_index(level=list(range(len(group_cols))), drop=True)
+        )
+        abs_dev = (price - rolling_median).abs()
+        tmp["_abs_dev"] = abs_dev
+        rolling_mad = (
+            tmp.groupby(group_key, dropna=False, sort=False, observed=False)["_abs_dev"]
+            .expanding(min_periods=20)
+            .median()
+            .reset_index(level=list(range(len(group_cols))), drop=True)
+        )
+    else:
         # No identity column — treat whole frame as one series (single-instrument file)
-        _cap_series(work.index.tolist())
+        rolling_median = price.expanding(min_periods=20).median()
+        rolling_mad = (price - rolling_median).abs().expanding(min_periods=20).median()
+
+    threshold = k * rolling_mad * 1.4826      # MAD → std conversion
+    upper = rolling_median + threshold
+    lower = rolling_median - threshold
+    outliers = (price > upper) | (price < lower)
+    hit = outliers[outliers].index
+    if len(hit) > 0:
+        df.loc[hit, "_outlier_flag"] = True
+        clipped = price.clip(lower=lower, upper=upper)
+        df.loc[hit, price_col] = clipped.loc[hit]
 
     return df
 
