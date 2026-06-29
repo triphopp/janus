@@ -1,0 +1,60 @@
+{
+  "model": "black76",
+  "repeat": 5,
+  "loop_max_rows": 100000,
+  "cuda_enabled": true,
+  "hardware": {
+    "timestamp_utc": "2026-06-29 13:37:30 UTC",
+    "os": "Windows 10",
+    "machine": "AMD64",
+    "cpu": "Intel64 Family 6 Model 167 Stepping 1, GenuineIntel",
+    "python": "3.11.9",
+    "numpy": "1.26.4",
+    "scipy": "1.17.0",
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3080",
+      "vram_total_gb": 10.0,
+      "vram_free_gb": 8.57,
+      "cupy_version": "13.6.0",
+      "cuda_runtime": 12090
+    }
+  },
+  "results": [
+    {
+      "rows": 1000,
+      "loop": 0.007758599938824773,
+      "numpy": 0.00015540001913905144,
+      "cuda": 0.0016389999072998762,
+      "cuda_transfer": 0.00024809991009533405
+    },
+    {
+      "rows": 10000,
+      "loop": 0.0778174998704344,
+      "numpy": 0.0009876000694930553,
+      "cuda": 0.00209349999204278,
+      "cuda_transfer": 0.00034760008566081524
+    },
+    {
+      "rows": 100000,
+      "loop": 0.79863870004192,
+      "numpy": 0.013011300005018711,
+      "cuda": 0.006194900022819638,
+      "cuda_transfer": 0.0009874000679701567
+    },
+    {
+      "rows": 1000000,
+      "loop": null,
+      "numpy": 0.17558249994181097,
+      "cuda": 0.08809370012022555,
+      "cuda_transfer": 0.014881999930366874
+    },
+    {
+      "rows": 5000000,
+      "loop": null,
+      "numpy": 1.1885671999771148,
+      "cuda": 0.36844970006495714,
+      "cuda_transfer": 0.061709700152277946
+    }
+  ],
+  "cuda_breakeven_rows": 100000
+}

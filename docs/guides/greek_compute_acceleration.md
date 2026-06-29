@@ -55,8 +55,8 @@ This matches the adapter's existing behavior: non-option rows and expired/missin
 |---------|-------|------------|-------|
 | `numpy` | fast (vectorized) | NumPy + SciPy | default; uses `scipy.special.ndtr` for CDF |
 | `loop` | slow (scalar loop) | none | emergency fallback; calls `single_leg_greeks()` per row |
-| `auto` | same as `numpy` (Level 2) | none | Level 3 will switch to CUDA when `n_rows >= cuda_min_rows` |
-| `cuda` | — | CuPy (not yet) | raises `RuntimeError` until Level 3 is implemented |
+| `auto` | numpy, or cuda for large arrays | none (CuPy optional) | switches to CUDA when CuPy+device exist **and** `n_rows >= cuda_min_rows` |
+| `cuda` | fastest above breakeven | CuPy + GPU | computes on GPU, or raises actionable `RuntimeError` if CuPy/device absent |
 
 ### Choosing a backend
 
@@ -117,12 +117,18 @@ Measured on CPU (single thread, `black76`, random inputs):
 | 100 000 | ~1 100 ms | 29 ms | ~38× |
 | 500 000 | ~5 500 ms | 147 ms | ~37× |
 
-CUDA (`backend="cuda"`) is only beneficial above ~1M rows and requires a local GPU.
-Profile with the benchmark marker before enabling:
+CUDA (`backend="cuda"`) requires a local GPU + CuPy. Below the breakeven row count,
+host<->device transfer dominates and NumPy wins; above it, GPU compute amortizes the copy.
+Generate a fresh, hardware-specific benchmark (never hand-edited) with:
 
 ```bash
-pytest -m benchmark tests/test_core/test_greeks_benchmark.py
+python tools/benchmark_greeks.py
+# → docs/benchmarks/greek_backend_benchmark.md
 ```
+
+Measured on an RTX 3080 (best-of-5, `black76`): CUDA breakeven ≈ **100k rows**
+(numpy 13.0 ms vs cuda 6.2 ms); at 5M rows cuda is ~3.2× faster than numpy.
+See `docs/benchmarks/greek_backend_benchmark.md` for the full sweep.
 
 ---
 
@@ -183,13 +189,18 @@ rho    = K·T·disc_r·Φ(d2)                                         [call]
 
 ---
 
-## Level 3 — CUDA (not yet implemented)
+## Level 3 — CUDA (implemented, verified on RTX 3080)
 
-When implemented, `_batch_greeks_cuda()` will:
+`_batch_greeks_cuda()`:
 
-1. Transfer chunk arrays to GPU via CuPy
-2. Compute using CuPy equivalents of all NumPy operations
-3. Transfer result back to CPU as NumPy arrays
+1. Builds the validity mask on CPU (avoids GPU string ops), transfers only valid rows
+2. Computes using CuPy equivalents of all NumPy operations (`cupyx.scipy.special.ndtr`,
+   erfc fallback)
+3. Transfers result back to CPU as NumPy arrays; invalid rows stay NaN
+4. Chunks at 250k rows/chunk by default to bound VRAM
+
+Correctness is verified against both the NumPy backend and an **independent** scipy/QuantLib
+reference (`tests/test_core/test_greek_external_reference.py::TestCudaVsReference`).
 
 Install separately — CuPy is **not** a base dependency:
 
@@ -200,6 +211,7 @@ cupy-cuda12x    # match your local CUDA runtime
 
 `backend="auto"` will switch to CUDA only when:
 - CuPy imports successfully and a device exists
-- `n_rows >= greeks_cuda_min_rows` (config, default TBD from benchmark evidence)
+- `n_rows >= greeks_cuda_min_rows` (code default `100_000`, set from the RTX 3080
+  breakeven; raise it via config for slower GPUs or fast many-core CPUs)
 
 Non-GPU machines will continue to use `numpy` with no config change needed.

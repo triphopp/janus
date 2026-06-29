@@ -385,6 +385,16 @@ class TestBatchGreeksLevel3:
         resolved = _resolve_greeks_backend("cuda", n_rows=100)
         assert resolved == "cuda"
 
+    def test_auto_default_threshold_is_100k(self, monkeypatch):
+        """Default auto threshold (no cuda_min_rows arg) is the benchmarked 100k breakeven."""
+        from core.greeks import _CUDA_AUTO_MIN_ROWS
+        assert _CUDA_AUTO_MIN_ROWS == 100_000
+
+        monkeypatch.setattr("core.greeks._cupy_available", lambda: True)
+        # Just below default → numpy; at default → cuda (no explicit threshold)
+        assert _resolve_greeks_backend("auto", n_rows=99_999) == "numpy"
+        assert _resolve_greeks_backend("auto", n_rows=100_000) == "cuda"
+
     def test_cuda_device_count_returns_int(self):
         """_cuda_device_count() always returns an int (0 when no GPU)."""
         count = _cuda_device_count()
