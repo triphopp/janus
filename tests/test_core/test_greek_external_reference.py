@@ -12,13 +12,15 @@ from pathlib import Path
 
 import pytest
 
-from core.greeks import single_leg_greeks, batch_greeks
+from core.greeks import single_leg_greeks, batch_greeks, _cupy_available
 
 _REF_PATH = Path(__file__).parent.parent / "fixtures" / "greek_reference.json"
 
 # Tolerances from the reference file
 _PRICE_TOL = 1e-6
 _GREEK_TOL = 1e-4
+
+_skip_no_gpu = pytest.mark.skipif(not _cupy_available(), reason="No GPU / CuPy not installed")
 
 
 @pytest.fixture(scope="module")
@@ -150,3 +152,46 @@ class TestBSMVsReference:
         for i, row in enumerate(rows):
             for greek in ("delta", "gamma", "vega", "theta", "rho"):
                 assert g[greek][i] == pytest.approx(row[greek], abs=_GREEK_TOL)
+
+
+@_skip_no_gpu
+class TestCudaVsReference:
+    """GPU correctness against the INDEPENDENT scipy/QuantLib reference.
+
+    Closes the loop left by test_greeks.py::TestBatchGreeksLevel3, which only
+    proves cuda == numpy (our own implementation). Here cuda must match an
+    implementation that shares no code with core/greeks.py — so a bug present
+    in both numpy and cuda backends cannot hide behind a circular comparison.
+    """
+
+    def _cuda_batch(self, reference, model: str, underlying_key: str):
+        rows = reference[model]
+        g = batch_greeks(
+            model=model,
+            S_or_F=[r[underlying_key] for r in rows],
+            K=[r["K"] for r in rows],
+            T=[r["T"] for r in rows],
+            r=[r["r"] for r in rows],
+            sigma=[r["sigma"] for r in rows],
+            right=[r["right"] for r in rows],
+            backend="cuda",
+        )
+        return rows, g
+
+    def test_cuda_black76_matches_reference(self, reference):
+        rows, g = self._cuda_batch(reference, "black76", "F")
+        for i, row in enumerate(rows):
+            for greek in ("delta", "gamma", "vega", "theta", "rho"):
+                assert g[greek][i] == pytest.approx(row[greek], abs=_GREEK_TOL), (
+                    f"cuda black76 {greek} mismatch [{row['moneyness']} {row['right']}]: "
+                    f"got {g[greek][i]:.6f}, expected {row[greek]:.6f}"
+                )
+
+    def test_cuda_bsm_matches_reference(self, reference):
+        rows, g = self._cuda_batch(reference, "bsm", "S")
+        for i, row in enumerate(rows):
+            for greek in ("delta", "gamma", "vega", "theta", "rho"):
+                assert g[greek][i] == pytest.approx(row[greek], abs=_GREEK_TOL), (
+                    f"cuda bsm {greek} mismatch [{row['moneyness']} {row['right']}]: "
+                    f"got {g[greek][i]:.6f}, expected {row[greek]:.6f}"
+                )

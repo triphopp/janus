@@ -148,13 +148,19 @@ def _cupy_available() -> bool:
     return _cuda_device_count() > 0
 
 
+# auto-backend CUDA threshold. Breakeven measured at ~100k rows on RTX 3080
+# (numpy 13.0ms vs cuda 6.2ms) — see docs/benchmarks/greek_backend_benchmark.md.
+# Override per-call via cuda_min_rows / config greeks_cuda_min_rows for other hardware.
+_CUDA_AUTO_MIN_ROWS = 100_000
+
+
 def _resolve_greeks_backend(backend: str, n_rows: int, cuda_min_rows: int | None = None) -> str:
     """Return the concrete backend name for this request."""
     if backend in ("loop", "numpy"):
         return backend
     if backend == "auto":
         if _cupy_available():
-            threshold = cuda_min_rows if cuda_min_rows is not None else 1_000_000
+            threshold = cuda_min_rows if cuda_min_rows is not None else _CUDA_AUTO_MIN_ROWS
             if n_rows >= threshold:
                 return "cuda"
         return "numpy"
