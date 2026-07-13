@@ -16,6 +16,9 @@ from typing import Optional
 import numpy as np
 from scipy.special import ndtr as _ndtr
 
+from core import pricing_models as _models
+from core import rates as _rates
+
 _NORMAL = NormalDist()
 
 
@@ -29,6 +32,22 @@ def _norm_cdf(x: float) -> float:
 
 def _norm_pdf_vec(x: np.ndarray) -> np.ndarray:
     return np.exp(-0.5 * x ** 2) / np.sqrt(2 * np.pi)
+
+
+def _nan_greeks() -> dict:
+    return {"delta": np.nan, "gamma": np.nan, "vega": np.nan, "theta": np.nan, "rho": np.nan}
+
+
+def _zero_greeks() -> dict:
+    return {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "theta": 0.0, "rho": 0.0}
+
+
+def _finite_float(value) -> tuple[bool, float]:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return False, float("nan")
+    return bool(np.isfinite(out)), out
 
 
 @dataclass
@@ -62,70 +81,87 @@ def single_leg_greeks(
     Returns:
         dict with keys: delta, gamma, vega, theta, rho
     """
-    if T <= 0:
-        return {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "theta": 0.0, "rho": 0.0}
+    impl = _models.greek_runtime_model(model)
+    right_norm = _models.normalize_right(right)
+    t_ok, t = _finite_float(T)
+    s_ok, s = _finite_float(S_or_F)
+    k_ok, strike = _finite_float(K)
+    if right_norm is None or not t_ok or not s_ok or not k_ok:
+        return _nan_greeks()
+    if t <= 0:
+        return _zero_greeks()
 
-    sqrt_T = np.sqrt(T)
+    domain = _models.validate_pricing_domain(impl, s, strike, t, r, sigma, right_norm)
+    if not domain.valid:
+        return _nan_greeks()
+
+    r = float(r)
+    sigma = float(sigma)
+
+    sqrt_T = np.sqrt(t)
     phi = _norm_pdf  # standard normal PDF
     Phi = _norm_cdf  # standard normal CDF
 
-    if model == "black76":
-        F = S_or_F
-        d1 = (np.log(F / K) + 0.5 * sigma ** 2 * T) / (sigma * sqrt_T)
+    if impl == "black76":
+        F = s
+        d1 = (np.log(F / strike) + 0.5 * sigma ** 2 * t) / (sigma * sqrt_T)
         d2 = d1 - sigma * sqrt_T
-        disc = np.exp(-r * T)
+        disc = np.exp(-r * t)
         phi_d1 = phi(d1)
 
-        if right == "C":
+        if right_norm == "C":
             delta = disc * Phi(d1)
             theta = (
                 -disc * F * phi_d1 * sigma / (2 * sqrt_T)
-                - r * K * disc * Phi(d2)
+                - r * strike * disc * Phi(d2)
                 + r * F * disc * Phi(d1)
             )
-            rho_val = -T * disc * (F * Phi(d1) - K * Phi(d2))
+            rho_val = -t * disc * (F * Phi(d1) - strike * Phi(d2))
         else:
             delta = -disc * Phi(-d1)
             theta = (
                 -disc * F * phi_d1 * sigma / (2 * sqrt_T)
-                + r * K * disc * Phi(-d2)
+                + r * strike * disc * Phi(-d2)
                 - r * F * disc * Phi(-d1)
             )
-            rho_val = -T * disc * (K * Phi(-d2) - F * Phi(-d1))
+            rho_val = -t * disc * (strike * Phi(-d2) - F * Phi(-d1))
 
         gamma = disc * phi_d1 / (F * sigma * sqrt_T)
         vega = disc * F * phi_d1 * sqrt_T  # per 1.0 vol unit
 
-    elif model in ("bs", "bsm"):
-        S = S_or_F
-        d1 = (np.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
+    elif impl in ("bs", "bsm"):
+        q_ok, q_value = _finite_float(q)
+        if not q_ok:
+            return _nan_greeks()
+        S = s
+        d1 = (np.log(S / strike) + (r - q_value + 0.5 * sigma ** 2) * t) / (sigma * sqrt_T)
         d2 = d1 - sigma * sqrt_T
         phi_d1 = phi(d1)
-        disc_r = np.exp(-r * T)
-        disc_q = np.exp(-q * T)
+        disc_r = np.exp(-r * t)
+        disc_q = np.exp(-q_value * t)
 
-        if right == "C":
+        if right_norm == "C":
             delta = disc_q * Phi(d1)
             theta = (
                 -S * phi_d1 * sigma * disc_q / (2 * sqrt_T)
-                - r * K * disc_r * Phi(d2)
-                + q * S * disc_q * Phi(d1)
+                - r * strike * disc_r * Phi(d2)
+                + q_value * S * disc_q * Phi(d1)
             )
-            rho_val = K * T * disc_r * Phi(d2)
+            rho_val = strike * t * disc_r * Phi(d2)
         else:
             delta = -disc_q * Phi(-d1)
             theta = (
                 -S * phi_d1 * sigma * disc_q / (2 * sqrt_T)
-                + r * K * disc_r * Phi(-d2)
-                - q * S * disc_q * Phi(-d1)
+                + r * strike * disc_r * Phi(-d2)
+                - q_value * S * disc_q * Phi(-d1)
             )
-            rho_val = -K * T * disc_r * Phi(-d2)
+            rho_val = -strike * t * disc_r * Phi(-d2)
 
         gamma = disc_q * phi_d1 / (S * sigma * sqrt_T)
         vega = disc_q * S * phi_d1 * sqrt_T
 
     else:
-        raise ValueError(f"Unknown pricing model: {model}")
+        raise ValueError(_models.unknown_model_message(model))
 
     return {
         "delta": delta,
@@ -255,7 +291,7 @@ def _batch_greeks_numpy(
         rho = np.where(cv, rho_c, rho_p)
 
     else:
-        raise ValueError(f"Unknown pricing model: {model}")
+        raise ValueError(_models.unknown_model_message(model))
 
     out["delta"][valid] = delta
     out["gamma"][valid] = gamma
@@ -399,7 +435,7 @@ def _batch_greeks_cuda(
         rho = cp.where(cv, rho_c, rho_p)
 
     else:
-        raise ValueError(f"Unknown pricing model: {model}")
+        raise ValueError(_models.unknown_model_message(model))
 
     # Transfer results back to CPU
     out["delta"][valid_cpu] = cp.asnumpy(delta)
@@ -459,6 +495,7 @@ def batch_greeks(
     CUDA chunking: if backend resolves to 'cuda' and batch_size is None,
     defaults to 250_000 rows per chunk to avoid OOM.
     """
+    model = _models.greek_runtime_model(model)
     S_arr = np.asarray(S_or_F, dtype=dtype)
     K_arr = np.asarray(K, dtype=dtype)
     T_arr = np.asarray(T, dtype=dtype)
@@ -514,7 +551,7 @@ def net_greeks(legs: list[Leg], cfg: dict) -> dict:
         vega_long_term, vega_term_risk
     """
     model = cfg.get("pricing_model", "black76")
-    r = cfg.get("rf_rate", 0.05)
+    r, _ = _rates.resolve_scalar_rate(cfg)
     cutoff = cfg.get("vega_bucket_cutoff", 60)  # DTE threshold in days
     vega_beta = cfg.get("vega_beta", 0.7)
 
@@ -577,10 +614,24 @@ def bump_greeks(
     Returns:
         dict with delta, gamma, vega, theta (same keys as single_leg_greeks)
     """
+    impl = _models.greek_runtime_model(model)
+    right_norm = _models.normalize_right(right)
+    if right_norm is None:
+        return _nan_greeks()
+    domain = _models.validate_pricing_domain(impl, S_or_F, K, T, r, sigma, right_norm)
+    if not domain.valid:
+        return _nan_greeks()
+    model = impl
+    right = right_norm
+
     p0 = price_fn(model, S_or_F, K, T, r, sigma, right, q)
+    if not np.isfinite(p0):
+        return _nan_greeks()
 
     # Delta: bump underlying
     bump_s = S_or_F * eps
+    if not np.isfinite(bump_s) or bump_s == 0:
+        return _nan_greeks()
     p_up = price_fn(model, S_or_F + bump_s, K, T, r, sigma, right, q)
     p_dn = price_fn(model, S_or_F - bump_s, K, T, r, sigma, right, q)
     delta = (p_up - p_dn) / (2 * bump_s)

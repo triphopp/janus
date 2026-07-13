@@ -81,8 +81,22 @@ def show_run(run_id: str, *, outputs_dir: str | Path = "outputs") -> dict:
         summary = json.load(fh)
 
     report = run_dir / "report" / "final_report.html"
-    export = run_dir / "data" / "option_chain_greeks.parquet"
+    export = run_dir / "exports" / "option_chain_greeks" / "option_chain_greeks.csv"
     prepared = run_dir / "data" / "prepared.parquet"
+    artifacts_path = run_dir / "artifacts.json"
+    if artifacts_path.exists():
+        try:
+            artifacts = json.loads(artifacts_path.read_text(encoding="utf-8")).get("artifacts", [])
+            by_key = {item.get("key"): item for item in artifacts}
+            if by_key.get("canonical_option_chain_greeks"):
+                export = run_dir / by_key["canonical_option_chain_greeks"]["path"]
+            if by_key.get("prepared_parquet"):
+                prepared = run_dir / by_key["prepared_parquet"]["path"]
+        except Exception:
+            pass
+    if not export.exists():
+        legacy = run_dir / "data" / "option_chain_greeks.parquet"
+        export = legacy
 
     guards = {
         k: v for k, v in summary.items()

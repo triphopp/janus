@@ -50,7 +50,15 @@ class TestUnderlyingPrecedence:
     def test_zero_underlying_flagged(self):
         df = _base_row(underlying_price=0.0)
         out, summary = resolve_greek_inputs(df)
-        assert summary["invalid_by_reason"]["missing_underlying"] == 1
+        assert summary["invalid_by_reason"]["nonpositive_underlying"] == 1
+        assert "nonpositive_underlying" in out["greek_invalid_reason"].iloc[0]
+
+    def test_negative_underlying_flagged_as_domain_state(self):
+        df = _base_row(underlying_price=-37.63)
+        out, summary = resolve_greek_inputs(df)
+        assert summary["invalid_by_reason"]["missing_underlying"] == 0
+        assert summary["invalid_by_reason"]["nonpositive_underlying"] == 1
+        assert not out["greek_input_valid"].iloc[0]
 
 
 class TestIVResolution:
@@ -108,23 +116,28 @@ class TestTResolution:
 class TestRateResolution:
     def test_uses_row_level_r(self):
         df = _base_row(r=0.05)
-        out, _ = resolve_greek_inputs(df, rf_rate_default=0.02)
+        out, _ = resolve_greek_inputs(df)
         assert out["r"].iloc[0] == pytest.approx(0.05)
 
-    def test_falls_back_to_cfg_rf_rate(self):
+    def test_missing_r_is_invalid(self):
         df = pd.DataFrame([{"underlying_price": 80.0, "K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"}])
-        out, _ = resolve_greek_inputs(df, cfg={"rf_rate": 0.04})
-        assert out["r"].iloc[0] == pytest.approx(0.04)
+        out, summary = resolve_greek_inputs(df, cfg={"rf_rate": 0.04})
+        assert pd.isna(out["r"].iloc[0])
+        assert not out["greek_input_valid"].iloc[0]
+        assert summary["invalid_by_reason"]["missing_rate"] == 1
 
-    def test_falls_back_to_rf_rate_default(self):
+    def test_rf_rate_default_no_longer_fills_r(self):
         df = pd.DataFrame([{"underlying_price": 80.0, "K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"}])
-        out, _ = resolve_greek_inputs(df, rf_rate_default=0.03)
-        assert out["r"].iloc[0] == pytest.approx(0.03)
+        out, summary = resolve_greek_inputs(df, rf_rate_default=0.03)
+        assert pd.isna(out["r"].iloc[0])
+        assert summary["invalid_by_reason"]["missing_rate"] == 1
 
-    def test_nan_r_replaced_by_cfg(self):
+    def test_nan_r_is_invalid(self):
         df = _base_row(r=float("nan"))
-        out, _ = resolve_greek_inputs(df, cfg={"rf_rate": 0.04})
-        assert out["r"].iloc[0] == pytest.approx(0.04)
+        out, summary = resolve_greek_inputs(df, cfg={"rf_rate": 0.04})
+        assert pd.isna(out["r"].iloc[0])
+        assert not out["greek_input_valid"].iloc[0]
+        assert summary["invalid_by_reason"]["missing_rate"] == 1
 
 
 class TestRightResolution:
@@ -177,8 +190,8 @@ class TestSummary:
 
     def test_mixed_valid_invalid(self):
         df = pd.DataFrame([
-            {"underlying_price": 80.0, "K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"},
-            {"K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"},  # missing underlying
+            {"underlying_price": 80.0, "K": 80.0, "T": 0.5, "r": 0.05, "iv": 0.3, "right": "C"},
+            {"K": 80.0, "T": 0.5, "r": 0.05, "iv": 0.3, "right": "C"},  # missing underlying
         ])
         _, summary = resolve_greek_inputs(df)
         assert summary["valid_rows"] == 1
@@ -212,15 +225,16 @@ class TestNumericCoercion:
         assert summary["invalid_by_reason"]["missing_or_expired_T"] == 1
         assert not out["greek_input_valid"].iloc[0]
 
-    def test_bad_r_falls_back_to_default(self):
+    def test_bad_r_is_missing_rate(self):
         df = _base_row(r="bad")
-        out, _ = resolve_greek_inputs(df, rf_rate_default=0.03)
-        assert out["r"].iloc[0] == pytest.approx(0.03)
+        out, summary = resolve_greek_inputs(df, rf_rate_default=0.03)
+        assert pd.isna(out["r"].iloc[0])
+        assert summary["invalid_by_reason"]["missing_rate"] == 1
 
     def test_bad_row_does_not_crash_valid_batch(self):
         df = pd.DataFrame([
-            {"underlying_price": 80.0, "K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"},
-            {"underlying_price": "bad", "K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"},
+            {"underlying_price": 80.0, "K": 80.0, "T": 0.5, "r": 0.05, "iv": 0.3, "right": "C"},
+            {"underlying_price": "bad", "K": 80.0, "T": 0.5, "r": 0.05, "iv": 0.3, "right": "C"},
         ])
         out, summary = resolve_greek_inputs(df)
         assert out["greek_input_valid"].iloc[0]

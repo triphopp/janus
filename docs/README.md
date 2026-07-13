@@ -11,6 +11,8 @@ document lifecycle.
   Mermaid source.
 - `guides/greek_only_runner.md` - Greek-only CLI and output contract.
 - `design/data_ops_architecture.md` - institutional data-ops target design.
+- `reference/product_identity/wti/README.md` - WTI product identity evidence
+  for ICE `T` versus CME `LO`/`LC`.
 
 ## Folder Structure
 

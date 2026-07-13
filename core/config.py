@@ -34,6 +34,8 @@ def normalize_config(cfg: dict | None) -> dict:
         "greeks_batch_size",
         "greeks_dtype",
         "greeks_cuda_min_rows",
+        "allow_model_approximation",
+        "compare_models",
     ):
         _setdefault_from(out, key, pricing, key)
 
@@ -52,6 +54,7 @@ def normalize_config(cfg: dict | None) -> dict:
         _setdefault_from(out, key, validation, key)
 
     _setdefault_from(out, "n_trials", performance, "n_trials")
+    _setdefault_from(out, "rf_rate_source", performance, "rf_rate_source")
     _setdefault_from(out, "rf_rate_col", performance, "rf_rate_source")
 
     for key in (

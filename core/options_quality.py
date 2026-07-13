@@ -186,6 +186,8 @@ def summarize(
     universe_out: dict = {}
     underlying_map_out: dict = {}
     greeks_runtime_out: dict = {}
+    rate_out: dict = {}
+    pricing_model_out: dict = {}
     if adapter_summary:
         universe_out["drop_rows"] = adapter_summary.get("universe_drop_rows", 0)
         universe_out["drop_by_reason"] = dict(
@@ -196,6 +198,8 @@ def summarize(
         # when every option mapped cleanly.
         underlying_map_out = dict(adapter_summary.get("underlying_map") or {})
         greeks_runtime_out = dict(adapter_summary.get("greeks_runtime") or {})
+        rate_out = dict(adapter_summary.get("rate_summary") or {})
+        pricing_model_out = dict(adapter_summary.get("pricing_model_resolution") or {})
 
     # ── Silver quality flags ──────────────────────────────────────────────────
     def _flag_rate(col_name: str) -> float | None:
@@ -269,6 +273,8 @@ def summarize(
             "bad_sign_count": bad_sign_count,
         },
         "greeks_runtime": greeks_runtime_out,
+        "pricing_model": pricing_model_out,
+        "rate": rate_out,
         "pcp": {
             "status": pcp_status,
             "flag_rate": pcp_flag_rate,

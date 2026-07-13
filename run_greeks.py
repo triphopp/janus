@@ -25,6 +25,8 @@ import pandas as pd
 
 from core.greek_inputs import resolve_greek_inputs
 from core.greeks import batch_greeks
+from core import pricing_models as _pricing_models
+from core.rates import stamp_rate
 
 _SCHEMA_VERSION = 1
 
@@ -123,7 +125,7 @@ def run_greek_only(
     dtype: str = "float64",
     div_yield: float | None = None,
     iv_source: str = "computed",
-    rf_rate_default: float = 0.0,
+    rf_rate_default: float | None = None,
     cfg: dict | None = None,
     min_dte: int | None = None,
     max_dte: int | None = None,
@@ -165,10 +167,15 @@ def run_greek_only(
     filtered = df[mask].copy()
     n_filtered = len(filtered)
 
+    rate_cfg = dict(cfg)
+    if rf_rate_default is not None:
+        rate_cfg["rf_rate"] = float(rf_rate_default)
+    filtered, rate_summary = stamp_rate(filtered, rate_cfg)
+
     # Resolve inputs (full coercion + invalid reasons)
     resolved, input_summary = resolve_greek_inputs(
         filtered, cfg=cfg, iv_source=iv_source,
-        rf_rate_default=rf_rate_default, dte_cfg=dte_cfg,
+        dte_cfg=dte_cfg,
     )
 
     # Warn if iv_provided rows have quality flags
@@ -180,6 +187,8 @@ def run_greek_only(
             config_warnings.append(
                 f"{n_failed} iv_provided rows have _iv_quality_flag set — review before trusting Greeks"
             )
+    for warning in rate_summary.get("warnings", []):
+        config_warnings.append(f"rate: {warning}")
 
     # Compute Greeks
     greeks_result = batch_greeks(
@@ -215,13 +224,14 @@ def run_greek_only(
         "model": model,
         "backend": backend,
         "dtype": dtype,
-        "div_yield": q if model in ("bs", "bsm") else None,
+        "div_yield": q if _pricing_models.model_uses_dividend_yield(model) else None,
         "universe_filter": {
             "input_rows": n_input,
             "rows_after_filter": n_filtered,
             "rows_dropped": n_input - n_filtered,
         },
         "input_quality": input_summary,
+        "rate_summary": rate_summary,
         "output_rows": len(out),
         "conventions": _CONVENTIONS,
         "config_warnings": config_warnings,
@@ -365,6 +375,7 @@ def run_instrument_mode(
         "valid_greek_rows": int(out["greek_input_valid"].sum()) if "greek_input_valid" in out.columns else len(out),
         "invalid_greek_rows": n_invalid,
         "underlying_missing_rows": underlying_missing,
+        "rate_summary": (adapted_cfg.get("option_quality") or {}).get("rate_summary"),
         "conventions": _CONVENTIONS,
         "provenance": prov,
         "config_warnings": [],
@@ -408,12 +419,12 @@ Examples:
     inp.add_argument("--end", metavar="DATE", help="End date (YYYY-MM-DD).")
 
     mdl = p.add_argument_group("Model")
-    mdl.add_argument("--model", default="black76", choices=["black76", "bs", "bsm"],
+    mdl.add_argument("--model", default="black76", choices=list(_pricing_models.implemented_greek_model_names()),
                      help="Pricing model. (default: black76)")
     mdl.add_argument("--iv-source", default="computed", choices=["computed", "provided"],
                      help="IV column to use. (default: computed)")
-    mdl.add_argument("--rf-rate", type=float, default=0.0,
-                     help="Risk-free rate fallback. (default: 0.0)")
+    mdl.add_argument("--rf-rate", type=float, default=None,
+                     help="Risk-free rate override. Defaults to core rate policy.")
     mdl.add_argument("--div-yield", type=float, default=None,
                      help="Dividend yield for BSM model. Defaults to config div_yield, then 0.0.")
 

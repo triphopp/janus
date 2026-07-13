@@ -212,6 +212,7 @@ def _sync_normalized_override(cfg: dict, dotted_key: str, value: object) -> None
     """
     aliases = {
         "pricing.compute_greeks": "compute_greeks",
+        "pricing.model": "pricing_model",
         "pricing.div_yield": "div_yield",
         "pricing.iv_validate_threshold": "iv_validate_threshold",
         "pricing.iv_solver_bounds": "iv_solver_bounds",
@@ -221,6 +222,8 @@ def _sync_normalized_override(cfg: dict, dotted_key: str, value: object) -> None
         "pricing.greeks_batch_size": "greeks_batch_size",
         "pricing.greeks_dtype": "greeks_dtype",
         "pricing.greeks_cuda_min_rows": "greeks_cuda_min_rows",
+        "pricing.allow_model_approximation": "allow_model_approximation",
+        "pricing.compare_models": "compare_models",
         "cv.n_folds": "n_folds",
         "cv.purge_bars": "purge_bars",
         "cv.event_embargo_bars": "event_embargo_bars",

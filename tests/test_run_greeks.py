@@ -56,6 +56,13 @@ class TestGreekOutputColumns:
         assert summary["model"] == "black76"
         assert summary["backend"] == "numpy"
 
+    def test_black76_european_alias_runs_and_records_selected_model(self):
+        out, summary = run_greek_only(_option_df(), model="black76_european", backend="numpy")
+        base, _ = run_greek_only(_option_df(), model="black76", backend="numpy")
+        assert (out["greek_model"] == "black76_european").all()
+        assert summary["model"] == "black76_european"
+        np.testing.assert_allclose(out["delta"].values, base["delta"].values, rtol=1e-12)
+
 
 class TestBackendParity:
     def test_loop_matches_numpy(self):
@@ -114,6 +121,19 @@ class TestSummaryContents:
         df = pd.DataFrame([{"K": 80.0, "T": 0.5, "iv": 0.3, "right": "C"}])
         _, summary = run_greek_only(df)
         assert summary["input_quality"]["invalid_by_reason"]["missing_underlying"] == 1
+
+    def test_summary_contains_rate_resolution(self):
+        df = _option_df().drop(columns=["r"])
+        out, summary = run_greek_only(df)
+        assert "rate_summary" in summary
+        assert summary["rate_summary"]["fallback_rows"] == len(df)
+        assert out[["delta", "gamma", "vega", "theta", "rho"]].notna().all().all()
+
+    def test_explicit_rf_rate_stamps_standalone_rows(self):
+        df = _option_df().drop(columns=["r"])
+        _, summary = run_greek_only(df, rf_rate_default=0.0123)
+        assert summary["rate_summary"]["configured_rows"] == len(df)
+        assert summary["rate_summary"]["configured_rate"] == pytest.approx(0.0123)
 
 
 class TestUnknownModelFails:
@@ -214,6 +234,16 @@ class TestCLI:
         df_lp = pd.read_csv(out_lp)
         for col in ("delta", "gamma", "vega", "theta", "rho"):
             np.testing.assert_allclose(df_np[col].values, df_lp[col].values, rtol=1e-8)
+
+    def test_cli_accepts_black76_european(self, tmp_path):
+        df = _option_df()
+        in_path = str(tmp_path / "in.csv")
+        out_path = str(tmp_path / "out.csv")
+        df.to_csv(in_path, index=False)
+        rc = main(["--input", in_path, "--model", "black76_european", "--output", out_path])
+        assert rc == 0
+        result = pd.read_csv(out_path)
+        assert (result["greek_model"] == "black76_european").all()
 
 
 # ── Phase 3: Instrument mode tests ───────────────────────────────────────────

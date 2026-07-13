@@ -5,136 +5,114 @@ or settlement data, applies point-in-time and contract guards, prepares
 asset-aware features, builds purged walk-forward folds, writes reproducible run
 artifacts, and serves those artifacts through a React/FastAPI dashboard.
 
-It is built to answer a narrow question:
+Janus is built to answer one question:
 
 ```text
-Can this data, validation path, and run lineage be trusted?
+Can this data, validation path, pricing model, and run lineage be trusted?
 ```
 
-Janus does not pick instruments, generate production trading signals, or execute
-orders. When strategy P&L columns are absent, metrics are reported as market
-diagnostics rather than strategy backtest approval.
+It does not pick instruments, generate production trading signals, or execute
+orders. When strategy P&L columns are absent, Janus reports market diagnostics
+rather than strategy backtest approval.
 
 ## Current Status
 
-The actively supported workflows are:
+Working paths:
 
-- **Progressive `janus` CLI** — `import` an external file once, then `run`
-  many times by symbol and date window. Advanced pipeline knobs stay out of the
-  default path.
-- Equity diagnostics from provider data.
-- Futures and futures-options diagnostics from pipe-delimited settlement files.
-- WTI futures-options runs using a hash-pinned local settlement file.
-- Contract/quarantine, coverage, CDC, break ledger, reports, and dashboard scan.
-- **Greek-only computation** from prepared rows or instrument config without
-  running the full pipeline.
+- Progressive `janus` CLI: import an external file once, then run many times by
+  symbol and date window.
+- Equity, futures, equity-options, and futures-options preparation through
+  family-specific adapters and a shared generic core.
+- Settlement-backed WTI futures-options runs with fixed-input guards.
+- Contract/quarantine, coverage, CDC, break ledger, reports, dashboard scan,
+  and option-quality summaries.
+- Greek-only computation through `run_greeks.py`.
+- Central risk-free-rate stamping through `core/rates.py`.
+- Central pricing-model metadata through `core/pricing_models.py`.
 
-Recent additions include:
+Current verified test result:
 
-- **Greek-only runner** (`run_greeks.py`): compute option Greeks independently
-  using Black-76 or BSM, with numpy/loop/auto/cuda backends, universe filters,
-  and a structured JSON summary — without touching splitter, metrics, or
-  reporting stages
-- **Vectorized Greek engine** (`core/greeks.py`): `batch_greeks()` shared by
-  the full pipeline and Greek-only mode; corrected Black-76 theta with
-  `exp(−rT)` discount factor on the volatility-decay term
-- **Greek input resolver** (`core/greek_inputs.py`): strict column-precedence
-  contract, numeric coercion of bad inputs, `greek_invalid_reason` column,
-  never crashes on malformed rows
-- **Independent reference validation**: `tools/generate_greek_reference.py`
-  produces scipy-based Black-76/BSM reference values with no shared code paths
-  with `core/greeks.py`
-- expiry-aware option purge through `label_end_col: expiry`
-- embargo support on the expiry-aware purge path
-- option universe filters for DTE, minimum premium, IV cap, delta bands, and
-  relative spread
-- hash-pinned local file acceptance without `--allow-unversioned-data`
-- settlement `net_change` checks at contract identity grain
-- futures curve outlier checks at delivery-month grain
-- sampled provided-IV validation for large option chains
-- **option universe exclusion observability**: `summary.json` now explains why
-  each option row was excluded (DTE, premium, IV, delta, spread, missing
-  underlying) rather than reporting a single opaque row-drop count
-- **option quality summary**: `summary.json` includes `option_quality` with IV
-  rates, delta coverage, PCP flags, and universe exclusion reasons
-- **equity option price provenance**: `price_source` (mid/last/missing),
-  bid-ask spread, and relative spread columns added to equity option chain output
+```bash
+pytest -q
+```
+
+```text
+1055 passed, 10 skipped, 16 warnings
+```
+
+## What Changed Recently
+
+### Rates and discounting
+
+Rates now have one policy surface:
+
+- `core/rates.py` resolves and stamps row-level `r`.
+- Existing row-level `r` wins.
+- Configured scalar rates and PIT rate series can stamp missing `r`.
+- The built-in fallback is `0.05`, continuously compounded, ACT/365-style.
+- `resolve_greek_inputs()` no longer invents rates itself; it expects row-level
+  `r` already stamped by `core.rates`.
+- `validate_provided_iv()`, option export, adapter Greeks, `net_greeks()`, and
+  transaction-cost financing now use the same rate contract.
+
+Practical rule: if you call low-level Greek input resolution directly, stamp
+rates first with `core.rates.stamp_rate()`.
+
+### Pricing models
+
+Pricing model names and metadata now live in `core/pricing_models.py`.
+
+Implemented runtime models:
+
+| Model | Runtime | Use |
+| --- | --- | --- |
+| `black76` | Black-76 | European futures options |
+| `black76_european` | Alias of `black76` | Explicit European futures option label |
+| `bs` | Black-Scholes | Legacy equity option path |
+| `bsm` | Black-Scholes-Merton | Equity/index options with dividend yield |
+
+Registered but not runtime-enabled yet:
+
+- `bachelier` / `normal`
+- `black76_shifted`
+- `black76_baw`
+- `black76_shifted_baw`
+- `bsm_baw`
+- `crr_binomial`
+- `trinomial`
+- `finite_difference`
+
+Lognormal scalar paths now fail closed without NumPy runtime warnings. For
+`black76`, `black76_european`, `bs`, and `bsm`, invalid domains such as
+non-positive underlying, non-positive strike, non-positive volatility, missing
+rate, expired `T`, or invalid right return `NaN` rather than silently running
+`log()` on bad inputs.
+
+Put-call parity checks now use registry metadata. European models keep parity
+equality checks; planned American models do not reuse European equality gates.
 
 ## Pipeline Shape
 
-```mermaid
-flowchart LR
-    %% Janus compact high-level architecture for one-slide placement.
-    %% Source of truth: docs/architecture/high_level_architecture.mmd
-
-    classDef lane fill:#ffffff,stroke:#777777,stroke-width:1px,color:#111111;
-    classDef input fill:#f8f2df,stroke:#9b7a25,stroke-width:1px,color:#2d2614;
-    classDef data fill:#f2f2f2,stroke:#555555,stroke-width:1px,color:#111111;
-    classDef proc fill:#ffffff,stroke:#111111,stroke-width:1px,color:#111111;
-    classDef gate fill:#fff4ed,stroke:#b65f2a,stroke-width:1px,color:#3b1f0e;
-    classDef out fill:#f6f0ff,stroke:#7556a8,stroke-width:1px,color:#28183f;
-    classDef side fill:#ffffff,stroke:#777777,stroke-width:1px,stroke-dasharray:4 3,color:#333333;
-
-    subgraph C["1. Control Inputs"]
-        direction TB
-        C1["Instrument file<br/>(YAML)"]:::input
-        C2["Family defaults"]:::input
-        C3["Data rules<br/>(contracts)"]:::input
-        C4["Run mode<br/>full / Greeks"]:::input
-        C1 --> C2 --> C3 --> C4
-    end
-
-    subgraph P["2. Data Preparation"]
-        direction TB
-        P1["Source data<br/>providers / files"]:::data
-        P2["Pinned version<br/>+ known-at time (PIT)"]:::data
-        P3{"Bronze gate<br/>schema / PIT / SLA"}:::gate
-        P4["Asset prep<br/>(adapter)"]:::proc
-        P5["Prepared frame"]:::data
-        P6["Quarantine<br/>failed rows + reasons"]:::out
-        P1 --> P2 --> P3
-        P3 -->|pass| P4 --> P5
-        P3 -->|fail| P6
-    end
-
-    subgraph V["3. Core Validation Pipeline"]
-        direction TB
-        V1["Check values<br/>(validators)"]:::proc
-        V2["Quality score<br/>(DQ)"]:::proc
-        V3["Compare changes<br/>(CDC)"]:::proc
-        V4["Issue log<br/>(break ledger)"]:::proc
-        V5["Time split<br/>+ no overlap"]:::proc
-        V6["Stability<br/>+ metrics"]:::proc
-        V7["Greek engine<br/>(batch_greeks)"]:::side
-        V1 --> V2 --> V3 --> V4 --> V5 --> V6
-    end
-
-    subgraph O["4. Durable Outputs"]
-        direction TB
-        O1["Run package<br/>summary / report / tables"]:::out
-        O2["Review package<br/>diffs / issues / manifest / lineage"]:::out
-        O3["Dashboard<br/>inspect + investigate"]:::out
-        O1 --> O3
-        O2 --> O3
-    end
-
-    C4 --> P1
-    P5 --> V1
-    V6 --> O1
-    V3 --> O2
-    V4 --> O2
-    V6 --> O2
-
-    C4 -. Greeks only .-> V7
-    P4 -. option prep .-> V7
-    V7 -. Greeks .-> O1
-
-    class C,P,V,O lane
+```text
+source data
+  -> ingestion
+  -> adapter preparation
+  -> contracts, PIT, coverage, validators
+  -> option/rate/pricing quality checks
+  -> splitter, stability, metrics
+  -> reports, run packages, dashboard artifacts
 ```
 
-The README diagram follows `docs/architecture/high_level_architecture.mmd`, which
-is the source of truth for the high-level pipeline shape. More detailed execution
-and paper-friendly section diagrams live in `docs/architecture/`.
+Greek-only mode uses the same core math but skips splitter, metrics, reports,
+CDC, and dashboard generation.
+
+```text
+prepared option rows
+  -> core.rates.stamp_rate()
+  -> core.greek_inputs.resolve_greek_inputs()
+  -> core.greeks.batch_greeks()
+  -> Greek output + .greek_summary.json
+```
 
 ## Install
 
@@ -142,142 +120,104 @@ and paper-friendly section diagrams live in `docs/architecture/`.
 pip install -r requirements.txt
 ```
 
-Optional interactive progress bars use `tqdm` when it is installed. Without it,
-Janus falls back to the existing plain logs:
+Optional progress bars use `tqdm` when installed:
 
 ```bash
 pip install tqdm
 ```
 
-Run the full test suite:
+Run tests:
+
+```bash
+pytest -q
+```
+
+If your Python installation does not expose `pytest` directly:
 
 ```bash
 python3 -m pytest -q
 ```
 
-Expected current result (on `main`):
+## Quick Start: `janus`
 
-```text
-1023 passed, 8 skipped
-```
+The user-facing CLI is `janus.py`. The normal pattern is import once, run many
+times.
 
-> **Windows note:** `.pytest_cache` write errors (`WinError 5`) appear on some
-> Windows setups but do not affect test results. Use `python3 -m pytest -q -p no:cacheprovider`
-> to suppress them.
-
-## Quick Start: the `janus` CLI
-
-The user-facing entry point is `janus`. The core path is **import once, run many
-times** — you never have to learn `instrument`, `provider`, or `data-file`.
-
-### WTI settlement options (file-backed)
+### Settlement-backed WTI
 
 ```bash
-# 1. Register the local settlement file once (computes + pins its SHA-256)
-python janus.py import WTI data/WTI.csv
-
-# 2. Run by symbol + window. --window accepts YYYY, YYYY-MM, or YYYYQn
-python janus.py run WTI --window 2024Q4
-
-# Custom date range instead of a named window
-python janus.py run WTI --from 2024-09-25 --to 2024-12-31
-
-# Enable Greeks + a narrower research universe for downstream export
-python janus.py run WTI --window 2024Q4 --preset export --universe near-term
+python3 janus.py import WTI data/WTI.csv
+python3 janus.py run WTI --window 2024Q4
 ```
 
-`import` detects the delimiter (the WTI file is pipe-delimited despite its
-`.csv` name), records row count and observed date range, and sets the file as
-the active source. Official/export runs refuse to start on an unpinned or
-changed file and tell you the exact next command.
-
-### Equity diagnostics (live provider)
-
-Equity tickers read from a live provider, which is not reproducible — so they
-run under the `diagnostic` preset:
+Custom date range:
 
 ```bash
-python janus.py run NVDA --from 2024-01-01 --to 2024-12-31 --preset diagnostic
+python3 janus.py run WTI --from 2024-09-25 --to 2024-12-31
 ```
 
-### Inspect before / after running
+Export-oriented run:
 
 ```bash
-python janus.py doctor WTI                 # readiness: source, hash, IV, export, calendars
-python janus.py explain WTI --window 2024Q4  # print the resolved plan, run nothing
-python janus.py list                        # all profiles + readiness + next command
-python janus.py show wti_q4                  # summarize a completed run
-python janus.py data list WTI                # registered sources for a symbol
-python janus.py data use WTI <source_id>     # switch the active source
+python3 janus.py run WTI --window 2024Q4 --preset export --universe near-term
 ```
 
-### Presets and universes
+### Equity diagnostics
 
-| `--preset` | Posture |
-|---|---|
-| `official` (default) | Hash-pinned source required; reproducible; fail closed on P0 gates |
-| `diagnostic` | Allows live/provider reads; outputs marked non-reproducible |
-| `export` | Like official + Greeks on → downstream `option_chain_greeks` |
-| `research` | Explicit research-universe choices, every override recorded |
-
-| `--universe` | Option rows kept |
-|---|---|
-| `all` (default) | Everything except expiry-day rows |
-| `liquid` | Priced, bounded IV, mid delta band |
-| `near-term` | ≤ 90 DTE |
-| `custom:<name>` | A `universe_presets.<name>` block in the instrument YAML |
-
-### Advanced overrides
-
-Low-level pipeline knobs are hidden from the default help. Reach them
-explicitly; every override is recorded in `summary.json`:
+Live provider reads are diagnostic rather than reproducible:
 
 ```bash
-python janus.py run WTI --window 2024Q4 --advanced \
-  --override pricing.compute_greeks=true \
-  --override cv.n_folds=4
+python3 janus.py run NVDA --from 2024-01-01 --to 2024-12-31 --preset diagnostic
 ```
 
-### Data-source registry
-
-Imported files are recorded in `configs/local/data_sources.yaml` (git-ignored —
-it stores private absolute paths):
-
-```yaml
-WTI:
-  active: wti_wti
-  sources:
-    wti_wti:
-      path: D:/Agents/Codex/janus/data/WTI.csv
-      sha256: ead277b65f50405e7fa28bf0785b46191e9aaa0a7f5bcef1271cf04e6e50d4ee
-      format: psv
-      provider: settlement
-      rows: 1851596
-      date_range: [2024-09-25, 2026-05-29]
-      imported_at: 2026-06-28T00:00:00+00:00
-```
-
-## Quick Start: Greek-only Mode
-
-Compute Greeks from prepared option rows without running the full pipeline:
+### Inspect before running
 
 ```bash
-# From a prepared CSV (Black-76, WTI futures options)
+python3 janus.py doctor WTI
+python3 janus.py explain WTI --window 2024Q4
+python3 janus.py list
+python3 janus.py show wti_q4
+python3 janus.py data list WTI
+```
+
+## Greek-only Mode
+
+Use `run_greeks.py` when you already have prepared option rows or want a fast
+Greek artifact without the full pipeline.
+
+Futures options:
+
+```bash
 python3 run_greeks.py \
   --input wti_options.csv \
   --model black76 \
   --backend numpy \
   --output outputs/greeks/wti_greeks.parquet
+```
 
-# From a prepared CSV (BSM, equity options with dividend yield)
+Explicit European futures label:
+
+```bash
+python3 run_greeks.py \
+  --input wti_options.csv \
+  --model black76_european \
+  --output outputs/greeks/wti_greeks.parquet
+```
+
+Equity options:
+
+```bash
 python3 run_greeks.py \
   --input aapl_options.csv \
   --model bsm \
   --div-yield 0.005 \
   --rf-rate 0.05 \
   --output outputs/greeks/aapl_greeks.parquet
+```
 
-# From instrument config and raw chain
+Instrument-config mode:
+
+```bash
 python3 run_greeks.py \
   --instrument wti \
   --data-file data/WTI_2024.csv \
@@ -288,198 +228,104 @@ python3 run_greeks.py \
   --output outputs/greeks/wti_2024.parquet
 ```
 
-Greek-only mode writes two artifacts beside the output file:
-- The Greek output file (CSV or Parquet) with `delta`, `gamma`, `vega`,
-  `theta`, `rho`, `greek_model`, `greek_backend`, `greek_dtype`,
-  `greek_input_valid`, and `greek_invalid_reason` columns.
-- A `.greek_summary.json` file with `schema_version`, model/backend/dtype,
-  universe filter counts, input quality counts, convention metadata,
-  and provenance (git commit, input hash).
-
-Invalid rows (missing underlying, IV, T, or bad right) receive `NaN` for all
-Greek columns. The runner never raises on individual bad rows.
-
-See `docs/guides/greek_only_runner.md` for the full API reference.
-
-## Advanced: `run_pipeline.py` (low-level entry)
-
-`janus` is a facade over `run_pipeline.py`. The low-level entry still works as a
-compatibility layer (it prints a deprecation notice steering you to `janus`) and
-remains the place where every individual knob is exposed. Prefer `janus` for
-normal work; reach for `run_pipeline.py` only for one-off knob combinations not
-covered by a preset.
-
-`run_pipeline.py` separates instrument identity from file location:
-
-- `--instrument` / `-i`: instrument config name or equity ticker
-- `--data-file`: local settlement file path
-- `--provider`: optional provider override
-- `--allow-unversioned-data`: bypass fixed-input guard for diagnostics only
-
-```bash
-# Equivalent of: janus run WTI --window 2024Q4  (after janus import)
-python3 run_pipeline.py -i wti --start 2024-10-01 --end 2024-12-31 --run-id wti_q4
-
-# Narrow a large option chain + enable Greeks, all from the CLI
-python3 run_pipeline.py \
-  -i wti --start 2024-09-25 --end 2024-12-31 \
-  --max-dte 90 --min-option-price 0.00001 --iv-cap 2.0 \
-  --min-abs-delta 0.15 --max-abs-delta 0.80 --compute-greeks
-```
-
-Supported runtime controls (all map to `janus run --advanced --override …` or a
-preset): `--compute-greeks`, `--metrics-mode`, `--min-dte`, `--max-dte`,
-`--min-option-price`, `--iv-cap`, `--min-abs-delta`, `--max-abs-delta`,
-`--n-folds`, `--embargo-bars`, `--progress`. CLI values override instrument
-YAML, which overrides family defaults.
-
-If `--data-file` points to a different file than the hash pinned in the config,
-the fixed-input guard fails. Progress bars write to stderr; `--progress auto`
-shows a `tqdm` bar in an interactive terminal, `plain` keeps log lines, `none`
-silences both.
-
-## Greek Engine
-
-Janus has a single shared Greek engine used by both the full pipeline
-(`run_pipeline.py`) and the standalone runner (`run_greeks.py`).
-
-```
-Full pipeline:   run_pipeline.py → OptionsBase.compute_greeks() ──┐
-                                                                   ├→ core.greeks.batch_greeks()
-Greek-only mode: run_greeks.py   → run_greek_only() ─────────────┘
-                                 → core.greek_inputs.resolve_greek_inputs()
-```
-
-### Models
-
-| Flag | Model | Use for |
-|------|-------|---------|
-| `--model black76` | Black-76 | Futures options (WTI, grains) |
-| `--model bsm` | Black-Scholes-Merton | Equity options (AAPL, SPX) |
-
-### Backends
-
-| Flag | Backend | Notes |
-|------|---------|-------|
-| `--backend numpy` | CPU vectorized (default) | ~40–50× faster than loop |
-| `--backend loop` | Scalar per-row | Debugging only |
-| `--backend auto` | Automatic | numpy unless GPU threshold met |
-| `--backend cuda` | GPU via CuPy | Requires `cupy-cuda12x` |
-
-### Convention reference
-
-**Theta** is annualized calendar-time decay: `−dV/dT` where `T` is in years.
-To convert to per-day: `theta_per_day = theta / 365`.
-
-Black-76 call theta:
-```
-θ = −e^(−rT) · F · φ(d₁) · σ / (2√T)
-    − r · K · e^(−rT) · N(d₂)
-    + r · F · e^(−rT) · N(d₁)
-```
-
-**Vega** is per 1.0 volatility unit (not per 1% move).
-To convert to per-1% move: `vega_per_pct = vega / 100`.
-
-**Rates** are continuously compounded.
-
-## WTI Options Controls
-
-The WTI example narrows the chain before expensive validation:
-
-```yaml
-pricing:
-  model: black76
-  validate_provided_iv: true
-  iv_validate_sample_size: 5000
-  compute_greeks: false
-  check_pcp: false
-
-option_universe:
-  min_dte_days: 1
-  max_dte_days: 730
-  min_option_price: 0.00001
-  # max_iv: 2.0
-  # delta_band:
-  #   min_abs_delta: 0.15
-  #   max_abs_delta: 0.80
-```
-
-Why these defaults exist:
-
-- `DTE=0` WTI option rows can have legitimate zero premium; they are filtered
-  before pricing/metrics instead of being quarantined at the bronze gate.
-- Very long-dated options dominate runtime and purge behavior while often being
-  outside the intended research universe.
-- Provided-IV validation is sampled so large chains remain usable.
-- Greeks and PCP can be enabled after the universe is narrowed or run offline
-  via `run_greeks.py`.
-
-## Option Universe Exclusion Observability
-
-Every option row excluded by a universe filter is counted by reason rather than
-reported as a single opaque row-drop. Counts appear in `summary.json` under
-`option_quality.universe`:
-
-```json
-{
-  "option_quality": {
-    "option_rows": 1000,
-    "support_future_rows": 120,
-    "universe": {
-      "rows_before": 1500,
-      "rows_after": 1000,
-      "drop_rows": 500,
-      "drop_by_reason": {
-        "dte_below_min": 200,
-        "dte_above_max": 150,
-        "premium_below_min": 100,
-        "iv_above_cap": 40,
-        "iv_missing_or_unsolved": 5,
-        "delta_above_max": 5,
-        "spread_above_max": 0,
-        "missing_underlying_future": 0
-      },
-      "filters": {
-        "min_dte_days": 1,
-        "max_dte_days": 730,
-        "min_option_price": 0.00001
-      }
-    }
-  }
-}
-```
-
-Design invariant: a row excluded by DTE, premium, IV cap, delta band, or spread
-is a **research universe choice** and is never quarantined at the bronze gate.
-A row failing a contract structural or PIT rule is still quarantined as before.
-The two counts must never overlap.
-
-## Futures Options Semantics
-
-`SettlementLoader` reads pipe-delimited EOD settlement files that mix futures and
-options rows. It classifies rows with:
+Supported model flags today:
 
 ```text
-is_option = CONTRACT TYPE in ["C", "P"] and STRIKE is not null
+black76
+black76_european
+bs
+bsm
 ```
 
-`FuturesOptionsAdapter` then:
+Supported backends:
 
-- builds futures context and term-structure features
-- attaches the matching same-date, same-delivery future price as option `F`
-- computes DTE through `core/dte.py`
-- applies configured option-universe filters
-- uses Black-76 for futures options
-- passes `label_end_col: expiry` to the splitter
+| Backend | Notes |
+| --- | --- |
+| `numpy` | CPU vectorized default |
+| `loop` | Scalar per-row, mainly for debugging |
+| `auto` | Chooses numpy unless CUDA threshold is met |
+| `cuda` | GPU via CuPy; requires a matching CuPy install |
 
-Walk-forward validation is grouped by `as_of_date`. For option chains, purge
-removes training rows whose label horizon reaches into validation, and embargo
-removes rows too close to the validation start.
+Greek output includes:
+
+- Identity columns from the input.
+- `delta`, `gamma`, `vega`, `theta`, `rho`.
+- `greek_model`, `greek_backend`, `greek_dtype`.
+- `greek_input_valid`, `greek_invalid_reason`.
+- A sibling `.greek_summary.json` with input-quality, universe-filter, rate,
+  convention, and provenance metadata.
+
+## Rate Policy
+
+Common config keys:
+
+```yaml
+rf_rate: 0.05
+rf_rate_source: constant
+rf_rate_col: r
+```
+
+PIT rate-series config can provide row-available rates. The rate table must be
+available before the option row decision time; future rates are not used.
+
+Minimal conceptual shape:
+
+```yaml
+rf_rate_source: sofr
+rate_data_path: /absolute/path/to/sofr_rates.csv
+```
+
+Expected rate table fields are normalized by `core.rates`, including rate/date
+and `available_at` when present. ACT/360 simple SOFR-style rates can be
+converted to continuously compounded ACT/365 through the rate utilities.
+
+## Pricing Model Policy
+
+Janus does not auto-switch pricing models row by row. A run has one canonical
+pricing model. Comparison models should be diagnostic-only until explicitly
+implemented.
+
+Important consequences:
+
+- Negative futures prices can be real data.
+- Lognormal models such as `black76` cannot price `F <= 0`.
+- Bad model domain is a pricing-domain state, not necessarily bad raw data.
+- Bachelier/normal and shifted Black are planned for negative or near-zero
+  regimes, but are not enabled yet.
+- `black76_baw` is planned for American futures-option approximation work, but
+  is not enabled yet.
+
+## Low-level Full Pipeline
+
+`janus.py` is the preferred facade. `run_pipeline.py` remains the low-level
+entry for advanced combinations.
+
+```bash
+python3 run_pipeline.py \
+  -i wti \
+  --start 2024-10-01 \
+  --end 2024-12-31 \
+  --run-id wti_q4
+```
+
+Advanced option universe and Greek controls:
+
+```bash
+python3 run_pipeline.py \
+  -i wti \
+  --start 2024-09-25 \
+  --end 2024-12-31 \
+  --max-dte 90 \
+  --min-option-price 0.00001 \
+  --iv-cap 2.0 \
+  --min-abs-delta 0.15 \
+  --max-abs-delta 0.80 \
+  --compute-greeks
+```
 
 ## Outputs
 
-Run-scoped outputs use the current layout:
+Run-scoped outputs:
 
 ```text
 outputs/runs/<instrument>/<run_id>/
@@ -493,7 +339,7 @@ outputs/runs/<instrument>/<run_id>/
   data/prepared.parquet
 ```
 
-Global or cross-run artifacts:
+Cross-run artifacts:
 
 ```text
 outputs/diff/<run_id>_changes.jsonl
@@ -503,107 +349,19 @@ outputs/manifest/<run_id>.json
 quarantine/<run_id>/
 ```
 
-Greek-only outputs:
+Greek-only artifacts:
 
 ```text
-outputs/greeks/<name>.parquet          # Greek columns + identity columns
-outputs/greeks/<name>.greek_summary.json  # counts, conventions, provenance
+outputs/greeks/<name>.parquet
+outputs/greeks/<name>.greek_summary.json
 ```
 
-Each `summary.json` includes guard status for PIT timing, contract gate,
-coverage SLA, fixed input version, strategy P&L presence, and adjustment
-semantics.
-
-## Evidence Search Harness
-
-The evidence harness investigates return outliers by searching the web, fetching
-pages, extracting claims with an LLM, and writing a verdict to disk. It is an
-optional module wired into the dashboard — outliers in the "Tagged return
-outliers" panel can be investigated in one click.
-
-### Architecture
-
-```text
-core/evidence_harness/
-├── controller.py        # orchestration loop
-├── config.py            # HarnessConfig + load_harness_config()
-├── schema.py            # OutlierCasePackage, EvidenceClaim, SourceRegistryRecord, …
-├── llm/
-│   ├── router.py        # build_llm_client() + three task functions
-│   ├── client.py        # LLMClient base class
-│   └── providers/
-│       ├── mock.py      # deterministic stub — default, no network
-│       ├── ollama.py    # local Ollama (gemma4:26b, llama3, etc.)
-│       └── openai_compat.py  # any OpenAI-compatible endpoint
-web/evidence_api.py      # FastAPI routes: /api/evidence/run, /cases, /runs/{id}/outliers
-```
-
-No model name or provider is hardcoded in Python source. All LLM settings live
-in config only:
-
-| Field | Default | Override |
-|---|---|---|
-| `llm_provider` | `mock` | `ollama` or `openai_compat` |
-| `llm_model` | `mock-v1` | any tag (`gemma4:26b`, `gpt-4o`, …) |
-| `llm_base_url` | `http://localhost:11434` | any endpoint |
-| `llm_api_key` | none | `${ENV_VAR}` interpolation supported |
-| `llm_timeout_sec` | 60 | increase for large local models |
-
-### Running with Ollama
-
-Pull a model once:
-
-```bash
-ollama pull gemma4:26b
-```
-
-Enable in `configs/evidence_search.yaml`:
-
-```yaml
-evidence_search:
-  enabled: true
-  mode: live
-  search_provider: duckduckgo
-  fetch_provider: httpx
-  max_runtime_sec: 300
-  llm_enabled: true
-  llm_provider: ollama
-  llm_model: gemma4:26b
-  llm_timeout_sec: 180
-```
-
-Start the dashboard and click **Investigate** on any outlier row.
-
-### Evidence API routes
-
-| Route | Purpose |
-|---|---|
-| `POST /api/evidence/run` | Submit an outlier case for investigation |
-| `GET /api/evidence/cases/{case_id}/status` | Poll job status, sources, claims |
-| `GET /api/evidence/runs/{run_id}/outliers` | List all outlier cases for a run |
-
-### Providers
-
-| `llm_provider` | Requirement | Notes |
-|---|---|---|
-| `mock` | none | Deterministic stub, safe for CI |
-| `ollama` | `ollama` running locally | `gemma4:26b` tested; any pulled model works |
-| `openai_compat` | API key | Works with OpenAI, Together, Fireworks, etc. |
-
-Artifacts are written to `outputs/evidence/harness/{run_id}/{case_id}/{harness_run_id}/`:
-
-```text
-verdict.json
-claims.jsonl
-sources.jsonl
-summary.json
-```
-
-Status endpoint reads artifacts from disk — results survive server restarts.
+Downstream option-chain export artifacts include a manifest, schema, data
+dictionary, and clean `option_chain_greeks.csv` when readiness permits export.
 
 ## Dashboard
 
-Build the frontend once:
+Build the frontend:
 
 ```bash
 cd web/frontend
@@ -612,7 +370,7 @@ npm run build
 cd ../..
 ```
 
-Start the FastAPI dashboard server:
+Start the FastAPI dashboard:
 
 ```bash
 python3 run_dashboard.py
@@ -631,78 +389,42 @@ cd web/frontend
 npm run dev
 ```
 
-Vite serves the app at `http://127.0.0.1:5173/` and proxies API calls to the
-FastAPI server.
-
-Main dashboard/API routes:
-
-| Route | Purpose |
-| --- | --- |
-| `/` | React dashboard |
-| `/api/runs` | Scan run outputs |
-| `/api/runs/{run_id}` | Run detail, breaks, warnings, samples |
-| `/api/runs/{run_id}/raw-row` | Raw-source row lookup |
-| `/api/breaks` | Break ledger filters |
-| `/api/trend` | Break trend summary |
-| `/api/compare?a=&b=` | Prepared-data diff |
-| `/diff/{run_id}` | Static CDC diff HTML |
-| `/report/{run_id}` | Static final report HTML |
-| `/healthz` | Health check |
+Vite serves `http://127.0.0.1:5173/` and proxies API calls to the FastAPI
+server.
 
 ## Project Layout
 
 ```text
 janus/
-├── janus.py                     # user-facing CLI entry (import/run/doctor/…)
-├── cli/                         # CLI facade: dates, registry, presets, plan, doctor
-├── run_pipeline.py              # full pipeline (low-level / advanced entry)
-├── run_greeks.py                # Greek-only CLI (no splitter/metrics/reports)
-├── run_dashboard.py
-├── configs/
-│   ├── equity.yaml / futures.yaml
-│   ├── instruments/bz.yaml / spx.yaml / aapl.yaml / wti.yaml.example
-│   └── symbology/product_map.yaml
-├── contracts/
-├── ingestion/
-│   └── equity_options_loader_yf.py   # price_source / spread provenance
-├── adapters/
-│   └── options_base.py               # compute_greeks() → batch_greeks(); universe exclusion counting
-├── core/
-│   ├── greeks.py                     # batch_greeks() — single formula source of truth
-│   ├── greek_inputs.py               # resolve_greek_inputs() — single column resolver
-│   ├── pricing.py                    # Black-76, BSM, IV solver
-│   ├── dte.py                        # DTE single source of truth
-│   └── options_quality.py            # summarize() → option_quality in summary.json
-├── tools/
-│   └── generate_greek_reference.py   # independent scipy/QuantLib reference values
-├── tests/
-│   ├── fixtures/greek_reference.json # generated; scipy_analytic source
-│   ├── golden/black76_reference.csv  # corrected Black-76 theta values
-│   ├── test_core/
-│   │   ├── test_greeks.py            # scalar, vectorized, bump, identity
-│   │   ├── test_greek_inputs.py      # resolver contract, coercion, invalid-reason
-│   │   └── test_greek_external_reference.py  # vs. scipy reference
-│   └── test_run_greeks.py            # CLI, output schema, downstream-skip
-├── docs/
-│   ├── README.md                     # documentation map and cleanup policy
-│   ├── architecture/                 # high-level, execution, and paper figures
-│   ├── guides/                       # operating guides such as Greek-only mode
-│   ├── design/                       # data-ops, CDC, leakage, and audit designs
-│   ├── reference/                    # schema/domain reference diagrams
-│   ├── workflows/                    # workflow-specific diagram packs
-│   ├── reports/                      # validation and implementation reports
-│   └── archive/                      # superseded blueprints kept for traceability
-├── lineage/
-├── web/
-│   ├── dashboard.py
-│   ├── view_model.py
-│   ├── scanner.py
-│   ├── evidence_api.py
-│   └── frontend/
-├── outputs/          # generated, ignored
-├── quarantine/       # generated, ignored
-├── data/             # local raw files, ignored
-└── memory/           # local working notes, ignored
+|-- janus.py
+|-- run_pipeline.py
+|-- run_greeks.py
+|-- run_dashboard.py
+|-- cli/
+|-- configs/
+|-- contracts/
+|-- ingestion/
+|-- adapters/
+|   |-- options_base.py
+|   |-- futures_options_adapter.py
+|   `-- equity_options_adapter.py
+|-- core/
+|   |-- rates.py
+|   |-- pricing_models.py
+|   |-- pricing.py
+|   |-- greeks.py
+|   |-- greek_inputs.py
+|   |-- dte.py
+|   `-- options_quality.py
+|-- docs/
+|-- issues/
+|-- memory/
+|-- tests/
+|-- tools/
+|-- web/
+|-- outputs/
+|-- quarantine/
+`-- data/
 ```
 
 ## Adding Instruments
@@ -714,10 +436,7 @@ Supported families:
 - `equity_options`
 - `futures_options`
 
-For equities, a ticker can be used directly. For settlement files, create or
-copy an instrument YAML and keep local file paths in ignored local configs.
-
-Minimum settlement-backed config shape:
+Minimum settlement-backed futures-options config shape:
 
 ```yaml
 family: futures_options
@@ -726,7 +445,7 @@ symbol:
   product_id: 425
   contract_root: T
   hub: WTI
-data_file: "/absolute/path/to/WTI.csv"
+data_file: /absolute/path/to/WTI.csv
 data_version: sha256:<file-sha256>
 data_file_sha256: <file-sha256>
 pricing:
@@ -734,45 +453,29 @@ pricing:
 iv_source: provided
 ```
 
-## Feature Status
-
-| Feature | Status | Notes |
-| --- | --- | --- |
-| Greek-only runner (`run_greeks.py`) | Working | Mode A (prepared rows) + Mode B (instrument config); schema_version, greek_invalid_reason, greek_dtype |
-| Vectorized Greek engine (`batch_greeks`) | Working | numpy/loop/auto/cuda; Black-76 theta corrected; CUDA path requires `cupy-cuda12x` |
-| Greek input resolver | Working | Numeric coercion, column precedence, invalid-reason column, never crashes |
-| Independent Greek reference | Working | scipy-based, no shared code with `core/greeks.py`; QuantLib preferred when installed |
-| Pinned local settlement file | Working | Move large files into `VersionedCache` for team replay |
-| Bronze contract and quarantine | Working | Consider `enforcement: block` for production-grade contracts |
-| Coverage SLA | Working | Add exchange holiday calendars where business-day approx is rough |
-| WTI futures-options adapter | Working | Validate more historical windows; add smaller checked-in fixture for CI |
-| Expiry-aware purge/embargo | Working | Add more CPCV coverage for combinatorial purged CV |
-| Option universe DTE/price/IV/delta/spread filters | Working | Add moneyness filter |
-| Option universe exclusion observability | Working | `summary.json` reports per-reason exclusion counts |
-| Equity option price provenance | Working | `price_source`, `bid_ask_spread`, `relative_spread` columns |
-| Provided-IV validation | Partial | Supports sampling; add stale-IV detection and break-ledger attribution |
-| Put-call parity | Partial | Code exists; WTI disables for large chains |
-| Full-pipeline Greeks | Partial | Correct formulas exist; WTI disables runtime Greeks for speed |
-| Silver quality flags | Not started | `_iv_quality_flag`, `_delta_quality_flag`, `_premium_quality_flag` framework ready |
-| Strategy P&L metrics | Partial | Reports market diagnostics unless return/pnl column exists |
-| Diversity gate | Partial | WTI Q4 builds folds but passes `0` diversity folds; tune regime thresholds |
-| Asset context panel | Not started | Surface dividends, splits, coverage, quarantine, option-universe counts |
-| Equity historical options | Not started | yfinance is snapshot-only; add ORATS/OptionMetrics/exchange provider |
-| Event calendar handling | Partial | Basic lag-aware event flags; richer release-time calendars needed |
-| Lineage graphs | Partial | `futures_options` graph exists; expand for all families |
-| Full-file WTI performance | Partial | Q4 smoke clean; full 1.85M-row file needs chunked ingestion |
-| QuantLib Greek reference | Not started | Requires QuantLib environment; scipy reference in use as fallback |
+Local absolute paths should stay in ignored local config, not committed shared
+config.
 
 ## Design Rules
 
 - Keep asset-specific behavior in `adapters/`; keep `core/` generic.
 - Keep real instrument names in configs, not adapter/core code.
-- Use Black-76 for futures options; use BSM for equity options.
 - Compute DTE through `core/dte.py`.
-- Compute Greeks through `core/greeks.batch_greeks()` — never reimplement formulas.
-- Resolve Greek inputs through `core/greek_inputs.resolve_greek_inputs()`.
+- Stamp rates through `core/rates.py`.
+- Resolve model identity through `core/pricing_models.py`.
+- Compute Greeks through `core/greeks.batch_greeks()`.
+- Resolve low-level Greek inputs through `core/greek_inputs.resolve_greek_inputs()`.
 - Keep PIT timing explicit and fail closed when unsafe.
 - Require fixed raw inputs for backtest-grade runs.
 - Treat CDC `UNATTRIBUTED` mutations as bugs until explained.
 - Group walk-forward folds by `as_of_date`.
 - Use `--allow-unversioned-data` only for exploration.
+
+## More Documentation
+
+- `docs/README.md` - documentation map.
+- `docs/guides/` - operating guides.
+- `docs/architecture/` - architecture diagrams and sections.
+- `issues/P1-high/rates-discounting/` - rate and discounting work.
+- `issues/P1-high/pricing-models/` - pricing-model rollout plan.
+- `memory/README.md` - durable project memory guide.

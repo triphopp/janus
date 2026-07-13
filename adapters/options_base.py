@@ -15,9 +15,34 @@ from .base import AdapterBase
 
 # Import core modules
 from core import pricing as _pricing
+from core import pricing_models as _pricing_models
 from core import greeks as _greeks
 from core import dte as _dte
+from core import rates as _rates
 from core.progress import progress_iter, should_show_progress
+
+
+def _single_value(df: pd.DataFrame, col: str):
+    if col not in df.columns or df.empty:
+        return None
+    vals = df[col].dropna().astype("string")
+    vals = vals[vals.str.len() > 0]
+    unique = vals.unique()
+    if len(unique) > 1:
+        raise ValueError(f"mixed {col} values in one option run: {list(unique)}")
+    return str(unique[0]).lower() if len(unique) == 1 else None
+
+
+def _adapter_examples(df: pd.DataFrame) -> list[dict]:
+    cols = [
+        col for col in (
+            "source_product_id", "product_id", "hub", "source_contract",
+            "contract_root", "source_contract_type", "instrument_type",
+            "product_family", "option_underlying_type", "product_identity_status",
+        )
+        if col in df.columns
+    ]
+    return df[cols].head(5).to_dict("records") if cols else df.head(5).to_dict("records")
 
 
 class OptionsBase(AdapterBase):
@@ -60,13 +85,12 @@ class OptionsBase(AdapterBase):
 
     def _option_mask(self, df: pd.DataFrame) -> pd.Series:
         """Return True for rows that are option contracts."""
+        if "instrument_type" in df.columns:
+            return self._instrument_type_is(df, "option")
+
         inferred = pd.Series(False, index=df.index)
         if "right" in df.columns and "strike" in df.columns:
             inferred = self._right_is_option(df["right"]) & df["strike"].notna()
-
-        if "instrument_type" in df.columns:
-            typed = self._instrument_type_is(df, "option")
-            return typed | inferred
 
         return inferred
 
@@ -161,6 +185,147 @@ class OptionsBase(AdapterBase):
             )
 
         return option_mask
+
+    def _validate_adapter_identity(
+        self,
+        df: pd.DataFrame,
+        *,
+        adapter_family: str,
+        option_underlying_type: str,
+    ) -> pd.DataFrame:
+        """Fail closed when row identity conflicts with the selected adapter."""
+        out = df.copy()
+        out["adapter_family_selected"] = adapter_family
+        out["adapter_family_match"] = True
+        out["adapter_family_reason"] = "not_checked"
+
+        status = (
+            out["product_identity_status"].astype("string").str.lower()
+            if "product_identity_status" in out.columns
+            else pd.Series(pd.NA, index=out.index, dtype="string")
+        )
+        unresolved = status.isin(["unknown", "conflict"]).fillna(False)
+        if unresolved.any():
+            out.loc[unresolved, "adapter_family_match"] = False
+            out.loc[unresolved, "adapter_family_reason"] = out.loc[
+                unresolved, "product_identity_reason"
+            ].astype("string") if "product_identity_reason" in out.columns else "product_identity_unresolved"
+            examples = _adapter_examples(out.loc[unresolved])
+            raise ValueError(
+                f"{adapter_family} adapter received unresolved product identity rows; "
+                f"examples: {examples}"
+            )
+
+        if "product_family" in out.columns:
+            family = out["product_family"].astype("string").str.lower()
+            family_present = family.notna() & family.ne("")
+            mismatch = family_present & family.ne(adapter_family)
+            out.loc[family_present & ~mismatch, "adapter_family_reason"] = "product_family_match"
+            out.loc[mismatch, "adapter_family_match"] = False
+            out.loc[mismatch, "adapter_family_reason"] = "product_family_mismatch"
+            if mismatch.any():
+                examples = _adapter_examples(out.loc[mismatch])
+                raise ValueError(
+                    f"{adapter_family} adapter received rows for a different product_family; "
+                    f"examples: {examples}"
+                )
+
+        option_mask = self._option_mask(out)
+        if "option_underlying_type" in out.columns and option_mask.any():
+            underlying = out["option_underlying_type"].astype("string").str.lower()
+            present = option_mask & underlying.notna() & underlying.ne("")
+            mismatch = present & underlying.ne(option_underlying_type)
+            out.loc[present & ~mismatch, "adapter_family_reason"] = "product_identity_match"
+            out.loc[mismatch, "adapter_family_match"] = False
+            out.loc[mismatch, "adapter_family_reason"] = "option_underlying_type_mismatch"
+            if mismatch.any():
+                examples = _adapter_examples(out.loc[mismatch])
+                raise ValueError(
+                    f"{adapter_family} adapter received rows with incompatible "
+                    f"option_underlying_type; examples: {examples}"
+                )
+
+        return out
+
+    def _apply_pricing_model_policy(self, df: pd.DataFrame, *, default_model: str) -> pd.DataFrame:
+        """Resolve pricing model policy and stamp row-level diagnostics."""
+        out = df.copy()
+        pricing_cfg = self.cfg.get("pricing") or {}
+        requested = self.cfg.get("pricing_model", pricing_cfg.get("model", default_model))
+        option_mask = self._option_mask(out)
+
+        product_family = _single_value(out.loc[option_mask], "product_family")
+        option_underlying_type = _single_value(out.loc[option_mask], "option_underlying_type")
+        exercise_style = _single_value(out.loc[option_mask], "exercise_style")
+        if requested == "auto" and (not product_family or not option_underlying_type or not exercise_style):
+            raise ValueError(
+                "pricing_model=auto requires resolved product_family, "
+                "option_underlying_type, and exercise_style"
+            )
+
+        run_trust_level = str(
+            self.cfg.get("run_trust_level")
+            or ("diagnostic" if self.cfg.get("preset") == "diagnostic" else "official")
+        ).strip().lower()
+        if not bool(self.cfg.get("require_fixed_data_version", True)) and "run_trust_level" not in self.cfg:
+            run_trust_level = "diagnostic"
+
+        allow_approx = bool(
+            self.cfg.get(
+                "allow_model_approximation",
+                pricing_cfg.get("allow_model_approximation", False),
+            )
+        )
+        resolution = _pricing_models.resolve_pricing_model(
+            requested,
+            product_family=product_family,
+            option_underlying_type=option_underlying_type,
+            exercise_style=exercise_style,
+            run_trust_level=run_trust_level,
+            allow_model_approximation=allow_approx,
+            policy=self.cfg.get("pricing_model_policy") or pricing_cfg.get("model_policy"),
+        )
+
+        diag = {
+            "pricing_model_target": resolution.pricing_model_target,
+            "pricing_model_source": resolution.pricing_model_source,
+            "pricing_model_runtime_status": resolution.pricing_model_runtime_status,
+            "pricing_model_contract_match": resolution.pricing_model_contract_match,
+            "pricing_model_contract_reason": resolution.pricing_model_contract_reason,
+            "contract_exercise_style": resolution.contract_exercise_style,
+            "selected_model_exercise_style": resolution.selected_model_exercise_style,
+            "is_model_approximation": resolution.is_model_approximation,
+        }
+        for key, value in diag.items():
+            out[key] = value
+
+        self.cfg["pricing_model"] = resolution.selected_model
+        self.cfg.setdefault("pricing", {})["model"] = resolution.selected_model
+        self.cfg["run_trust_level"] = run_trust_level
+        if resolution.is_model_approximation:
+            self.cfg["is_model_approximation"] = True
+        self._option_quality["pricing_model_resolution"] = {
+            "selected_model": resolution.selected_model,
+            **diag,
+            "requested_model": requested,
+            "run_trust_level": run_trust_level,
+            "allow_model_approximation": allow_approx,
+        }
+
+        if resolution.pricing_model_runtime_status != "implemented":
+            raise NotImplementedError(
+                "pricing_model_not_implemented: "
+                f"{resolution.pricing_model_target}"
+            )
+        if (
+            not resolution.pricing_model_contract_match
+            and not resolution.is_model_approximation
+        ):
+            raise ValueError(
+                "Selected pricing model is incompatible with resolved contract "
+                f"identity: {resolution.pricing_model_contract_reason}"
+            )
+        return out
 
     def _option_universe_cfg(self) -> dict:
         """Return optional option-chain filters without changing legacy defaults."""
@@ -488,7 +653,6 @@ class OptionsBase(AdapterBase):
 
         # Compute T (time to expiry) for all rows
         dte_cfg = self.cfg.get("dte", {})
-        rf_rate = self.cfg.get("rf_rate", 0.05)
         div_yield = self.cfg.get("div_yield", 0.0)
         solver_bounds = tuple(self.cfg.get("iv_solver_bounds", (1e-4, 5.0)))
 
@@ -502,7 +666,8 @@ class OptionsBase(AdapterBase):
                 dte_days = (option_rows["expiry"] - option_rows["as_of_date"]).dt.days
                 dte_days = dte_days.where(option_rows["as_of_date"] <= option_rows["expiry"], np.nan)
                 df.loc[option_mask, "dte_days"] = dte_days
-            df["r"] = rf_rate
+            df, rate_summary = _rates.stamp_rate(df, self.cfg)
+            self._option_quality["rate_summary"] = rate_summary
 
         df = self._filter_option_universe(df)
         option_mask = self._option_mask(df)
@@ -570,7 +735,7 @@ class OptionsBase(AdapterBase):
                     S_or_F=self._row_underlying_value(row),
                     K=row.get("strike", np.nan),
                     T=row.get("T", np.nan),
-                    r=row.get("r", rf_rate),
+                    r=row.get("r", np.nan),
                     right=row.get("right", "C"),
                     q=div_yield,
                     bounds=solver_bounds,
@@ -589,7 +754,6 @@ class OptionsBase(AdapterBase):
         """
         df = df.copy()
         model = self.cfg.get("pricing_model", "black76")
-        rf_rate = self.cfg.get("rf_rate", 0.05)
         div_yield = self.cfg.get("div_yield", 0.0)
 
         greeks_cols = ["delta", "gamma", "vega", "theta", "rho"]
@@ -643,7 +807,13 @@ class OptionsBase(AdapterBase):
             if "iv" in option_rows.columns
             else pd.Series(False, index=option_rows.index)
         )
-        valid_mask = valid_T & valid_iv
+        valid_r = (
+            pd.to_numeric(option_rows["r"], errors="coerce").notna()
+            if "r" in option_rows.columns
+            else pd.Series(False, index=option_rows.index)
+        )
+        self._option_quality["rate_missing_rows"] = int((~valid_r).sum())
+        valid_mask = valid_T & valid_iv & valid_r
         valid_rows = option_rows.loc[valid_mask]
         resolved_backend = None
         if not valid_rows.empty:
@@ -674,8 +844,11 @@ class OptionsBase(AdapterBase):
 
             K_arr = pd.to_numeric(valid_rows.get("strike", pd.Series(np.nan, index=valid_rows.index)), errors="coerce")
             T_arr = valid_rows["T"]
-            r_arr = valid_rows["r"] if "r" in valid_rows.columns else pd.Series(rf_rate, index=valid_rows.index)
-            r_arr = r_arr.fillna(rf_rate)
+            r_arr = (
+                pd.to_numeric(valid_rows["r"], errors="coerce")
+                if "r" in valid_rows.columns
+                else pd.Series(np.nan, index=valid_rows.index)
+            )
             sigma_arr = valid_rows["iv"]
             right_arr = valid_rows["right"] if "right" in valid_rows.columns else pd.Series("C", index=valid_rows.index)
 
@@ -767,6 +940,12 @@ class OptionsBase(AdapterBase):
             return df
 
         model = self.cfg.get("pricing_model", "black76")
+        parity_mode = _pricing_models.parity_check_mode(model)
+        self._option_quality["pcp_check_mode"] = parity_mode
+        if parity_mode != "equality":
+            self._option_quality["pcp_check_status"] = f"disabled_{parity_mode}"
+            return df
+        model_impl = _pricing_models.price_runtime_model(model)
         div_yield = self.cfg.get("div_yield", 0.0)
 
         for _, grp in option_df.groupby(key_cols, dropna=False):
@@ -789,18 +968,23 @@ class OptionsBase(AdapterBase):
             if c_row.get("T", 0) <= 0 or pd.isna(c_row.get("T")):
                 continue
 
-            r = c_row.get("r", 0.05)
+            try:
+                r = float(c_row.get("r", np.nan))
+            except (TypeError, ValueError):
+                continue
+            if not np.isfinite(r):
+                continue
             t = c_row["T"]
             k = c_row["strike"]
             disc_r = np.exp(-r * t)
 
-            if model == "black76":
+            if model_impl == "black76":
                 expected_diff = disc_r * (self._row_underlying_value(c_row) - k)
-            elif model in ("bs", "bsm"):
+            elif model_impl in ("bs", "bsm"):
                 s = self._row_underlying_value(c_row)
                 expected_diff = s * np.exp(-div_yield * t) - k * disc_r
             else:
-                raise ValueError(f"Unknown pricing model: {model}")
+                raise ValueError(_pricing_models.unknown_model_message(model))
 
             actual_diff = self._row_option_price(c_row) - self._row_option_price(p_row)
             if abs(actual_diff - expected_diff) > tol:

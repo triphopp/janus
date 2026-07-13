@@ -33,6 +33,14 @@ def test_near_money_disagreement_is_flagged_only_when_invertible():
     assert bool(out["iv_flag"].iloc[0]) is True
 
 
+def test_iv_validation_does_not_invent_missing_rate():
+    nm = {"option_price": 2.10, "F": 70.0, "strike": 70.0, "T": 0.06,
+          "right": "C", "iv_provided": 2.5}
+    out = _validate([nm])
+    assert np.isnan(out["iv_solved"].iloc[0])
+    assert bool(out["iv_invertible"].iloc[0]) is False
+
+
 def test_near_money_band_is_config_driven():
     nm = {"option_price": 2.10, "F": 70.0, "strike": 70.0, "T": 0.06, "r": 0.05,
           "right": "C", "iv_provided": 2.5}

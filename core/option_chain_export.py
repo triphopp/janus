@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 
 from core import greeks as _greeks
+from core import pricing_models as _pricing_models
 
 # Futures month codes for building underlying/option symbols.
 _MONTH_CODE = {1: "F", 2: "G", 3: "H", 4: "J", 5: "K", 6: "M",
@@ -195,8 +196,81 @@ COLUMN_SPEC: list[dict] = [
         "source_field": "product policy",
         "source_transform": "configured product pricing model",
         "dtype": "string", "format": "enum", "unit": None, "precision": None,
-        "nullable": False, "allowed_values": ["black76", "bsm"],
+        "nullable": False, "allowed_values": list(_pricing_models.implemented_greek_model_names()),
         "example_canonical": "black76", "example_display": "Black-76",
+    },
+    {
+        "name": "product_family", "domain_label": "Product Family",
+        "description": "Resolved product family from product identity.",
+        "source_field": "product_family",
+        "source_transform": "row-level product identity",
+        "dtype": "string", "format": "enum", "unit": None, "precision": None,
+        "nullable": True, "allowed_values": ["futures_options", "equity_options"],
+        "example_canonical": "futures_options", "example_display": "Futures options",
+    },
+    {
+        "name": "option_underlying_type", "domain_label": "Option Underlying Type",
+        "description": "Whether the option is on a future or spot underlying.",
+        "source_field": "option_underlying_type",
+        "source_transform": "row-level product identity",
+        "dtype": "string", "format": "enum", "unit": None, "precision": None,
+        "nullable": True, "allowed_values": ["future", "spot"],
+        "example_canonical": "future", "example_display": "Future",
+    },
+    {
+        "name": "exercise_style", "domain_label": "Exercise Style",
+        "description": "Contract exercise style resolved from product identity.",
+        "source_field": "exercise_style / contract_exercise_style",
+        "source_transform": "row-level product identity",
+        "dtype": "string", "format": "enum", "unit": None, "precision": None,
+        "nullable": True, "allowed_values": ["american", "european"],
+        "example_canonical": "american", "example_display": "American",
+    },
+    {
+        "name": "pricing_model_target", "domain_label": "Pricing Model Target",
+        "description": "Policy target model before any diagnostic fallback.",
+        "source_field": "pricing_model_target",
+        "source_transform": "pricing model policy",
+        "dtype": "string", "format": "enum", "unit": None, "precision": None,
+        "nullable": True, "allowed_values": list(_pricing_models.supported_model_names()),
+        "example_canonical": "black76_baw", "example_display": "Black-76 BAW",
+    },
+    {
+        "name": "pricing_model_source", "domain_label": "Pricing Model Source",
+        "description": "How the canonical model was selected.",
+        "source_field": "pricing_model_source",
+        "source_transform": "pricing model policy",
+        "dtype": "string", "format": "enum", "unit": None, "precision": None,
+        "nullable": True, "allowed_values": ["policy_default", "explicit", "temporary_fallback", "configured"],
+        "example_canonical": "policy_default", "example_display": "Policy default",
+    },
+    {
+        "name": "pricing_model_contract_match", "domain_label": "Pricing Model Contract Match",
+        "description": "Whether the selected model matches the resolved contract terms.",
+        "source_field": "pricing_model_contract_match",
+        "source_transform": "boolean serialized as true/false",
+        "dtype": "string", "format": "boolean_string", "unit": None, "precision": None,
+        "nullable": False, "allowed_values": ["true", "false"],
+        "example_canonical": "true", "example_display": "true",
+    },
+    {
+        "name": "pricing_model_contract_reason", "domain_label": "Pricing Model Contract Reason",
+        "description": "Reason for model/contract match or mismatch.",
+        "source_field": "pricing_model_contract_reason",
+        "source_transform": "pricing model policy reason code",
+        "dtype": "string", "format": "string", "unit": None, "precision": None,
+        "nullable": True, "allowed_values": None,
+        "example_canonical": "policy_default_contract_match",
+        "example_display": "policy_default_contract_match",
+    },
+    {
+        "name": "is_model_approximation", "domain_label": "Model Approximation",
+        "description": "True when a diagnostic fallback is used instead of the target contract model.",
+        "source_field": "is_model_approximation",
+        "source_transform": "boolean serialized as true/false",
+        "dtype": "string", "format": "boolean_string", "unit": None, "precision": None,
+        "nullable": False, "allowed_values": ["true", "false"],
+        "example_canonical": "false", "example_display": "false",
     },
 ]
 
@@ -281,6 +355,68 @@ def _option_price_series(df: pd.DataFrame) -> pd.Series:
     if "price" in df.columns:
         primary = primary.where(primary.notna(), pd.to_numeric(df["price"], errors="coerce"))
     return primary
+
+
+def _text_value(row: pd.Series, col: str, default: str = "") -> str:
+    value = row.get(col, default)
+    if value is None or pd.isna(value):
+        return default
+    return str(value)
+
+
+def _bool_text(value, default: bool = False) -> str:
+    if value is None or pd.isna(value):
+        return "true" if default else "false"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return "true" if str(value).strip().lower() in {"1", "true", "t", "yes", "y"} else "false"
+
+
+def _root_series(rows: pd.DataFrame, cfg: dict, exp: dict) -> tuple[pd.Series, pd.Series, dict]:
+    """Resolve per-row underlying/option roots and provenance."""
+    export_policy = (cfg or {}).get("export") or {}
+    root_source = str(
+        export_policy.get("root_source")
+        or export_policy.get("symbol_root_source")
+        or "row_identity"
+    ).strip().lower()
+
+    option_root = pd.Series(str(exp["option_root"]), index=rows.index, dtype="object")
+    underlying_root = pd.Series(str(exp["underlying_root"]), index=rows.index, dtype="object")
+    option_source = "config_fallback"
+    underlying_source = "config_fallback"
+
+    if root_source in {"cme", "cme_equivalent", "equivalent_cme"}:
+        if "equivalent_option_root_cme" in rows.columns:
+            equiv = rows["equivalent_option_root_cme"].astype("string")
+            use = equiv.notna() & equiv.str.len().gt(0)
+            option_root.loc[use] = equiv.loc[use].astype(object)
+            if use.any():
+                option_source = "equivalent_option_root_cme"
+        # CME-style underlying roots are venue conventions; configs may provide
+        # them even when source rows use ICE-native roots such as T.
+        underlying_source = "config_fallback"
+    else:
+        if "source_option_root" in rows.columns:
+            src = rows["source_option_root"].astype("string")
+            use = src.notna() & src.str.len().gt(0)
+            option_root.loc[use] = src.loc[use].astype(object)
+            if use.any():
+                option_source = "source_option_root"
+        if "underlying_root" in rows.columns:
+            und = rows["underlying_root"].astype("string")
+            use = und.notna() & und.str.len().gt(0)
+            underlying_root.loc[use] = und.loc[use].astype(object)
+            if use.any():
+                underlying_source = "underlying_root"
+
+    return underlying_root, option_root, {
+        "root_source_policy": root_source,
+        "underlying_root_source": underlying_source,
+        "option_root_source": option_source,
+        "underlying_roots": sorted(str(v) for v in underlying_root.dropna().unique()),
+        "option_roots": sorted(str(v) for v in option_root.dropna().unique()),
+    }
 
 
 def _symbol_parts(delivery_month: pd.Timestamp):
@@ -375,15 +511,19 @@ def build_option_chain_greeks(df: pd.DataFrame, cfg: dict, readiness: Optional[d
     if rows.empty:
         frame = pd.DataFrame(columns=EXPORT_COLUMNS)
         return {"frame": frame, "n_input_option_rows": n_option_rows,
-                "n_exported": 0, "n_excluded": n_option_rows, "pricing_model": model}
+                "n_exported": 0, "n_excluded": n_option_rows, "pricing_model": model,
+                "root_provenance": {"root_source_policy": "none"}}
 
     # Greeks: always recompute from the single source of truth so the export is
     # complete regardless of the run's compute_greeks flag.
     underlying = _underlying_series(rows)
     strike = pd.to_numeric(rows["strike"], errors="coerce")
     T = pd.to_numeric(rows["T"], errors="coerce")
-    r = pd.to_numeric(rows["r"], errors="coerce").fillna(cfg.get("rf_rate", 0.05)) \
-        if "r" in rows.columns else pd.Series(cfg.get("rf_rate", 0.05), index=rows.index)
+    r = (
+        pd.to_numeric(rows["r"], errors="coerce")
+        if "r" in rows.columns
+        else pd.Series(np.nan, index=rows.index, dtype=float)
+    )
     iv = pd.to_numeric(rows["iv"], errors="coerce")
     right = rows["right"].astype("string").str.upper()
     g = _greeks.batch_greeks(
@@ -402,6 +542,7 @@ def build_option_chain_greeks(df: pd.DataFrame, cfg: dict, readiness: Optional[d
         dte = pd.Series(np.nan, index=rows.index, dtype=float)
     if dte.isna().all():
         dte = (expiry - trade_date).dt.days
+    underlying_roots, option_roots, root_provenance = _root_series(rows, cfg, exp)
 
     out = {c: [] for c in EXPORT_COLUMNS}
     for i, (_, row) in enumerate(rows.iterrows()):
@@ -411,8 +552,8 @@ def build_option_chain_greeks(df: pd.DataFrame, cfg: dict, readiness: Optional[d
         k_label = f"{int(k)}" if float(k).is_integer() else f"{k:g}"
         out["trade_date"].append(trade_date.iloc[i].strftime("%Y-%m-%d"))
         out["product"].append(str(exp["product"]))
-        out["underlying_symbol"].append(f"{exp['underlying_root']}{mc}{yy}")
-        out["option_symbol"].append(f"{exp['option_root']}{mc}{yy}{right.iloc[i]}{k_label}")
+        out["underlying_symbol"].append(f"{underlying_roots.iloc[i]}{mc}{yy}")
+        out["option_symbol"].append(f"{option_roots.iloc[i]}{mc}{yy}{right.iloc[i]}{k_label}")
         out["contract_month"].append(delivery.iloc[i].strftime("%Y-%m-01"))
         out["expiration_date"].append(expiry.iloc[i].strftime("%Y-%m-%d"))
         out["option_type"].append(rt)
@@ -427,27 +568,77 @@ def build_option_chain_greeks(df: pd.DataFrame, cfg: dict, readiness: Optional[d
         out["rho"].append(_fmt(g["rho"][i], GREEK_DP))
         out["dte_days"].append("" if pd.isna(dte.iloc[i]) else str(int(dte.iloc[i])))
         out["pricing_model"].append(str(model))
+        out["product_family"].append(_text_value(row, "product_family"))
+        out["option_underlying_type"].append(_text_value(row, "option_underlying_type"))
+        out["exercise_style"].append(
+            _text_value(row, "exercise_style", _text_value(row, "contract_exercise_style"))
+        )
+        out["pricing_model_target"].append(_text_value(row, "pricing_model_target", str(model)))
+        out["pricing_model_source"].append(_text_value(row, "pricing_model_source", "configured"))
+        out["pricing_model_contract_match"].append(
+            _bool_text(row.get("pricing_model_contract_match"), default=True)
+        )
+        out["pricing_model_contract_reason"].append(
+            _text_value(row, "pricing_model_contract_reason", "not_checked")
+        )
+        out["is_model_approximation"].append(
+            _bool_text(row.get("is_model_approximation"), default=False)
+        )
 
     frame = pd.DataFrame(out, columns=EXPORT_COLUMNS)
     return {"frame": frame, "n_input_option_rows": n_option_rows,
             "n_exported": int(len(frame)), "n_excluded": n_option_rows - int(len(frame)),
-            "pricing_model": model}
+            "pricing_model": model, "root_provenance": root_provenance}
 
 
-def build_export_manifest(cfg: dict, readiness: Optional[dict] = None) -> dict:
+def build_export_manifest(
+    cfg: dict,
+    readiness: Optional[dict] = None,
+    *,
+    root_provenance: Optional[dict] = None,
+) -> dict:
     """Build the downstream manifest carrying per-dataset policy (issue 023)."""
     exp = export_config(cfg)
     gate = (readiness or {}).get("status", "not_checked")
+    model = cfg.get("pricing_model", (cfg.get("pricing") or {}).get("model", "black76"))
+    model_spec = _pricing_models.get_model_spec(model)
+    pricing_resolution = ((cfg.get("option_quality") or {}).get("pricing_model_resolution") or {})
     manifest = {
         "product": exp["product"],
         "exchange": exp["exchange"],
         "underlying_root": exp["underlying_root"],
         "option_root": exp["option_root"],
+        "root_provenance": root_provenance or {
+            "root_source_policy": "config_fallback",
+            "underlying_root_source": "config_fallback",
+            "option_root_source": "config_fallback",
+        },
         "currency": exp["currency"],
         "price_unit": exp["price_unit"],
         "contract_unit": exp["contract_unit"],
         "price_tick": exp["price_tick"],
-        "pricing_model": cfg.get("pricing_model", (cfg.get("pricing") or {}).get("model", "black76")),
+        "pricing_model": model,
+        "pricing_model_target": pricing_resolution.get("pricing_model_target", model),
+        "pricing_model_source": pricing_resolution.get("pricing_model_source", "configured"),
+        "pricing_model_runtime_status": pricing_resolution.get(
+            "pricing_model_runtime_status", "implemented"
+        ),
+        "pricing_model_contract_match": pricing_resolution.get(
+            "pricing_model_contract_match", True
+        ),
+        "pricing_model_contract_reason": pricing_resolution.get(
+            "pricing_model_contract_reason", "not_checked"
+        ),
+        "is_model_approximation": pricing_resolution.get("is_model_approximation", False),
+        "contract_exercise_style": pricing_resolution.get("contract_exercise_style"),
+        "selected_model_exercise_style": pricing_resolution.get(
+            "selected_model_exercise_style", model_spec.exercise_style
+        ),
+        "pricing_model_family": model_spec.family,
+        "pricing_exercise_style": model_spec.exercise_style,
+        "pricing_price_dynamics": model_spec.price_dynamics,
+        "pricing_approximation": model_spec.approximation,
+        "pricing_parity_check_mode": model_spec.parity_check_mode,
         "data_frequency": "daily",
         "date_format": "ISO_8601_YYYY_MM_DD",
         "contract_month_format": "ISO_8601_YYYY_MM_01",
@@ -467,6 +658,9 @@ def build_export_manifest(cfg: dict, readiness: Optional[dict] = None) -> dict:
     timing = _settlement_timing_policy(cfg, exp)
     if timing:
         manifest["settlement_timing"] = timing
+    rate_summary = cfg.get("rate_summary") or ((cfg.get("option_quality") or {}).get("rate_summary"))
+    if rate_summary:
+        manifest["rate_summary"] = rate_summary
     return manifest
 
 
@@ -563,12 +757,12 @@ def build_data_dictionary(cfg: Optional[dict] = None) -> str:
 
 def write_option_chain_export(
     df: pd.DataFrame, cfg: dict, readiness: Optional[dict], run_dir) -> dict:
-    """Write the downstream export bundle under ``run_dir/data/option_chain_greeks/``.
+    """Write the downstream export bundle under ``run_dir/exports/option_chain_greeks/``.
 
     Run-level gate: a ``blocked`` readiness withholds the export entirely. Returns a
     dict of artifact paths (or a ``status="blocked"`` record) for summary.json.
     """
-    out_dir = Path(run_dir) / "data" / "option_chain_greeks"
+    out_dir = Path(run_dir) / "exports" / "option_chain_greeks"
     gate = (readiness or {}).get("status", "not_checked")
     if gate == "blocked":
         return {
@@ -583,7 +777,11 @@ def write_option_chain_export(
     csv_path = out_dir / "option_chain_greeks.csv"
     built["frame"].to_csv(csv_path, index=False)
 
-    manifest = build_export_manifest(cfg, readiness)
+    manifest = build_export_manifest(
+        cfg,
+        readiness,
+        root_provenance=built.get("root_provenance"),
+    )
     manifest_path = out_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 

@@ -1,5 +1,6 @@
 """Greeks tests — closed-form vs bump, net greeks for spreads (section 12)."""
 
+import warnings
 from math import erf
 
 import numpy as np
@@ -77,6 +78,14 @@ class TestBatchGreeksLevel1:
                 assert result[g][i] == pytest.approx(expected[g], rel=1e-10, abs=1e-12), (
                     f"bsm {g} mismatch at row {i}: {row}"
                 )
+
+    def test_black76_european_alias_matches_black76_batch(self):
+        grid = _make_grid("black76")
+        S, K, T, r, sigma, right, q = _grid_arrays(grid)
+        alias = batch_greeks("black76_european", S, K, T, r, sigma, right, q=q, backend="numpy")
+        base = batch_greeks("black76", S, K, T, r, sigma, right, q=q, backend="numpy")
+        for g in ("delta", "gamma", "vega", "theta", "rho"):
+            np.testing.assert_allclose(alias[g], base[g], rtol=1e-12, atol=1e-14)
 
     def test_batch_greeks_invalid_rows_return_nan(self):
         invalid_cases = [
@@ -269,6 +278,13 @@ class TestClosedFormGreeks:
             g = single_leg_greeks("black76", F, K, T, r, sigma, right)
             option_price = price("black76", F, K, T, r, sigma, right)
             assert g["rho"] == pytest.approx(-T * option_price, rel=1e-10)
+
+    def test_invalid_lognormal_domain_returns_nan_without_runtime_warning(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            g = single_leg_greeks("black76", -37.63, 70.0, 0.5, 0.05, 0.3, "C")
+        assert all(np.isnan(greek) for greek in g.values())
+        assert not [w for w in caught if issubclass(w.category, RuntimeWarning)]
 
 
 class TestBumpVsAnalytic:

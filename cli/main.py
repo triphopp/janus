@@ -30,6 +30,7 @@ from cli import inspect_runs
 from cli import plan as plan_mod
 from cli import presets, registry, resolve
 from cli.dates import WindowError, resolve_window
+from core import pricing_models as pricing_models_mod
 
 
 # ── small print helpers ───────────────────────────────────────────────────────
@@ -80,6 +81,14 @@ def _add_run_opts(p: argparse.ArgumentParser) -> None:
                    help="enable advanced --override pipeline knobs")
     p.add_argument("--override", action="append", default=[], metavar="KEY=VALUE",
                    help="advanced dotted config override (requires --advanced)")
+    p.add_argument("--pricing-model", default=None,
+                   choices=["auto", *pricing_models_mod.supported_model_names()],
+                   help="pricing model selection policy (for example: auto, black76_european)")
+    p.add_argument("--allow-model-approximation", action="store_true",
+                   help="allow an explicitly labelled diagnostic model approximation")
+    p.add_argument("--compare-model", action="append", default=[],
+                   choices=list(pricing_models_mod.supported_model_names()),
+                   help="add a diagnostic comparison model; does not replace canonical output")
 
 
 # ── commands ──────────────────────────────────────────────────────────────────
@@ -142,6 +151,20 @@ def _build_plan_from_args(args, run_id):
         universe=args.universe, run_id=run_id, overrides=overrides,
         registry_path=args.registry,
     )
+    if getattr(args, "pricing_model", None):
+        plan.cfg.setdefault("pricing", {})["model"] = args.pricing_model
+        plan.cfg["pricing_model"] = args.pricing_model
+        plan.cfg.setdefault("runtime_overrides", {})["pricing_model"] = args.pricing_model
+    if getattr(args, "allow_model_approximation", False):
+        plan.cfg.setdefault("pricing", {})["allow_model_approximation"] = True
+        plan.cfg["allow_model_approximation"] = True
+        plan.cfg.setdefault("runtime_overrides", {})["allow_model_approximation"] = True
+    if getattr(args, "compare_model", None):
+        models = list(args.compare_model or [])
+        if models:
+            plan.cfg.setdefault("pricing", {})["compare_models"] = models
+            plan.cfg["compare_models"] = models
+            plan.cfg.setdefault("runtime_overrides", {})["compare_models"] = models
     progress = getattr(args, "progress", "plain") or "plain"
     plan.cfg["progress_mode"] = progress
     plan.cfg.setdefault("runtime_overrides", {})["progress"] = progress

@@ -8,7 +8,7 @@ Column precedence:
   underlying : underlying_price > S > F > price_std
   iv         : iv > iv_provided (only when iv_source='provided')
   T          : T > compute_dte(as_of_date, expiry, dte_cfg)
-  r          : r (row-level) > cfg['rf_rate'] > rf_rate_default
+  r          : required row-level column, stamped by core.rates before entry
 
 Does NOT mutate the input DataFrame.
 """
@@ -37,16 +37,16 @@ def resolve_greek_inputs(
     cfg: dict | None = None,
     *,
     iv_source: str = "computed",
-    rf_rate_default: float = 0.0,
+    rf_rate_default: float | None = None,
     dte_cfg: dict | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Resolve Greek pricing inputs from a prepared option DataFrame.
 
     Args:
         df: Input DataFrame. Must not be mutated.
-        cfg: Optional instrument config dict. Used to read rf_rate.
+        cfg: Optional instrument config dict. Reserved for future extensions.
         iv_source: 'computed' (use 'iv' column) or 'provided' (prefer 'iv_provided').
-        rf_rate_default: Fallback rate when no row-level 'r' column and no cfg rf_rate.
+        rf_rate_default: Deprecated; rate fallback lives in core.rates.
         dte_cfg: DTE config passed to compute_dte() when T is absent.
 
     Returns:
@@ -61,20 +61,26 @@ def resolve_greek_inputs(
 
     invalid_reasons: dict[str, list[bool]] = {
         "missing_underlying": [False] * n,
+        "nonpositive_underlying": [False] * n,
         "missing_iv": [False] * n,
         "missing_or_expired_T": [False] * n,
+        "missing_rate": [False] * n,
         "bad_right": [False] * n,
     }
 
     # ── Underlying ────────────────────────────────────────────────────────────
-    S_or_F = pd.Series(np.nan, index=df.index)
+    underlying_raw = pd.Series(np.nan, index=df.index)
     for col in _UNDERLYING_COLS:
         if col in df.columns:
             col_numeric = _to_numeric(df[col])
-            S_or_F = S_or_F.combine_first(col_numeric.where(col_numeric > 0))
-    missing_under = S_or_F.isna()
+            underlying_raw = underlying_raw.combine_first(col_numeric)
+    missing_under = underlying_raw.isna()
+    nonpositive_under = underlying_raw.notna() & (underlying_raw <= 0)
+    S_or_F = underlying_raw.where(underlying_raw > 0)
     for i, v in enumerate(missing_under):
         invalid_reasons["missing_underlying"][i] = bool(v)
+    for i, v in enumerate(nonpositive_under):
+        invalid_reasons["nonpositive_underlying"][i] = bool(v)
     out["S_or_F"] = S_or_F
 
     # ── Strike ────────────────────────────────────────────────────────────────
@@ -121,11 +127,13 @@ def resolve_greek_inputs(
     out["T"] = T
 
     # ── Rate ──────────────────────────────────────────────────────────────────
-    cfg_rate = float(cfg.get("rf_rate", rf_rate_default))
     if "r" in df.columns:
-        r = _to_numeric(df["r"]).fillna(cfg_rate)
+        r = _to_numeric(df["r"])
     else:
-        r = pd.Series(cfg_rate, index=df.index)
+        r = pd.Series(np.nan, index=df.index)
+    missing_rate = r.isna() | ~np.isfinite(r)
+    for i, v in enumerate(missing_rate):
+        invalid_reasons["missing_rate"][i] = bool(v)
     out["r"] = r
 
     # ── Right ─────────────────────────────────────────────────────────────────
@@ -146,15 +154,20 @@ def resolve_greek_inputs(
     missing_strike = out["K"].isna() | (out["K"] <= 0)
 
     # ── Valid mask ────────────────────────────────────────────────────────────
-    invalid_mask = missing_under | missing_iv | missing_T | bad_right | missing_strike
+    invalid_mask = (
+        missing_under | nonpositive_under | missing_iv | missing_T
+        | bad_right | missing_strike | missing_rate
+    )
     out["greek_input_valid"] = ~invalid_mask
 
     # ── Invalid reason string (semicolon-separated) ───────────────────────────
     reason_flags = {
         "missing_underlying": missing_under,
+        "nonpositive_underlying": nonpositive_under,
         "missing_strike": missing_strike,
         "missing_iv": missing_iv,
         "missing_or_expired_T": missing_T,
+        "missing_rate": missing_rate,
         "bad_right": bad_right,
     }
     reasons_list: list[str] = []
