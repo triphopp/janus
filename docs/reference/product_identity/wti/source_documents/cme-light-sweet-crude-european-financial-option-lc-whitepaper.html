@@ -1,0 +1,2259 @@
+<!DOCTYPE HTML>
+<html lang="en">
+  <head>
+  
+  <title>Using financial Crude Oil options as a cash management tool - CME Group</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <meta name="title" content="Using financial Crude Oil options as a cash management tool - CME Group"/>
+
+  <meta name="keywords" content="Article,Featured Article,Both,CME Group,Options,English (EN),Energy"/>
+  <meta name="description" content="Read about options box spreads and how they are an effective and efficient tool for cash management for oil traders."/>
+  <meta name="template" content="cme-group-standard-article-template"/>
+
+  
+
+  
+
+  
+  <meta property="og:title" content="Using financial Crude Oil options as a cash management tool - CME Group"/>
+  <meta property="og:description" content="Read about options box spreads and how they are an effective and efficient tool for cash management for oil traders."/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://www.cmegroup.com/content/dam/cmegroup/articles/images/2023/q2/using-financial-crude-oil-options-as-a-cash-management-tool-940x600.jpg"/>
+  <meta property="og:url" content="https://www.cmegroup.com/articles/whitepapers/using-financial-crude-oil-options-as-a-cash-management-tool.html"/>
+  <meta property="og:date" content="12 May 2023"/>
+
+  
+
+  
+  <meta property="twitter:card" content="summary_large_image"/>
+  <meta property="twitter:site" content="@CMEGroup"/>
+  <meta property="twitter:title" content="Using financial Crude Oil options as a cash management tool"/>
+  <meta property="twitter:description" content="Read about options box spreads and how they are an effective and efficient tool for cash management for oil traders."/>
+  <meta property="twitter:image" content="https://www.cmegroup.com/content/dam/cmegroup/articles/images/2023/q2/using-financial-crude-oil-options-as-a-cash-management-tool-940x600.jpg"/>
+
+  <link rel="dns-prefetch" href="https://api.company-target.com"/>
+  <link rel="dns-prefetch" href="https://storage.googleapis.com"/>
+
+  <link rel="preload" as="script" href="/etc.clientlibs/clientlibs/granite/jquery.min.5e8d3382f82b03b0bf3fea3024eecd61.js" type="application/javascript"/>
+
+  
+  
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/dependencies.0cbc9020a3bfca53131a87a9dee07eb4.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+
+
+
+  
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/vendor.ed1da6edcc4172608555c0cf2a951f02.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/common.0881b1c7264a78cedbf9ce812be45a00.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+
+
+
+  
+  
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/blockable-utils.b6f7807d071f9383ee170623539e6d12.js"></script>
+
+
+
+
+
+
+  <!--
+  <sly data-sly-include="googleanalyticshead.html"/>
+  -->
+
+  
+    <link rel="canonical" href="https://www.cmegroup.com/articles/whitepapers/using-financial-crude-oil-options-as-a-cash-management-tool.html"/>
+  
+    <link rel="alternate" hreflang="en" href="https://www.cmegroup.com/articles/whitepapers/using-financial-crude-oil-options-as-a-cash-management-tool.html"/>
+  
+    <link rel="alternate" hreflang="x-default" href="https://www.cmegroup.com/articles/whitepapers/using-financial-crude-oil-options-as-a-cash-management-tool.html"/>
+  
+
+  
+  <script type="text/javascript">
+    window.authenticationOptions = window.authenticationOptions || {};
+
+    /* auth config */
+    authenticationOptions.loginProcessUrl = '\/content\/cmegroup\/en\/login\u002Dconfirmed.html';
+    authenticationOptions.loginUrl = 'https:\/\/auth.cmegroup.com\/idp\/startSSO.ping?PartnerSpId=https%3A%2F%2Fmain\u002Dwww%E2%80%93cmegroup.aem.live\x26TARGET=https:\/\/www.cmegroup.com\/login\u002Dconfirmed.html\x26DoNotPerformAuth=NO';
+    authenticationOptions.registerUrl = 'https:\/\/login.cmegroup.com\/sso\/register\/';
+    authenticationOptions.logoutProfileUrl = 'https:\/\/myprofile.cmegroup.com\/admin\/ssoflo';
+    authenticationOptions.isMobileLogin = false;
+    authenticationOptions.schemaForMobile = '';
+
+    window.globalConfig = window.globalConfig || {};
+
+    /* global config */
+    globalConfig.authorMode = false;
+    globalConfig.googleSearchUrl = '';
+    globalConfig.popularSearchUrl = '';
+    globalConfig.defaultProductTabLink = '';
+    globalConfig.socialNetworks = 'facebook,reddit,twitter,linkedin,weibo';
+    globalConfig.socialMessage = '';
+    globalConfig.myWatchlistsUrl = '\/content\/cmegroup\/en\/watchlists.html';
+    globalConfig.watchlistProductsUrl = '\/content\/cmegroup\/en\/watchlists\/details.html';
+    globalConfig.currentLanguageFolder = 'en';
+    globalConfig.subscriptionCenterUrl = '\/content\/cmegroup\/en\/subscription\u002Dcenter.html';
+    globalConfig.newSubscriptionDays = '60' || '30';
+    globalConfig.myProfileUrl = '\/content\/cmegroup\/en\/my\u002Dprofile.html';
+
+    /* page config */
+    globalConfig.isProtectedPage = false;
+    globalConfig.lockModalText = 'Log in or create an account to access premium content on cmegroup.com.';
+  </script>
+
+
+  
+    
+    
+
+    
+    
+
+
+  <link rel="icon" type="image/vnd.microsoft.icon"/>
+  <link rel="shortcut icon" type="image/vnd.microsoft.icon"/>
+
+  
+  
+  
+  
+  
+  
+  
+  
+  
+
+  <!-- OneTrust Cookies Consent Notice start for cmegroup.com -->
+<script type="text/javascript" src="https://cdn.cookielaw.org/consent/f42915b0-68e5-491a-a7f7-1db0d962ddff/OtAutoBlock.js"></script>
+<script src="https://cdn.cookielaw.org/scripttemplates/otSDKStub.js" type="text/javascript" charset="UTF-8" data-domain-script="f42915b0-68e5-491a-a7f7-1db0d962ddff"></script>
+<script type="text/javascript">
+function OptanonWrapper() { }
+</script>
+<!-- OneTrust Cookies Consent Notice end for cmegroup.com -->
+<!-- Interaction Studio and Personalisation -->
+<script id="interactionStudioBeacon" type="text/javascript" src="//cdn.evgnet.com/beacon/cmegroup/cmegroup/scripts/evergage.min.js"></script>
+<!-- SEO Clarity -->
+<script src="https://js.clrt.ai/564.js" async></script>
+
+<!--Begin Marketing Cloud Einstein Tag -->
+<script type="text/javascript" async src="//514009935.collect.igodigital.com/collect.js"></script> 
+<!-- End Marketing Cloud Einstein Tag -->
+
+
+
+
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.setAttributeNode(d.createAttribute('data-ot-ignore')); j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-PLCS');</script>
+<!-- End Google Tag Manager -->
+
+<style>
+  .hidePersonalized {display: none;}
+  #cmePermissionQuestion{display:none !important}
+.education-iframe #st-2, #at4-share,.cmeFooterHeaderHidden #st-2,  .cmeFooterHeaderHidden #onetrust-consent-sdk,.education-iframe #onetrust-consent-sdk, .header-hidden #onetrust-consent-sdk{display:none}
+.cmeABCaps{display: block;}
+ .cmeABSentence{display:none}
+#st-2 {top: 132px !important;}
+#st-2.st-right {z-index: 1001 !important;}
+@media (max-width: 1024px) {
+#st-2 {top: auto !important;}
+}
+</style>
+<script type="text/javascript" src="https://platform-api.sharethis.com/js/sharethis.js#property=644646a57ac381001a304496&product=sticky-share-buttons&source=platform" async="async"></script>
+  
+  
+
+  
+
+  
+
+  <title>Using financial Crude Oil options as a cash management tool</title>
+
+
+<script>(window.BOOMR_mq=window.BOOMR_mq||[]).push(["addVar",{"rua.upush":"false","rua.cpush":"true","rua.upre":"false","rua.cpre":"false","rua.uprl":"false","rua.cprl":"false","rua.cprf":"false","rua.trans":"SJ-1329632e-58a4-4031-9d24-c2b362597bee","rua.cook":"false","rua.ims":"false","rua.ufprl":"false","rua.cfprl":"false","rua.isuxp":"false","rua.texp":"norulematch","rua.ceh":"false","rua.ueh":"false","rua.ieh.st":"0"}]);</script>
+                                <script>!function(e){var n="https://s.go-mpulse.net/boomerang/";if("False"=="True")e.BOOMR_config=e.BOOMR_config||{},e.BOOMR_config.PageParams=e.BOOMR_config.PageParams||{},e.BOOMR_config.PageParams.pci=!0,n="https://s2.go-mpulse.net/boomerang/";if(window.BOOMR_API_key="EPC2Y-ZBKCR-VU6EC-S2FWR-DFB64",function(){function e(){if(!i){var e=document.createElement("script");e.id="boomr-scr-as",e.src=window.BOOMR.url,e.async=!0,o.parentNode.appendChild(e),i=!0}}function t(e){i=!0;var n,t,a,r,d=document,O=window;if(window.BOOMR.snippetMethod=e?"if":"i",t=function(e,n){var t=d.createElement("script");t.id=n||"boomr-if-as",t.src=window.BOOMR.url,BOOMR_lstart=(new Date).getTime(),e=e||d.body,e.appendChild(t)},!window.addEventListener&&window.attachEvent&&navigator.userAgent.match(/MSIE [67]\./))return window.BOOMR.snippetMethod="s",void t(o.parentNode,"boomr-async");a=document.createElement("IFRAME"),a.src="about:blank",a.title="",a.role="presentation",a.loading="eager",r=(a.frameElement||a).style,r.width=0,r.height=0,r.border=0,r.display="none",o.parentNode.appendChild(a);try{O=a.contentWindow,d=O.document.open()}catch(_){n=document.domain,a.src="javascript:var d=document.open();d.domain='"+n+"';void(0);",O=a.contentWindow,d=O.document.open()}if(n)d._boomrl=function(){this.domain=n,t()},d.write("<bo"+"dy onload='document._boomrl();'>");else if(O._boomrl=function(){t()},O.addEventListener)O.addEventListener("load",O._boomrl,!1);else if(O.attachEvent)O.attachEvent("onload",O._boomrl);d.close()}function a(e){window.BOOMR_onload=e&&e.timeStamp||(new Date).getTime()}if(!window.BOOMR||!window.BOOMR.version&&!window.BOOMR.snippetExecuted){window.BOOMR=window.BOOMR||{},window.BOOMR.snippetStart=(new Date).getTime(),window.BOOMR.snippetExecuted=!0,window.BOOMR.snippetVersion=12,window.BOOMR.url=n+"EPC2Y-ZBKCR-VU6EC-S2FWR-DFB64";var o=document.currentScript||document.getElementsByTagName("script")[0],i=!1,r=document.createElement("link");if(r.relList&&"function"==typeof r.relList.supports&&r.relList.supports("preload")&&"as"in r)window.BOOMR.snippetMethod="p",r.href=window.BOOMR.url,r.rel="preload",r.as="script",r.addEventListener("load",e),r.addEventListener("error",function(){t(!0)}),setTimeout(function(){if(!i)t(!0)},3e3),BOOMR_lstart=(new Date).getTime(),o.parentNode.appendChild(r);else t(!1);if(window.addEventListener)window.addEventListener("load",a,!1);else if(window.attachEvent)window.attachEvent("onload",a)}}(),"".length>0)if(e&&"performance"in e&&e.performance&&"function"==typeof e.performance.setResourceTimingBufferSize)e.performance.setResourceTimingBufferSize();!function(){if(BOOMR=e.BOOMR||{},BOOMR.plugins=BOOMR.plugins||{},!BOOMR.plugins.AK){var n="true"=="true"?1:0,t="",a="w3ubdfqxgbatu2snycgq-f-13a67c19f-clientnsv4-s.akamaihd.net",o="false"=="true"?2:1,i={"ak.v":"41","ak.cp":"103033","ak.ai":parseInt("162306",10),"ak.ol":"0","ak.cr":56,"ak.ipv":4,"ak.proto":"h2","ak.rid":"7bb05ad4","ak.r":9392,"ak.a2":n,"ak.m":"a","ak.n":"essl","ak.cport":49669,"ak.gh":"61.19.12.184","ak.quicv":"","ak.tlsv":"tls1.3","ak.0rtt":"","ak.0rtt.ed":"","ak.csrc":"-","ak.acc":"","ak.t":"1783480461","ak.ak":"hOBiQwZUYzCg5VSAfCLimQ==E0QeO4IOHTdjjh6TR/oTliP6+og9RUXqa3D+SDFVEt7R0awgDNwE1JTo96F/WXim1ct88a+Bt3L6xZ3Ek9PB58eEW+6agqBYlBlTOq3va3L+zpEtoKtm1c2SFbcMbuiCyQE1nyW7YUZNSYg/KEnMaKWsLcxT4JBzKig/xqakadDlTvu5CKdyA9xOM4Na1/SqS/aj8ZQQlgDkz5H3GwVk4cCKsR7mnN1VEMOYouzPuaf/0/3BjmNcmyPU4+DTSmkn9D5nxuHR2HiaEAjS27DCkc/qlW2VzoYhATzrEDjuiZbtuHmHLnZsAOpOdGBG0WFaEm7Re1oddetINBHYl6OtL9eowB1cnLqIvMhReAVvZWLk+tsnjryutUy6QW0UIKR/QBGZSXUlat+z8auopENptJCknsgYR4T+Beodc8rQIsw=","ak.pv":"634","ak.dpoabenc":"","ak.tf":o};if(""!==t)i["ak.ruds"]=t;var r={i:!1,av:function(n){var t="http.initiator";if(n&&(!n[t]||"spa_hard"===n[t]))i["ak.feo"]=void 0!==e.aFeoApplied?1:0,BOOMR.addVar(i)},rv:function(){var e=["ak.cport","ak.cr","ak.csrc","ak.gh","ak.ipv","ak.m","ak.n","ak.ol","ak.proto","ak.quicv","ak.tlsv","ak.0rtt","ak.0rtt.ed","ak.r","ak.acc","ak.t","ak.tf"];BOOMR.removeVar(e)}};BOOMR.plugins.AK={akVars:i,akDNSPreFetchDomain:a,init:function(){if(!r.i){var e=BOOMR.subscribe;e("before_beacon",r.av,null,null),e("onbeacon",r.rv,null,null),r.i=!0}return this},is_complete:function(){return!0}}}}()}(window);</script><script >bazadebezolkohpepadr="859227846"</script><script type="text/javascript" src="https://www.cmegroup.com/akam/13/3336c7d9"  defer></script></head>
+  <body class="cmegroup cme-group-standard-article-template      ">
+    <!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-PLCS"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<script>
+if(window.location.href.indexOf("hideHeader")!=-1 || window.location.href.indexOf("/mobile/")!=-1 || window.location.href.indexOf("/misc/iframes/activetrader/advantagefutures.html")!=-1){
+document.body.classList.add('cmeFooterHeaderHidden')
+}
+</script>
+
+<!-- Maze DMT-21017 -->
+<script>
+(function (m, a, z, e) {
+  var s, t;
+  try
+
+{     t = m.sessionStorage.getItem('maze-us');   }
+catch (err) {}
+
+  if (!t) {
+    t = new Date().getTime();
+    try
+
+{       m.sessionStorage.setItem('maze-us', t);     }
+catch (err) {}
+  }
+
+  s = a.createElement('script');
+  s.src = z + '?t=' + t + '&apiKey=' + e;
+  s.async = true;
+  a.getElementsByTagName('head')[0].appendChild(s);
+  m.mazeUniversalSnippetApiKey = e;
+})(window, document, 'https://snippet.maze.co/maze-universal-loader.js', '38dab2d6-19d2-4393-9831-871dcd99ab98');
+</script>
+
+<style type="text/css">
+  .btn.link-bold {user-select: auto;}
+
+/* PDP real-time & historical data promotion content/config/en */
+.productpage-template .product-time-and-sales .cmeNonSeriousAlertMessage.alert-item:first-child:has(.agriculture-promo), .productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child:has(.data-promo) {
+    background-image: url(/content/dam/cmegroup/markets/images/promo_data_pdp_2000x500.png); margin-bottom: 20px;
+}
+
+.productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child:has(.data-promo-hide) {
+    display: none;
+}
+
+/* PDP TS Quotes Promo2 content/config/en */
+.productpage-template .product-time-and-sales .cmeNonSeriousAlertMessage.alert-item:first-child, .productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child {
+    background: #112b4a;
+    padding: 30px;
+    background-image: url(/content/dam/cmegroup/markets/images/promo_generic_2000x500.jpg);
+    background-size: cover;
+}
+
+.productpage-template .product-time-and-sales .cmeNonSeriousAlertMessage.alert-item:first-child:has(.agriculture-promo), .productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child:has(.agriculture-promo) {
+    background-image: url(/content/dam/cmegroup/markets/images/promo_ags_pdp_2000x500.jpg); margin-bottom: 20px;
+}
+
+.productpage-template .product-time-and-sales .cmeNonSeriousAlertMessage.alert-item:first-child:has(.interest-rate-promo), .productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child:has(.interest-rate-promo) {
+    background-image: url(/content/dam/cmegroup/markets/images/promo_generic_2000x500.jpg) ;
+}
+
+.productpage-template .product-time-and-sales .cmeNonSeriousAlertMessage.alert-item:first-child:has(.cryptocurrency-promo), .productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child:has(.cryptocurrency-promo) {
+    background-image: url(/content/dam/cmegroup/markets/images/promo_crypto_pdp_2000x500.jpg) ;
+}
+
+.productpage-template .product-time-and-sales .cmeNonSeriousAlertMessage.alert-item:first-child:has(.equity-index-promo), .productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child:has(.equity-index-promo) {
+    background-image: url(/content/dam/cmegroup/markets/images/promo_equity_index_pdp_2000x500.jpg) ;
+}
+
+.productpage-template .product-time-and-sales .cmeNonSeriousAlertMessage.alert-item:first-child:has(.energy-promo), .productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child:has(.energy-promo) {
+    background-image: url(/content/dam/cmegroup/markets/images/promo_energy_pdp_2000x500.jpg) ;
+}
+
+.productpage-template .product-time-and-sales .cmeNonSeriousAlertMessage.alert-item:first-child:has(.metals-promo), .productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child:has(.metals-promo) {
+    background-image: url(/content/dam/cmegroup/markets/images/promo_metals_pdp_2000x500.jpg) ;
+}
+
+.productpage-template .product-time-and-sales .cmeNonSeriousAlertMessage.alert-item:first-child:has(.fx-promo), .productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child:has(.fx-promo) {
+    background-image: url(/content/dam/cmegroup/markets/images/promo_fx_pdp_2000x500.jpg) ;
+}
+
+.productpage-template .product-time-and-sales .cmeNonSeriousAlertMessage.alert-item:first-child p, .productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child p {color: white;}
+.productpage-template .product-time-and-sales .cmeNonSeriousAlertMessage.alert-item:first-child
+.button-component a, .productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child
+.button-component a {color: white;}
+.productpage-template .product-time-and-sales .cmeNonSeriousAlertMessage.alert-item:first-child
+.button-component a:hover, .productpage-template .product-quotes .cmeNonSeriousAlertMessage.alert-item:first-child
+.button-component a:hover {color: #112b4a}
+/* Hide Sharethis in print */
+@media print{
+#st-2, #ot-sdk-btn-floating {display: none !important;}
+#navbar, .component.dynamic-alert-list {position: absolute;}
+.component.dynamic-alert-list {opacity: .7;}
+}</style>
+    <div></div>
+<div class="content-reference">
+
+
+  
+    
+    
+    
+  
+  
+  
+  
+    
+    
+    
+
+    
+    
+
+    
+
+
+
+<div class="xf-content-height">
+    
+
+
+
+
+    
+    
+    <div></div>
+
+<div class="component react topbanner" data-is-edit="false" data-path="/content/cmegroup/en/articles/whitepapers/using-financial-crude-oil-options-as-a-cash-management-tool" data-is-banner-author-view="false">
+</div>
+
+
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/topbanner.f8f2fd218097be583e25a6bff2034997.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/topbanner.e51882b474f0450961b3174ef619e1a1.js"></script>
+
+
+
+
+
+    
+
+
+
+    
+    
+    
+<div class="component react custom-navbar extract-clientlibs" data-is-edit="false" data-logo-url="/" data-logo-alt="CME Group" data-items="[{&#34;path&#34;:&#34;par_1555445523288&#34;,&#34;fullPath&#34;:null,&#34;title&#34;:&#34;Markets&#34;,&#34;type&#34;:&#34;primary&#34;,&#34;uniqueId&#34;:&#34;1555445523288&#34;},{&#34;path&#34;:&#34;par_1555445524535&#34;,&#34;fullPath&#34;:null,&#34;title&#34;:&#34;Data&#34;,&#34;type&#34;:&#34;primary&#34;,&#34;uniqueId&#34;:&#34;1555445524535&#34;},{&#34;path&#34;:&#34;par_1555445523905&#34;,&#34;fullPath&#34;:null,&#34;title&#34;:&#34;Solutions&#34;,&#34;type&#34;:&#34;primary&#34;,&#34;uniqueId&#34;:&#34;1555445523905&#34;},{&#34;path&#34;:&#34;par_1633641796381&#34;,&#34;fullPath&#34;:null,&#34;title&#34;:&#34;Insights&#34;,&#34;type&#34;:&#34;secondary&#34;,&#34;uniqueId&#34;:&#34;1633641796381&#34;},{&#34;path&#34;:&#34;par_1633641797949&#34;,&#34;fullPath&#34;:null,&#34;title&#34;:&#34;Education&#34;,&#34;type&#34;:&#34;secondary&#34;,&#34;uniqueId&#34;:&#34;1633641797949&#34;}]" data-items-login="[{&#34;linkUrl&#34;:&#34;/my-profile.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;title&#34;:&#34;My Profile&#34;},{&#34;linkUrl&#34;:&#34;/my-profile.html#tab=alerts&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;title&#34;:&#34;Alerts&#34;},{&#34;linkUrl&#34;:&#34;/my-profile.html#tab=emailPreferences&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;title&#34;:&#34;Email Preferences&#34;},{&#34;linkUrl&#34;:&#34;/my-profile.html#tab=bookmarks&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;title&#34;:&#34;Bookmarks&#34;}]" data-items-login-content="[{&#34;linkUrl&#34;:&#34;/subscription-center.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;title&#34;:&#34;Subscription Center&#34;},{&#34;linkUrl&#34;:&#34;/watchlists.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;title&#34;:&#34;Watchlists&#34;}]" data-items-login-cme="[{&#34;linkUrl&#34;:&#34;https://login.cmegroup.com/sso/navmenu.action&#34;,&#34;linkTarget&#34;:&#34;_blank&#34;,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;title&#34;:&#34;CME Customer Center&#34;},{&#34;linkUrl&#34;:&#34;https://cmedirect.cmegroup.com&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;title&#34;:&#34;CME Direct&#34;}]" data-items-login-out-content="[{&#34;linkUrl&#34;:&#34;/watchlists.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;title&#34;:&#34;Watchlists&#34;},{&#34;linkUrl&#34;:&#34;https://login.cmegroup.com/sso/navmenu.action&#34;,&#34;linkTarget&#34;:&#34;_blank&#34;,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;title&#34;:&#34;CME Customer Center&#34;},{&#34;linkUrl&#34;:&#34;https://cmedirect.cmegroup.com&#34;,&#34;linkTarget&#34;:&#34;_blank&#34;,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;title&#34;:&#34;CME Direct&#34;},{&#34;linkUrl&#34;:&#34;/subscription-center.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;title&#34;:&#34;Subscription Center&#34;}]" data-items-login-out-cme="[]" data-search-url="/search.html">
+  <div path="par_1555445523288">
+
+  
+  
+
+<div class="component row  no-gutters justify-content-start ">
+  <div class="col-md-7 pb-5">
+
+  
+  
+<div class="component title">
+  <h5 id="markets-home" class="title-text none">
+    <a class="chevron-right" href="/markets.html">
+      Markets Home
+      <i class="icon"></i>
+    </a>
+  </h5>
+</div>
+
+
+<div class="component row  justify-content-start ">
+  <div class="col-md-4 pr-md-3">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="Featured products" data-collapse-at="medium" data-list-style="product-list" data-links="[{&#34;linkUrl&#34;:&#34;/markets/agriculture/grains/corn.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Corn&#34;,&#34;code&#34;:&#34;ZC&#34;},{&#34;linkUrl&#34;:&#34;/markets/agriculture/oilseeds/soybean.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Soybean&#34;,&#34;code&#34;:&#34;ZS&#34;},{&#34;linkUrl&#34;:&#34;/markets/energy/wti-crude-oil-futures.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;WTI Crude Oil&#34;,&#34;code&#34;:&#34;CL&#34;},{&#34;linkUrl&#34;:&#34;/markets/energy/natural-gas-futures.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Henry Hub Natural Gas&#34;,&#34;code&#34;:&#34;NG&#34;},{&#34;linkUrl&#34;:&#34;/markets/equities/sp/sandp-futures.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;S&amp;P 500&#34;,&#34;code&#34;:&#34;ES&#34;},{&#34;linkUrl&#34;:&#34;/markets/equities/nasdaq/nasdaq-futures.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Nasdaq-100&#34;,&#34;code&#34;:&#34;NQ&#34;},{&#34;linkUrl&#34;:&#34;/markets/fx/g10/euro-fx.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Euro FX&#34;,&#34;code&#34;:&#34;6E&#34;},{&#34;linkUrl&#34;:&#34;/markets/interest-rates/us-treasury/10-year-us-treasury-note.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;10-Year T-Note&#34;,&#34;code&#34;:&#34;ZN&#34;},{&#34;linkUrl&#34;:&#34;/markets/interest-rates/stirs/three-month-sofr.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;SOFR&#34;,&#34;code&#34;:&#34;SR3&#34;},{&#34;linkUrl&#34;:&#34;/markets/metals/precious/gold-futures.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Gold&#34;,&#34;code&#34;:&#34;GC&#34;},{&#34;linkUrl&#34;:&#34;/markets/metals/base/copper.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Copper&#34;,&#34;code&#34;:&#34;HG&#34;},{&#34;linkUrl&#34;:&#34;/markets/products.html#sortAsc&amp;sortField&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;All Products&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/collapsible.3919d3ac8087bdea78845d866a8dbc45.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/collapsible.895256d6dd1e96f0d88288af513f4e16.js"></script>
+
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md-4 pr-md-3">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="Browse By" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/markets/agriculture.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Agriculture&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/cryptocurrencies.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Cryptocurrencies&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/energy.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Energy&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/equities.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Equities&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/fx.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;FX&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/interest-rates.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Interest Rates&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/metals.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Metals&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/options.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Options&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/prediction-markets.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Prediction Markets&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/equities/single-stock-futures.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Single Stock Futures&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/trading/market-tech-and-data-services/brokertec.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Cash Treasuries &amp; Repo&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/trading/market-tech-and-data-services/ebs.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;FX Spot&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/cleared-swaps.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Cleared Swaps&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;#&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;____&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/esg.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Sustainable Solutions&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/microsuite.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Micro Suite&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/commodities.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Commodities&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md-4 pr-md-3">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="Reference" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/company/clearing-fees.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Fees&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/tools-information/find-a-broker.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Find a Broker&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/trading-hours.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Holiday &amp; Trading Hours&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/company/membership.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Membership&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/tools-information&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Tools &amp; Resources&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-regulation/rulebook.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Rulebooks&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-regulation/rule-filings.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Rule Filings&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/notices.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Notices&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/rulebook/rulebook-harmonization.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Regulatory Guidance&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-regulation/position-limits.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Position Limits&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/tools-information/advisorySearch.html#cat=advisorynotices:Advisory+Notices/Market+Regulation+Advisories&amp;pageNumber=1&amp;subcat=advisorynotices:Advisory+Notices/Market+Regulation+Advisories/RegistrarsOffice&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Registrar&#39;s Advisories&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+<div class="col-md-5 p-0">
+
+  
+  
+
+<div class="component row  no-gutters justify-content-start ">
+  <div class="col-md-6 p-0">
+
+  
+  
+  <div class="component content-toggle react" data-path="/content/experience-fragments/cmegroup/fragments/navbar/en-header/jcr:content/root/custom_navbar_copy/par_1555445523288/colctrlcomp_445771877/par_1/colctrlcomp/par_0/content_toggle_copy__1347727201">
+    
+    
+    
+    
+  </div>
+  
+
+
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/content-toggle.d41d8cd98f00b204e9800998ecf8427e.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/content-toggle.84a6f879350cf7edd0f286bb253b719e.js"></script>
+
+
+
+
+
+    
+
+
+  <div class="component content-toggle react" data-path="/content/experience-fragments/cmegroup/fragments/navbar/en-header/jcr:content/root/custom_navbar_copy/par_1555445523288/colctrlcomp_445771877/par_1/colctrlcomp/par_0/content_toggle_copy_">
+    
+    
+    
+    
+  </div>
+  
+
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md-6 p-0">
+
+  
+  
+  <div class="component content-toggle react" data-path="/content/experience-fragments/cmegroup/fragments/navbar/en-header/jcr:content/root/custom_navbar_copy/par_1555445523288/colctrlcomp_445771877/par_1/colctrlcomp/par_1/content_toggle">
+    
+    
+    
+    
+  </div>
+  
+
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+
+</div>
+
+  <div class="component content-toggle react" data-path="/content/experience-fragments/cmegroup/fragments/navbar/en-header/jcr:content/root/custom_navbar_copy/par_1555445523288/colctrlcomp_445771877/par_1/content_toggle">
+    
+    
+    
+    
+  </div>
+  
+
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+<div path="par_1555445524535">
+
+  
+  
+
+<div class="component row  no-gutters justify-content-start ">
+  <div class="col-md-7">
+
+  
+  
+<div class="component title">
+  <h5 id="market-data-home" class="title-text none">
+    <a class="chevron-right" href="/market-data.html">
+      Market Data Home
+      <i class="icon"></i>
+    </a>
+  </h5>
+</div>
+
+
+<div class="component row  justify-content-start crmb-1 ">
+  <div class="col-md-4">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="Browse" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/market-data/browse-data.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Browse Data Products&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/daily-bulletin.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Daily Bulletin&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/clearing/operations-and-deliveries/accepted-trade-types/block-data.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Block Trades&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/browse-data/delayed-quotes.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Delayed Quotes&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/browse-data.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Real-time Data&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/clearing/operations-and-deliveries/registrar-reports.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Registrar Reports&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/volume-open-interest/exchange-volume&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Volume &amp; Open Interest&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/settlements.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Settlements&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/e-quotes.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;E-quotes&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md-4">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="License" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/market-data/license-data.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;License Data&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/browse-data/derived-data.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Derived Data&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/about-market-data-licensing-policies.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Policy Education Center&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+<div class="component react collapsible" data-is-edit="false" data-title="Connect" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/market-data/connect-data.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Connect to Data&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/licensed-distributors.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Licensed Distributors&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/cloud-mdp.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Google Cloud Platform&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/distributor/market-data-platform.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Market Data Platform&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/market-data-api.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Market Data APIs&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/datamine.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;DataMine&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md-4">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="Benchmarks" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/market-data/cme-group-benchmark-administration.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Benchmark Administration&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/cme-group-benchmark-administration/term-sofr.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Term SOFR&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/cme-group-benchmark-administration/cme-group-volatility-indexes.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;CME Group Volatility Index (CVOL)&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/cme-group-benchmark-administration/repofunds-rates.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;RepoFunds Rates&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-data/cme-group-rolling-futures-indices.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Rolling Futures Indices&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/cryptocurrencies/cme-cf-cryptocurrency-benchmarks.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Cryptocurrencies&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+<div class="col-md-5 p-0">
+
+  
+  
+
+<div class="component row  no-gutters justify-content-start ">
+  <div class="col-md-6 p-0">
+
+  
+  
+
+<div class="promo component rte-global-styles minHeight nav None  h-100 primary dark  no-cta-text" aria-label="Promo">
+  <a class="promo-link" href="/market-data/browse-data.html">
+    <div class="promo-body ">
+      
+      <div class="promo-title"><p>Real-time market data</p>
+</div>
+      <div class="promo-nav-arrow">
+        <div class="arrow_box left" style="background-color: rgba(0,0,0,0);">
+          <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+        </div>
+      </div>
+      <div class="promo-subtitle">Stream live futures and options market data directly from CME Group.</div>
+    </div>
+    <div class="promo-foot inside-arrow at-bottom fixed-height no-cta-text">
+      <div class="arrow_box left" style="background-color: rgba(0,0,0,0);">
+        <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+      </div>
+      
+    </div>
+  </a>
+</div>
+
+  
+
+</div>
+<div class="col-md-6 p-0">
+
+  
+  
+
+<div class="promo component rte-global-styles minHeight nav    h-100 custom  no-cta-text" style="background-color: #085EA5;" aria-label="Promo">
+  <a class="promo-link" href="/market-data/connect-data/cme-group-market-data-on-google-analytics-hub.html">
+    <div class="promo-body ">
+      
+      <div class="promo-title"><p>Market Data on Google Analytics Hub</p>
+</div>
+      <div class="promo-nav-arrow">
+        <div class="arrow_box left" style="background-color: rgba(0,0,0,0);">
+          <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+        </div>
+      </div>
+      <div class="promo-subtitle">Discover a cost-efficient way to access, query, and share CME Group market data.</div>
+    </div>
+    <div class="promo-foot inside-arrow at-bottom fixed-height no-cta-text">
+      <div class="arrow_box left" style="background-color: rgba(0,0,0,0);">
+        <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+      </div>
+      
+    </div>
+  </a>
+</div>
+
+  
+
+</div>
+
+</div>
+
+
+<div class="component row  no-gutters justify-content-start ">
+  <div class="col p-0 ">
+
+  
+  
+
+<div class="promo component rte-global-styles minHeight nav None  h-100 custom  no-cta-text" style="background-color: #0F5095; background-image: url(&#39;/content/dam/cmegroup/images/common/promos/datamine-630x310.jpg&#39;); background-repeat: repeat; background-position: left top; background-size: cover;" aria-label="Promo">
+  <a class="promo-link" href="/datamine.html">
+    <div class="promo-body ">
+      
+      <div class="promo-title"><p><span class="emphasized">DATAMINE:</span></p>
+<p>THE SOURCE FOR HISTORICAL DATA</p>
+</div>
+      <div class="promo-nav-arrow">
+        <div class="arrow_box left" style="background-color: rgba(0,0,0,0);">
+          <span class="arrow icon-arrow-right-thin" style="color: #E3E935;"></span>
+        </div>
+      </div>
+      <div class="promo-subtitle">Explore historical market data straight from the source to help refine your trading strategies.</div>
+    </div>
+    <div class="promo-foot inside-arrow at-bottom fixed-height no-cta-text">
+      <div class="arrow_box left" style="background-color: rgba(0,0,0,0);">
+        <span class="arrow icon-arrow-right-thin" style="color: #E3E935;"></span>
+      </div>
+      
+    </div>
+  </a>
+</div>
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+<div path="par_1555445523905">
+
+  
+  
+
+<div class="component row  no-gutters justify-content-start None ">
+  <div class="col-md-8 pb-5">
+
+  
+  
+<div class="component title">
+  <h5 id="solutions-home" class="title-text  ml-0 None">
+    <a class="chevron-right" href="/solutions.html">
+      Solutions Home
+      <i class="icon"></i>
+    </a>
+  </h5>
+</div>
+
+
+<div class="component row  justify-content-start crmb-1 ">
+  <div class="col-md-4">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="Clearing" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/solutions/clearing.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Clearing Home&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/solutions/clearing/financial-and-collateral-management.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Financial and Collateral Management&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/solutions/clearing/financial-and-regulatory-surveillance.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Financial and Regulatory Surveilance&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/solutions/clearing/operations-and-deliveries.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Clearing Operations &amp; Deliveries&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/solutions/clearing/cme-securities-clearing.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;CME Securities Clearing&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+<div class="component react collapsible" data-is-edit="false" data-title="Technology Solutions" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/solutions/market-tech-and-data-services.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Technology Home&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md-4">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="Market Access" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/solutions/market-access/cme-direct.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;CME Direct&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/clearport.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;ClearPort&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;#&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;____&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/ebs.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;EBS&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/markets/brokertec.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;BrokerTec&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+<div class="component react collapsible" data-is-edit="false" data-title="Connectivity" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/market-data/market-data-api.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;APIs&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/solutions/co-location.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Co-Location Services&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/solutions/market-access/globex.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Globex&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md-4">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="Reporting" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/solutions/processing-and-reporting/straight-through-processing.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Straight Through Processing (STP)&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/solutions/processing-and-reporting/global-repository-services.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Global Repository Services&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+<div class="component react collapsible" data-is-edit="false" data-title="Managing Risk" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/solutions/risk-management.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Risk Management Home&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/solutions/risk-management/performance-bonds-margins.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Performance Bonds/Margins&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/solutions/risk-management/margin-services/product-margins.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Product Margins&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/solutions/risk-management/margin-services.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Margin Services&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/solutions/risk-management/financial-safeguards.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Financial Safeguards&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+<div class="component react collapsible" data-is-edit="false" data-links="[]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+<div class="col-md-4 p-0">
+
+  
+  
+
+<div class="component row  no-gutters justify-content-start ">
+  <div class="col p-0 ">
+
+  
+  
+
+<div class="promo component rte-global-styles minHeight nav None  h-100 custom  no-cta-text" style="background-color: #0F5095;" aria-label="Promo">
+  <a class="promo-link" href="/notices.html#filters=all-8">
+    <div class="promo-body ">
+      
+      <div class="promo-title"><p>Clearing Advisories</p>
+</div>
+      <div class="promo-nav-arrow">
+        <div class="arrow_box left" style="background-color: ;">
+          <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+        </div>
+      </div>
+      <div class="promo-subtitle">Access and filter an archive of recent and historical notices for every aspect of trading at CME Group, including Clearing advisories.</div>
+    </div>
+    <div class="promo-foot inside-arrow at-bottom fixed-height no-cta-text">
+      <div class="arrow_box left" style="background-color: ;">
+        <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+      </div>
+      
+    </div>
+  </a>
+</div>
+
+  
+
+</div>
+
+</div>
+
+
+<div class="component row  no-gutters justify-content-start ">
+  <div class="col p-0 ">
+
+  
+  
+
+<div class="promo component rte-global-styles minHeight nav None  h-100 custom  no-cta-text" style="background-color: #164285;" aria-label="Promo">
+  <a class="promo-link" href="/education/navigating-uncleared-margin-rules.html">
+    <div class="promo-body ">
+      
+      <div class="promo-title"><p>Uncleared margin rules</p>
+</div>
+      <div class="promo-nav-arrow">
+        <div class="arrow_box left" style="background-color: rgba(0,0,0,0);">
+          <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+        </div>
+      </div>
+      <div class="promo-subtitle">Explore our suite of capital-efficient solutions to URM challenges designed to help minimize your initial margin requirements.</div>
+    </div>
+    <div class="promo-foot inside-arrow at-bottom fixed-height no-cta-text">
+      <div class="arrow_box left" style="background-color: rgba(0,0,0,0);">
+        <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+      </div>
+      
+    </div>
+  </a>
+</div>
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+<div path="par_1633641796381">
+
+  
+  
+
+<div class="component row  justify-content-start ">
+  <div class="col-md-8">
+
+  
+  
+<div class="component title">
+  <h5 id="insights-home" class="title-text none">
+    <a class="chevron-right" href="/insights.html">
+      Insights Home
+      <i class="icon"></i>
+    </a>
+  </h5>
+</div>
+
+
+<div class="component row  justify-content-start ">
+  <div class="col-md-4">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="IN THIS SECTION" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/insights/economic-research.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Economic Research&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/insights/product-analysis-and-commentary.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Product Analysis&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/videos.html#filters=market-commentary&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Market Commentary&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md-4">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="TOPICS" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/education/browse-all.html#pageNum=1&amp;filters=Articles_Reports,Trade-Wars&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Trade Wars&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/education/browse-all.html#pageNum=1&amp;filters=Articles_Reports,ESG&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;ESG&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/education/browse-all.html#pageNum=1&amp;filters=Bitcoin,Cryptocurrency,Articles_Reports&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Cryptocurrencies&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md-4">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="FEATURED" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/newsletters/excell-with-options-report-from-rich-excell.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Excell with Options&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/education/events/economic-releases-calendar.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Economic Release Calendar&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/tools-information/market-pulse.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Market Pulse&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+<div class="col-md-4 p-0">
+
+  
+  
+
+<div class="promo component rte-global-styles minHeight nav None   secondary  no-cta-text" style="background-color: #e3e935;" aria-label="Promo">
+  <a class="promo-link" href="https://www.cmegroup.com/subscription-center.html">
+    <div class="promo-body ">
+      
+      <div class="promo-title"><p><span style="color: black;">Dive into the Subscription Center</span></p>
+</div>
+      <div class="promo-nav-arrow">
+        <div class="arrow_box left" style="background-color: ;">
+          <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+        </div>
+      </div>
+      <div class="promo-subtitle"><p style="color: black;"><span>Sign up for the latest news, product highlights, economic insights and more subscriptions, tailored to your trading interests, delivered straight to your inbox. </span></p></div>
+    </div>
+    <div class="promo-foot inside-arrow at-bottom fixed-height no-cta-text">
+      <div class="arrow_box left" style="background-color: ;">
+        <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+      </div>
+      
+    </div>
+  </a>
+</div>
+
+
+<div class="promo component rte-global-styles minHeight nav None   custom  no-cta-text" style=" background-image: url(&#39;/content/dam/cmegroup/images/common/news/the-worlds-most-valuable-exchange-brand-940x600.jpg&#39;); background-repeat: repeat; background-position: center bottom; background-size: cover;" aria-label="Promo">
+  <a class="promo-link" href="/investor-relations/files/cme-group-named-worlds-most-valuable-exchange.pdf">
+    <div class="promo-body ">
+      
+      <div class="promo-title"><p>The world's most valuable exchange brand</p>
+</div>
+      <div class="promo-nav-arrow">
+        <div class="arrow_box left" style="background-color: ;">
+          <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+        </div>
+      </div>
+      <div class="promo-subtitle">Learn more about <i>Brand Finance</i> naming CME Group the most valuable exchange brand for the 11th year in a row.</div>
+    </div>
+    <div class="promo-foot inside-arrow at-bottom fixed-height no-cta-text">
+      <div class="arrow_box left" style="background-color: ;">
+        <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+      </div>
+      
+    </div>
+  </a>
+</div>
+
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+<div path="par_1633641797949">
+
+  
+  
+
+<div class="component row  no-gutters justify-content-start ">
+  <div class="col-md-8">
+
+  
+  
+<div class="component title">
+  <h5 id="education-home" class="title-text none">
+    <a class="chevron-right" href="/education.html">
+      Education Home
+      <i class="icon"></i>
+    </a>
+  </h5>
+</div>
+
+
+<div class="component row  justify-content-start ">
+  <div class="col-md-5">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="Learn" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/education/courses.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Courses &amp; Lessons&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/education/events.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Events &amp; Webinars&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/education/academic-resources.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Academic Resources&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/videos.html#filters=Traders-Edge&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Trader&#39;s Edge&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;https://www.futuresfundamentals.org/&#34;,&#34;linkTarget&#34;:&#34;_blank&#34;,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Futures Fundamentals&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/education/browse-all.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Browse All Education&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md-3">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="Practice" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/education/practice/about-the-trading-simulator.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Trading Simulator&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/education/practice.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Analytic &amp; Trading Tools&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/education/trading-challenge.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Trading Challenge&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md-4">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="Follow the Markets" data-collapse-at="medium" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/insights/economic-research.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Economic Research&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/education/follow-the-markets.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Commentary &amp; Analysis&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/price-action-alerts.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Price Action Alerts&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/videos.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Video Archive&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/podcasts.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Podcasts&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+<div class="col-md-4 p-0">
+
+  
+  
+
+<div class="component row  no-gutters justify-content-start ">
+  <div class="col p-0 ">
+
+  
+  
+
+<div class="promo component rte-global-styles minHeight nav None   custom  no-cta-text" style="background-color: #0F5095; background-image: url(&#39;/content/dam/cmegroup/images/common/promos/tradingsim_and_challenge_edu-topnav_940x600.png&#39;); background-repeat: repeat; background-position: left top; background-size: cover;" aria-label="Promo">
+  <a class="promo-link" href="/education/practice/about-the-trading-simulator.html?itm_source=website&itm_medium=edu_top_nav&itm_campaign=trading_sim_tc_2025&itm_kxconfid=vpwpdpbbo">
+    <div class="promo-body ">
+      
+      <div class="promo-title"><p>Turn curiosity into confidence</p>
+</div>
+      <div class="promo-nav-arrow">
+        <div class="arrow_box left" style="background-color: rgba(0,0,0,0);">
+          <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+        </div>
+      </div>
+      <div class="promo-subtitle">Explore our new, fully customizable, pro-level Trading Simulator and get to know our range of futures contracts.</div>
+    </div>
+    <div class="promo-foot inside-arrow at-bottom fixed-height no-cta-text">
+      <div class="arrow_box left" style="background-color: rgba(0,0,0,0);">
+        <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+      </div>
+      
+    </div>
+  </a>
+</div>
+
+  
+
+</div>
+
+</div>
+
+
+<div class="component row  no-gutters justify-content-start ">
+  <div class="col p-0 ">
+
+  
+  
+
+<div class="promo component rte-global-styles minHeight nav None  h-100 custom  no-cta-text" style="background-color: #006EB6;" aria-label="Promo">
+  <a class="promo-link" href="/education/trading-challenge.html">
+    <div class="promo-body ">
+      
+      <div class="promo-title"><p>Elevate your trading skills</p>
+</div>
+      <div class="promo-nav-arrow">
+        <div class="arrow_box left" style="background-color: rgba(0,0,0,0);">
+          <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+        </div>
+      </div>
+      <div class="promo-subtitle">Ready to take your trading to the next level? Compete against your peers in our monthly Trading Challenges.</div>
+    </div>
+    <div class="promo-foot inside-arrow at-bottom fixed-height no-cta-text">
+      <div class="arrow_box left" style="background-color: rgba(0,0,0,0);">
+        <span class="arrow icon-arrow-right-thin" style="color: #3CC8FF;"></span>
+      </div>
+      
+    </div>
+  </a>
+</div>
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+
+</div>
+
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/custom-navbar.aa86bb85262829c3765a59a06eacaf0b.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/custom-navbar.ac2c0a690119045c5c88aefe2dfd392c.js"></script>
+
+
+
+
+
+
+
+</div>
+
+  
+
+
+  
+
+</div>
+<main id="main-content" tabindex="-1">
+  <div><div class="component react dynamic-alert-list" data-is-edit="false" data-path="/content/cmegroup/en/articles/whitepapers/using-financial-crude-oil-options-as-a-cash-management-tool">
+</div>
+
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/dynamic-alert-list.d41d8cd98f00b204e9800998ecf8427e.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/dynamic-alert-list.c1ba229f7ecc4ec3703f66aaafe1f3cc.js"></script>
+
+
+
+
+
+    
+
+</div>
+  <div>
+    
+
+
+<div class="component react article-header" data-header-type="standard-article" data-media-type="text-pdf" data-title="Using financial Crude Oil options as a cash management tool" data-article-time="02:54" data-article-date="2023-05-12" data-article-banner-image="/content/dam/cmegroup/articles/images/2023/q2/using-financial-crude-oil-options-as-a-cash-management-tool-1440x500.jpg" data-article-label="CME Group Standard Article" data-ata-glance-items="[]" data-author-tags="[&#34;cme-group&#34;]" data-aspect-ratio="16:9" data-path="/content/cmegroup/en/articles/whitepapers/using-financial-crude-oil-options-as-a-cash-management-tool" data-featured-tag="Energy" data-hide-right-rail="false">
+  <div path="main-section">
+
+  
+  <div class="cmp cmp-text">
+<div class="component react text">
+  <div path="text">
+    
+      <p>High interest rates and high volatility underscore the importance of properly utilizing and raising cash in a trading account. Options box spreads can be effective and efficient tools for cash management that oil traders should know about.</p>
+
+    
+  </div>
+</div>
+
+    
+
+
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/text.e7e8d925d82c0530d9b902c4c5d67dca.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/text.6184c8fe0fd6bd02f4194e83beb819d6.js"></script>
+
+
+
+
+</div>
+
+<div class="component title">
+  <h3 id="what-is-an-options-box-spread" class="title-text none  ">
+    
+      What is an options box spread?
+      
+    
+  </h3>
+</div>
+<div class="cmp cmp-text">
+<div class="component react text">
+  <div path="text">
+    
+      <p>An options box spread is a combination of four options positions that generates an upfront cash transfer from the buyer to the seller in the form of option premium, and a locked-in future payout from the seller back to the buyer when the options expire. These cash flows make box spreads effectively a loan from the buyer to the seller.</p>
+<p>Upon execution of the options box spread, the net premium on the options is paid by the buyer to the seller. The combination of the options has a fixed value at the expiration date, which is usually greater than the premium paid. When the options expire this value will be paid by the seller back to the buyer through the regular Clearing House Exercise and Assignment process.</p>
+
+    
+  </div>
+</div>
+
+    
+
+
+  
+
+
+
+</div>
+
+  
+
+</div>
+  <div path="right-rail">
+
+  
+  
+  
+
+</div>
+  
+</div>
+
+
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/article-header.e8b495ec5e75ceee30679246c3e7fecf.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/article-header.4d4d9a209a2edb8ae3b2e37b2c4c6773.js"></script>
+
+
+
+
+</div>
+  <div>
+
+
+
+
+    
+    
+    
+  
+  <div data-component-id="ad67e378" class="component section      " aria-label="Section" data-path-id="ad67e378" data-animate-duration="300" data-animate-delay="0">
+    
+    <div class="container   ">
+
+  
+  
+
+<div class="component row  justify-content-start ">
+  <div class="col cme-article-left-column">
+
+  
+  
+  
+
+</div>
+<div class="col cme-article-center-column">
+
+  
+  
+<div class="component title">
+  <h3 id="box-spread-mechanics" class="title-text none  ">
+    
+      Box spread mechanics
+      
+    
+  </h3>
+</div>
+<div class="cmp cmp-text">
+<div class="component react text">
+  <div path="text">
+    
+      <p>A box spread entails the <u>purchase of a call and sale of a put at one strike price coupled with a sale of a call and purchase of a put at a different strike price</u>. The difference in strike price chosen will be equal to the loan amount on a per barrel basis. All four options positions will share a common expiration date.   </p>
+<p>Box spread options used for cash management are generally traded using European-style options. European options may only be exercised on their expiration date, as opposed to American-style options that may be exercised at any time prior to expiration. An early exercise of the option would result in the premature cancellation of the effective loan and require a partial unwind of the strategy for the portion of the strikes not exercised.</p>
+<p>The <a href="/markets/energy/crude-oil/light-sweet-crude.contractSpecs.options.html#optionProductId=1353">Light Sweet Crude Oil European Financial option</a>s (LC) on CME Group offers high levels of liquidity across a wide array of strike prices and tenors, allowing for flexible execution of box spreads. One LC contract represents 1,000 barrels of oil; one LC options contract with a premium of $5.50 would cost $5,500.</p>
+<p>Oil traders can also execute options box spreads on a smaller scale using the <a href="/markets/energy/crude-oil/micro-wti-crude-oil_contractSpecs_options.html?optionProductId=10174">Micro WTI Crude Oil option</a>s (MCO). One MCO contract represents 100 barrels, one tenth the size of the LC options.</p>
+
+    
+  </div>
+</div>
+
+    
+
+
+  
+
+
+
+</div>
+
+<div class="component title">
+  <h4 id="european-crude-oil-options" class="title-text none None">
+    
+      European Crude Oil Options
+      
+    
+  </h4>
+</div>
+
+
+<div class="component row  justify-content-start crmb-2 ">
+  <div class="col">
+
+  
+  
+    
+
+<div class="component react table"><table class="content-table" data-sticky-header="false" data-compact-table="false" data-disable-row-banding="true" data-disable-first-column-header="true" data-margin=" " data-show-search-box="false" data-show-sorting="false">
+<tbody>
+<tr>
+<th>
+<p><strong>CLEARING/ Clearport</strong></p>
+</th>
+<th>
+<p><strong>CME GLOBEX</strong></p>
+</th>
+<th>
+<p><strong>Product Name</strong></p>
+</th>
+<th>
+<p><strong>Contract Size</strong></p>
+</th>
+</tr>
+<tr>
+<td>
+<p>LC</p>
+</td>
+<td>
+<p>LCE</p>
+</td>
+<td>
+<p><a href="../../../../../../content/cmegroup/en/trading/energy/crude-oil/light-sweet-crude_contractSpecs_options.html?optionProductId=1353">Light Sweet Crude Oil European Financial option</a>s</p>
+</td>
+<td>
+<p>1,000 bbls</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>MCO</p>
+</td>
+<td>
+<p>MCO</p>
+</td>
+<td>
+<p><a href="../../../../../../content/cmegroup/en/markets/energy/crude-oil/micro-wti-crude-oil_contractSpecs_options.html?optionProductId=10174">Micro WTI Crude Oil option</a>s</p>
+</td>
+<td>
+<p>100 bbls</p>
+</td>
+</tr>
+</tbody>
+</table></div>
+
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/table.e24208e32dc26a2e8b0468528f52c7f7.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/table.0ae4a8e55d19406ebce2baf2f97163b6.js"></script>
+
+
+
+
+
+  
+
+</div>
+
+</div>
+
+<div class="component title">
+  <h4 id="example" class="title-text none None">
+    
+      Example:
+      
+    
+  </h4>
+</div>
+<div class="cmp cmp-text">
+<div class="component react text">
+  <div path="text">
+    
+      <p style="margin-top: 24.0px;">On April 13, 2023, September 2023 WTI futures (CL) settled at 80.40. A trader is looking to raise cash for the next few months, and sells a box spread option using the September Light Sweet Crude Oil European Financial Option (LCU23) as follows:<br />
+</p>
+
+    
+  </div>
+</div>
+
+    
+
+
+  
+
+
+
+</div>
+
+    
+
+<div class="component react table"><table class="content-table" data-sticky-header="false" data-compact-table="false" data-disable-row-banding="true" data-disable-first-column-header="true" data-margin=" " data-show-search-box="false" data-show-sorting="false">
+<tbody>
+<tr>
+<td>
+<p>Sell Sep-23 WTI call with a strike of $50 for $30.28</p>
+</td>
+<td>
+<p>$30,280</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>Buy Sep-23 WTI Put with a strike of $50 for $.40</p>
+</td>
+<td>
+<p>-$400</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>Buy Sep-23 WTI call with a strike of $150 for $ .05</p>
+</td>
+<td>
+<p>-$50</p>
+</td>
+</tr>
+<tr>
+<td>
+<p>Sell Sep-23 WTI put with a strike of $150 for $68.46</p>
+</td>
+<td>
+<p>$68,460</p>
+</td>
+</tr>
+<tr class="gray6-row">
+<td>
+<p><strong>Net Premium Received:</strong></p>
+</td>
+<td>
+<p><strong>$98,290</strong></p>
+</td>
+</tr>
+</tbody>
+</table></div>
+
+  
+
+
+
+<div class="cmp cmp-text">
+<div class="component react text">
+  <div path="text">
+    
+      <p><br />
+<br />
+<br />
+On execution, $98,290, the amount of the premium, is transferred out of the buyer’s account and into the seller’s account.  The trader selling the box spread has raised cash to hold (minus any margin) until the options expire on August 17<sup>th</sup>, 126 days from the day the box spread transaction was executed.  </p>
+<p>Regardless of the directional move in crude oil prices from execution of the box spread until options expiration, the combination of options will be worth <u>the difference in their strike prices</u>:  $150-$50 = $100 per barrel or $100,000 per contract.</p>
+<p>Upon expiration on August 17<sup>th</sup>, the seller of the box spread will pay the buyer $100,000, returning the value of cash he received when executing the spread, plus an additional $1,710, similar to paying back a loan plus interest.</p>
+
+    
+  </div>
+</div>
+
+    
+
+
+  
+
+
+
+</div>
+
+<div class="component title">
+  <h3 id="features-of-options-box-spreads" class="title-text none  ">
+    
+      Features of options box spreads
+      
+    
+  </h3>
+</div>
+<div class="cmp cmp-text">
+<div class="component react text">
+  <div path="text">
+    
+      <p>Options box spreads can provide a convenient and efficient way of offering or obtaining financing.</p>
+<ul>
+<li>By selling an options box spread, the seller essentially receives a loan in exchange for paying the buyer the loan amount plus a premium at option expiry.</li>
+<li>By buying an options box spread, the buyer locks in a return on cash by making an upfront payment to the seller less than the nominal loan amount in exchange for receiving back the full loan amount.</li>
+</ul>
+<p>Transacting options box spreads on CME Group futures contracts via the exchange helps mitigate the buyer’s (the effective lender) counterparty credit risk. As with any futures or options contracts executed on the futures exchange, the payments are protected by the financial safeguards offered through a centralized counterparty (CCP) clearing mechanism. </p>
+<p><b>For more information on trading energy options, please reach out to Jeff White or Eric Yee at <a href="mailto:Energy@cmegroup.com">Energy@cmegroup.com</a>.</b></p>
+
+    
+  </div>
+</div>
+
+    
+
+
+  
+
+
+
+</div>
+
+  
+
+</div>
+<div class="col cme-article-right-column">
+
+  
+  
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+  </div>
+
+
+
+    
+    
+    
+  
+  <div data-component-id="9be70a42" class="component section      " aria-label="Section" data-path-id="9be70a42" data-animate-duration="300" data-animate-delay="0">
+    
+    <div class="container   ">
+
+  
+  
+
+<div class="component row  justify-content-start ">
+  <div class="col cme-article-left-column">
+
+  
+  
+  
+
+</div>
+<div class="col cme-article-center-column">
+
+  
+  
+<div class="component divider line always">
+  <hr class="left full-width gray3 "/>
+</div>
+<div class="component tag-cloud">
+  <div class="tag-cloud-container">
+    <div>
+      <a href="/education/browse-all.html#pageNum=1&filters=cme-group">
+        <button class="btn btn-tag-filter">CME Group</button>
+      </a>
+    
+      <a href="/education/browse-all.html#pageNum=1&filters=article">
+        <button class="btn btn-tag-filter">Article</button>
+      </a>
+    
+      <a href="/education/browse-all.html#pageNum=1&filters=options">
+        <button class="btn btn-tag-filter">Options</button>
+      </a>
+    
+      <a href="/education/browse-all.html#pageNum=1&filters=energy">
+        <button class="btn btn-tag-filter">Energy</button>
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="component react author-bio" data-is-edit="false" data-path="/content/cmegroup/en/articles/whitepapers/using-financial-crude-oil-options-as-a-cash-management-tool" data-style="article" data-author-tags="[&#34;cme-group&#34;]" data-hide-images="true">
+</div>
+
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/author-bio.407fdb0e4ef8429d99597ae7a7052a0a.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/author-bio.a742764726099fe8902f66ea9bd7cbc3.js"></script>
+
+
+
+
+<div class="cq-dd-paragraph">
+
+<div class="component row  ">
+  <div class="col">
+
+  
+  <div class="cmp cmp-text">
+<div class="component react text">
+  <div path="text">
+    
+      <p><span class="small"><i>All examples in this report are hypothetical interpretations of situations and are used for explanation purposes only. The views in this report reflect solely those of the author and not necessarily those of CME Group or its affiliated institutions. This report and the information herein should not be considered investment advice or the results of actual market experience. </i></span></p>
+
+    
+  </div>
+</div>
+
+    
+
+
+  
+
+
+
+</div>
+
+  
+
+</div>
+
+</div>
+</div>
+
+  
+
+</div>
+<div class="col cme-article-right-column">
+
+  
+  
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+  </div>
+
+
+
+    
+    
+    <div class="cq-dd-paragraph">
+
+<div class="component row  ">
+  <div class="col">
+
+  
+  
+    
+
+<style type="text/css">
+  /* DMT-14352 Newsletter Titles */
+.navigation-tab-bar.title-text {color: #112b4a; font-family: "Averta-Semibold"; font-size: 0.875rem; margin-bottom: 0; text-transform: uppercase; line-height: 1rem;}
+.navigation-tab-bar.title-text a {color: #5A6874;}
+.navigation-tab-bar.title-text a:hover {color: #112b4a !important;} 
+
+/* Newsletter Lateral Nav Divider DMT-13396 */
+.row .col:not(:last-child).vcr.newsletter-footer-lateral-nav, .row.vcr.newsletter-footer-lateral-nav > .col:not(:last-child), .row.vcr.newsletter-footer-lateral-nav > [class*="col-"]:not(:last-child), .row [class*="col-"]:not(:last-child).vcr.newsletter-footer-lateral-nav {border-right: 0.0625rem solid #3cc8ff;}
+
+
+/* Default Tables */
+.cmp-text table {width: 100%; color: #25323c;}
+.cmp-text table td {vertical-align: top; padding: 5px 10px; border: 1px solid #C2CACE; font-size: 14px;}
+.cmp-text table td p {font-size: 14px; margin-bottom: 15px; line-height: 150%; color: #25323c;}
+.cmp-text table td li {color: #25323c;}
+.cmp-text table td p:last-child {margin-bottom: 0;}
+.cmp-text table th {background: #F1F5F8; vertical-align: middle; padding: 10px 10px; text-align: center; color: #000; text-transform: uppercase; font-size: 11px; border: 1px solid #C2CACE; line-height: 14px; letter-spacing: 1.1px;}
+/* Default - table links */
+.cmp-text table a, .cmp-text table a:hover {color: #006eb6;}
+
+/* Table Header Extenders */
+.cmp-text table th p {font-size: 11px; margin-bottom: 0; line-height: 150%; color: #fff !important;}
+.cmp-text table th li {color: #fff; font-size: 14px;}
+.cmp-text table th a {color: #3cc8ff;}
+.cme-text table th a:hover {color: #3cc8ff; background-image: linear-gradient(90deg,hsla(0,0%,100%,0) 50%,#3cc8ff 0) !important;}
+.reverse .cmp-text table th a, .reverse .cmp-text table td a {color: #3cc8ff;}
+.reverse .cme-text table th a:hover {color: #3cc8ff; background-image: linear-gradient(90deg,hsla(0,0%,100%,0) 50%,#3cc8ff 0) !important;}
+
+/* Text Utilities */
+.text-averta {font-family: Averta-Regular !important;}
+.text-averta-semibold {font-family: Averta-Regular !important;}
+.text-averta-bold {font-family: Averta-Bold !important;}
+.text-averta-light {font-family: Averta-Light !important;}
+.text-roboto-mono{font-family: Roboto-Mono !important;}
+
+/* Table Utilities */
+.text-align-left td, .text-align-left th {text-align: left !important;}
+.text-align-right td, .text-align-right th {text-align: right !important;}
+.text-align-center td, .text-align-center th {text-align: center !important;}
+
+/* Row Banding */
+.cmp-text table tr:nth-child(odd) td {background: #F1F5F7;}
+.cmp-text table tr:nth-child(even) td {background: #fff;}
+
+/* Reverse */
+.reverse .cmp-text table th, .reverse .cmp-text table td {border: 1px solid #5A6874;}
+
+/* Content Table - Dark Blue Headers */
+.cmp-text table.cmeContentTable th {background: rgb(17,43,74); color: #fff;}
+.reverse .cmp-text table.cmeContentTable th {background: rgb(17,43,74); color: #C2CACE;}
+
+/* Data Tables */
+.cmp-text table.cmeDataTable th {background: rgb(17,43,74); color: #fff;}
+.reverse .cmp-text table.cmeDataTable th {background: rgb(17,43,74); color: #C2CACE;}
+table.cmeDataTable tr:hover td {background-color: #EBEDEE !important;}
+
+/* Reset Utilities */
+.cmeSquishyTable {width: auto !important;}
+
+/* Roomy Table */
+.cmp-text table.cmeRoomyTable td {vertical-align: top; padding: 15px;}
+.cmp-text table.cmeRoomyTable th {padding: 15px;}
+.cmp-text table.cmeRoomyTable td {font-size: 16px; line-height: 150%;}
+.cmp-text table.cmeRoomyTable td p {font-size: 16px; margin-bottom: 30px; line-height: 150%;}
+
+/* Compact Table - Product slates */
+.cmp-text table.cmeCompactTable td, table.cmeCompactTable th {padding: 5px 4px !important;}
+.cmp-text table.cmeCompactTable td, .cmp-text table.cmeCompactTable td p, .cmp-text table.cmeCompactTable td li {font-size: 12px; line-height: 20px;}
+
+.cmp-text table ol, .cmp-text table ul, .rich-text-editor table ol, .rich-text-editor table ul {padding-inline-start: 20px; margin-bottom: 15px;}
+.cmp-text table ol li, .cmp-text table ul li, .rich-text-editor table ol li, .rich-text-editor table ul li {margin-bottom: 0;}
+.cmp-text table p {margin-bottom: .9375rem;}
+.cmp-text table ol:last-child, .cmp-text table ul:last-child, .rich-text-editor table ol:last-child, .rich-text-editor table ul:last-child, .cmp-text table p:last-child  {margin-bottom: 0;}
+
+/* Image Caption Legend Colors */
+/* Bright Blue */ .legend-1 {color: #25A9E0;} 
+/* Blue2 */ .legend-2 {color: #112B4A;}
+/* Green */ .legend-3 {color: #00E473;}
+/* Blue4 */ .legend-4 {color: #006EB6 ;}
+/* Gray4 */ .legend-5 {color: #C2CACE;} 
+</style>
+
+
+
+  
+
+</div>
+
+</div>
+</div>
+
+
+</div>
+</main>
+<div class="content-reference">
+
+
+  
+    
+    
+    
+  
+  
+  
+  
+    
+    
+    
+
+    
+    
+
+    
+
+
+
+<div class="xf-content-height">
+    
+
+
+
+
+    
+    
+    
+  
+  <div data-component-id="95f23c09" class="component section footer-style      " style="background-color: rgba(0,0,0,0);" aria-label="Section" data-path-id="95f23c09" data-animate-duration="300" data-animate-delay="0">
+    
+    <div class="container   ">
+
+  
+  
+
+<div class="component row  justify-content-start ">
+  <div class="col-md">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="company" data-collapse-at="small" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/company/about-us.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;About Us&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/company/corporate-citizenship.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Corporate Citizenship&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/media-room.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Media Room&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/careers.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Careers&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;http://investor.cmegroup.com/&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Investor Relations&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/subscription-center.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Subscription Center&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/tools-information/contacts-list.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Contact Us&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="international" data-collapse-at="small" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/company/history/global-offices.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Global Offices&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/international&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Partner Exchanges&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/international/latin-america.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Latin America&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/international/emea.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Europe, Middle East &amp; Africa&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/international/asia-pacific.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Asia-Pacific&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="MARKET REGULATION" data-collapse-at="small" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/market-regulation.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Overview&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-regulation/rulebook.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Rulebooks&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/rulebook/rulebook-harmonization.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Regulatory Guidance&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-regulation/rule-filings.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Rule Filings&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/market-regulation/outreach.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;Regulatory Outreach&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+<div class="col-md">
+
+  
+  <div class="component react collapsible" data-is-edit="false" data-title="OUR EXCHANGES " data-collapse-at="small" data-list-style="default-list" data-links="[{&#34;linkUrl&#34;:&#34;/company/cme.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;CME&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/company/cbot.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;CBOT&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/company/nymex.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;NYMEX&#34;,&#34;code&#34;:null},{&#34;linkUrl&#34;:&#34;/company/comex.html&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:false,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;COMEX&#34;,&#34;code&#34;:null}]">
+</div>
+
+  
+
+
+
+
+    
+
+
+  
+
+</div>
+
+</div>
+
+
+<div class="component row  justify-content-start ">
+  <div class="col-sm">
+
+  
+  
+<div class="component social-icons">
+  <ul class="social-icons-list">
+    <li class="social-icons-item">
+      <a class="social-link" href="https://www.youtube.com/user/cmegroup" target="_blank" rel="noopener">
+        <img class="social-icon" src="/images/common/icons/youtube.svg" alt="YouTube" width="40" height="40" loading="lazy"/>
+      </a>
+    </li>
+  
+    <li class="social-icons-item">
+      <a class="social-link" href="http://twitter.com/CMEGroup" target="_blank" rel="noopener">
+        <img class="social-icon" src="/images/common/icons/twitter.svg" alt="Twitter" width="40" height="40" loading="lazy"/>
+      </a>
+    </li>
+  
+    <li class="social-icons-item">
+      <a class="social-link" href="http://www.facebook.com/CMEGroup" target="_blank" rel="noopener">
+        <img class="social-icon" src="/images/common/icons/facebook.svg" alt="Facebook" width="40" height="40" loading="lazy"/>
+      </a>
+    </li>
+  
+    <li class="social-icons-item">
+      <a class="social-link" href="http://www.linkedin.com/company/cme-group" target="_blank" rel="noopener">
+        <img class="social-icon" src="/images/common/icons/linkedin.svg" alt="LinkedIn" width="40" height="40" loading="lazy"/>
+      </a>
+    </li>
+  
+    <li class="social-icons-item">
+      <a class="social-link" href="http://instagram.com/cmegroup" target="_blank" rel="noopener">
+        <img class="social-icon" src="/images/common/icons/instagram.svg" alt="Instagram" width="40" height="40" loading="lazy"/>
+      </a>
+    </li>
+  
+    <li class="social-icons-item">
+      <a class="social-link" href="http://www.cmegroup.com/rss/" target="_blank" rel="noopener">
+        <img class="social-icon" src="/images/common/icons/rss.svg" alt="Rss" width="40" height="40" loading="lazy"/>
+      </a>
+    </li>
+  </ul>
+</div>
+
+  
+
+</div>
+<div class="col-sm-2">
+
+  
+  <div class="component react language-selector" data-is-edit="false" data-links="[{&#34;linkUrl&#34;:&#34;/&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:null,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;en&#34;,&#34;label&#34;:&#34;English&#34;},{&#34;linkUrl&#34;:&#34;/cn-s/&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:null,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;zh_cn&#34;,&#34;label&#34;:&#34;中文(简体)&#34;},{&#34;linkUrl&#34;:&#34;/cn-t/&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:null,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;zh_hk&#34;,&#34;label&#34;:&#34;中文(繁體)&#34;},{&#34;linkUrl&#34;:&#34;/ko/&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:null,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;ko&#34;,&#34;label&#34;:&#34;한국어&#34;},{&#34;linkUrl&#34;:&#34;/ja/&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:null,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;ja&#34;,&#34;label&#34;:&#34;日本語&#34;},{&#34;linkUrl&#34;:&#34;/pt/&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:null,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;pt&#34;,&#34;label&#34;:&#34;Português&#34;},{&#34;linkUrl&#34;:&#34;/es/&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:null,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;es&#34;,&#34;label&#34;:&#34;Español&#34;},{&#34;linkUrl&#34;:&#34;/de/&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:null,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;de&#34;,&#34;label&#34;:&#34;Deutsch&#34;},{&#34;linkUrl&#34;:&#34;/it/&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:null,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;it&#34;,&#34;label&#34;:&#34;Italiano&#34;},{&#34;linkUrl&#34;:&#34;/fr/&#34;,&#34;linkTarget&#34;:null,&#34;linkDownload&#34;:null,&#34;linkNoFollow&#34;:null,&#34;text&#34;:&#34;fr&#34;,&#34;label&#34;:&#34;Français&#34;}]" data-current-language="en">
+</div>
+
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/language-selector.c806a9a3563fd736819726caa33a4f7b.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/language-selector.83d0469b33809d91def9b1d3a0badb1c.js"></script>
+
+
+
+
+
+    
+
+
+  
+
+</div>
+
+</div>
+
+    
+
+
+
+<script type="text/javascript">
+  var ls = window.localStorage;
+var key = 'searches';
+var value = JSON.parse(ls.getItem(key));
+if (Object.keys(value || {}).indexOf('data') > -1) {
+  ls.setItem(key, JSON.stringify(value.data))
+}
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(function(registrations) {
+    for (let registration of registrations) {
+      if (registration.active.scriptURL.indexOf('cmegroup.com/sw.js') > -1) {
+        registration.unregister();
+      }
+    }
+  });
+}
+
+</script>
+
+  
+
+</div>
+  </div>
+
+
+
+    
+    
+    
+  
+  <div data-component-id="f781d3a5" class="component section disclaimer-style reverse      " style="background-color: #3A464F;" aria-label="Section" data-path-id="f781d3a5" data-animate-duration="300" data-animate-delay="0">
+    
+    <div class="container   ">
+
+  
+  <div class="component react feedback-form"></div>
+
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/feedback-form.b7e4d41a66520ec5f7bab3a91ed5565e.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/feedback-form.85422b5288aefabe9283ddac48d508fe.js"></script>
+
+
+
+
+
+<div class="component row  no-gutters justify-content-start ">
+  <div class="col-md-9; padding-y:40px">
+
+  
+  <div class="cmp cmp-text">
+<div class="component react text">
+  <div path="text">
+    
+      <p id="disclaimerText">CME Group is the world’s leading derivatives marketplace. The company is comprised of four Designated Contract Markets (DCMs). <br />
+Further information on each exchange's rules and product listings can be found by clicking on the links to <a href="/company/cme.html">CME</a>, <a href="/company/cbot.html">CBOT</a>, <a href="/company/nymex.html">NYMEX</a> and <a href="/company/comex.html">COMEX</a>.</p>
+
+    
+  </div>
+</div>
+
+    
+
+
+  
+
+
+
+</div>
+
+  
+
+</div>
+
+</div>
+
+
+<div class="component row  justify-content-start crmb-4 ">
+  <div class="col-md-3">
+
+  
+  <div class="cmp cmp-text">
+<div class="component react text">
+  <div path="text">
+    
+      <p>© 2026 CME Group Inc. All rights reserved.</p>
+
+    
+  </div>
+</div>
+
+    
+
+
+  
+
+
+
+</div>
+
+  
+
+</div>
+<div class="col-md-9">
+
+  
+  <div class="cmp cmp-text">
+<div class="component react text">
+  <div path="text">
+    
+      <p><a href="/disclaimer.html">Disclaimer</a>  |  <a href="/privacy-policy.html">Privacy Notice</a>  |  <a href="/cookie-policy.html">Cookie Notice</a>  |  <a href="/files/terms-of-use.pdf">Terms of Use</a>  |  <a href="/trading/market-data-explanation-disclaimer.html">Data Terms of Use</a>  |  <a href="/investor-relations/files/statement-on-modern-slavery.pdf">Modern Slavery Act Transparency Statement</a>  |  <a title="Report a Security Concern" href="/report-a-security-concern.html">Report a Security Concern</a></p>
+
+    
+  </div>
+</div>
+
+    
+
+
+  
+
+
+
+</div>
+
+  
+
+</div>
+
+</div>
+
+  
+
+</div>
+  </div>
+
+
+
+
+</div>
+
+  
+
+
+  
+
+</div>
+
+<script type="text/javascript">
+  window.i18nTranslations = {"-3pm FIXING":"-3pm FIXING","7 Days":"7 Days","14 Days":"14 Days","30 Days":"30 Days","2 Year":"2 Year","3 Year":"3 Year","5 Year":"5 Year","7 Year":"7 Year","10 Year":"10 Year","20 Year":"20 Year","30 Year":"30 Year","3M Libor":"3M Libor","A member of our team will be contacting you shortly":"A member of our team will be contacting you shortly","A Technical error has occurred. Please try again in a few minutes.":"A Technical error has occurred. Please try again in a few minutes.","A trade at settlement (TAS) is an order type that specifies the day’s settlement price as the order price.":"A trade at settlement (TAS) is an order type that specifies the day’s settlement price as the order price.","About this Report":"About this Report","Act":"Act","Action":"Action","Actions":"Actions","Active":"Active","Active Subscriptions":"Active Subscriptions","ACTIVE FILTER":"ACTIVE FILTER","ACTIVE FILTERS":"ACTIVE FILTERS","Activity":"Activity","Add":"Add","Add New ":"Add New ","Add the Products you track & trade":"Add the Products you track & trade","Add Products":"Add Products","Add Products to Watchlist":"Add Products to Watchlist","Add to portfolio":"Add to portfolio","Add to Watchlist":"Add to Watchlist","Agriculture and Alternative":"Agriculture and Alternative","Alerts":"Alerts","Alert saved successfully":"Alert saved successfully","Almost Done! Please fill out the form to register for the event":"Almost Done! Please fill out the form to register for the event","Almost Done! To register to this event you must activate your CME Group Account":"Almost Done! To register to this event you must activate your CME Group Account","Alphabetical":"Alphabetical","All":"All","All Asset Classes":"All Asset Classes","All Asset Classes & Product Groups":"All Asset Classes & Product Groups","All Brokers":"All Brokers","All Exchanges":"All Exchanges","All market data contained within the CME Group website should be considered as a reference only and should not be used as validation against, nor as a complement to, real-time market data feeds. Settlement prices on instruments without open interest or volume are provided for web users only and are not published on Market Data Platform (MDP). These prices are not based on market activity.":"All market data contained within the CME Group website should be considered as a reference only and should not be used as validation against, nor as a complement to, real-time market data feeds. Settlement prices on instruments without open interest or volume are provided for web users only and are not published on Market Data Platform (MDP). These prices are not based on market activity.","All marketing communications":"All marketing communications","All Products":"All Products","All Products Groups":"All Products Groups","All Results":"All Results","All REPORTS":"All REPORTS","*All times displayed are U.S. Central (GMT -6:00).":"*All times displayed are U.S. Central (GMT -6:00).","Allows GTC/GTD orders only placement, modification, and cancellation. No order matching.":"Allows GTC/GTD orders only placement, modification, and cancellation. No order matching.","Alphabetical (A-Z)":"Alphabetical (A-Z)","Alphabetical (Z-A)":"Alphabetical (Z-A)","Already have an account?":"Already have an account?","An account is required to continue":"An account is required to continue","An account is required to download calendar file data":"An account is required to download calendar file data","An account is required to download expiration events data. Sign up or login":"An account is required to download expiration events data. Sign up or login","An account is required to download margins file data":"An account is required to download margins file data","An account is required to download VOI data":"An account is required to download VOI data","An account is required to download volume file data":"An account is required to download volume file data","An account is required to save and manage a portfolio on cmegroup.com":"An account is required to save and manage a portfolio on cmegroup.com","An exchange for physical trade (EFP) is a privately negotiated and simultaneous exchange of a futures position for a cash position.":"An exchange for physical trade (EFP) is a privately negotiated and simultaneous exchange of a futures position for a cash position.","An exchange for risk (EFR) is a privately negotiated simultaneous exchange of an Exchange futures position for a corresponding OTC swap or other OTC instrument.":"An exchange for risk (EFR) is a privately negotiated simultaneous exchange of an Exchange futures position for a corresponding OTC swap or other OTC instrument.","An exchange for swap (EFS) is a privately negotiated trade in which a position in a futures contract is exchanged for a swap position in the same contract.":"An exchange for swap (EFS) is a privately negotiated trade in which a position in a futures contract is exchanged for a swap position in the same contract.","An exchange of options for options (EOO) trade is a privately negotiated, simultaneous exchange of an Exchange option position for a corresponding OTC instrument or instrument with similar characteristics.":"An exchange of options for options (EOO) trade is a privately negotiated, simultaneous exchange of an Exchange option position for a corresponding OTC instrument or instrument with similar characteristics.","and":"and","apply":"apply","Apply Filters":"Apply Filters","Are you sure you want to delete the selected products from your watchlist?":"Are you sure you want to delete the selected products from your watchlist?","Are you sure you want to remove this bookmark?":"Are you sure you want to remove this bookmark?","Are you sure you want to delete this product from your watchlist?":"Are you sure you want to delete this product from your watchlist?","Are you sure you want to delete this watchlist from your collection?":"Are you sure you want to delete this watchlist from your collection?","Are you sure you want to leave this page?":"Are you sure you want to leave this page?","Are you sure you want to remove all your subscriptions?":"Are you sure you want to remove all your subscriptions?","Are you sure you want to remove this subscription?":"Are you sure you want to remove this subscription?","as of":"as of","Asset Class":"Asset Class","Asterisk indicates that the Actual value for the Previous period was revised from its originally published value.":"Asterisk indicates that the Actual value for the Previous period was revised from its originally published value.","At a Glance":"At a Glance","At Close":"At Close","At The Money":"At The Money","Auto-refresh is off":"Auto-refresh is off","Auto-refresh is on":"Auto-refresh is on","Available for Lease":"Available for Lease","Back":"Back","Back to Watchlists":"Back to Watchlists","Beijing 16:30":"Beijing 16:30","Bid":"Bid","Block contents":"Block contents","Block Trades":"Block Trades","block trades.":"block trades.","Block trade alerts":"Block trade alerts","Bloomberg":"Bloomberg","Bookmarks":"Bookmarks","bps":"bps","business email":"business email","Business Email":"Business Email","Business Insider":"Business Insider","By":"By","By clicking above, you are subscribing and agreeing to receive the specified content. I understand that I can unsubscribe at any time":"By clicking above, you are subscribing and agreeing to receive the specified content. I understand that I can unsubscribe at any time","Calendar":"Calendar","Calendar Date":"Calendar Date","Call Total":"Call Total","Calls":"Calls","Cancel":"Cancel","Cash FX":"Cash FX","Cash Treasuries/EU Bonds/Repo":"Cash Treasuries/EU Bonds/Repo","Category":"Category","CATEGORY":"CATEGORY","CBOT Current Membership Prices":"CBOT Current Membership Prices","Certificate of Course Completion":"Certificate of Course Completion","CFDs":"CFDs","Change":"Change","Changes not saved due to an error.":"Changes not saved due to an error.","Changes saved successfully.":"Changes saved successfully.","Changes you have made will not be saved.":"Changes you have made will not be saved.","Chart":"Chart","ChFinal Dataart":"ChFinal Dataart","Choose from our curated watchlists":"Choose from our curated watchlists","Clear all":"Clear all","Cleared As":"Cleared As","Clear My Brokers":"Clear My Brokers","Clearing":"Clearing","Clearport/Pnt":"Clearport/Pnt","click here":"click here","Click here to":"Click here to","click here to view all products":"click here to view all products","Close":"Close","CME Clearport":"CME Clearport","CME Current Membership Prices":"CME Current Membership Prices","CME Customer Center":"CME Customer Center","CME Direct":"CME Direct","CME Division":"CME Division","CME Globex":"CME Globex","Cme Group Institute":"Cme Group Institute","CME Group Login":"CME Group Login","CME Group Price Action Alerts":"CME Group Price Action Alerts","CME Group Privacy Notice":"CME Group Privacy Notice","CME Term Sofr":"CME Term Sofr","CNBC":"CNBC","CNN":"CNN","Code":"Code","Code is Globex":" ","Cons":"Cons","Contract":"Contract","Contract Code":"Contract Code","Contracts":"Contracts"," Contract":" Contract"," Contract Month":" Contract Month","Contract Multiplier":"Contract Multiplier","Contract Specs":"Contract Specs","COMEX Division Full Membership Seat":"COMEX Division Full Membership Seat","COMEX Division Options Membership Seat":"COMEX Division Options Membership Seat","company name":"company name","company type":"company type","Compare":"Compare","Completed":"Completed","Congratulations!":"Congratulations!","Contact Person":"Contact Person","contact us":"contact us","Continue Lesson":"Continue Lesson","Contract Month":"Contract Month","Copy Products":"Copy Products","Copy to":"Copy to","Copy to clipboard":"Copy to clipboard","Copy to Watchlist(s)":"Copy to Watchlist(s)","Correct":"Correct","country":"country","Course":"Course","Course Complete":"Course Complete","Course Completed":"Course Completed","Course Completion Certificate":"Course Completion Certificate","Courses":"Courses","Create":"Create","create an account":"create an account","Create an account":"Create an account","Create Watchlist":"Create Watchlist","Credit":"Credit","Crypto":"Crypto","Cryptocurrencies":"Cryptocurrencies","Cryptocurrency":"Cryptocurrency","Curated By Cme Group":"Curated By Cme Group","Currency Pair":"Currency Pair","Current rate:":"","Currently filtered by":"Currently filtered by","Currently filtering by:":"","Cvol":"Cvol","C/P & STRIKE":"C/P & STRIKE","Data":"Data","Date":"Date","Date published":"Date published","Daily Finance Adjustment":"Daily Finance Adjustment","Daily Mkt High":"Daily Mkt High","Daily Mkt Low":"Daily Mkt Low","Daily Touch High":"Daily Touch High","Daily Touch Low":"Daily Touch Low","Daily Volume":"Daily Volume","Date Available":"Date Available","Day AVG":"Day AVG","Definition":"Definition","Delete":"Delete","Delete Product":"Delete Product","Delete Watchlist":"Delete Watchlist","Deliveries":"Deliveries","Delivery Method":"Delivery Method","Description":"Description","Discover":"Discover","Do Not Currently Trade":"Do Not Currently Trade","Do you currently trade/clear:":"Do you currently trade/clear:","Don't worry! We have saved your portfolio in a new watchlist called ":"Don't worry! We have saved your portfolio in a new watchlist called ","Download":"Download","Download Certificate":"Download Certificate","Download data":"Download data","Download Data":"Download Data","Download trading hours data for requested dates and products.":"Download trading hours data for requested dates and products.","Duplicate":"Duplicate","Duplicate Watchlist":"Duplicate Watchlist","Economic Calendar":"Economic Calendar","Edit Account Information":"Edit Account Information","Edit Watchlist":"Edit Watchlist","Effective Date":"Effective Date","Effective Date:":"Effective Date:","Effr Ois":"Effr Ois","EFP":"EFP","EFR":"EFR","EFS":"EFS","Email":"Email","Email to":"Email to","Email preferences":"Email preferences","End":"End","End of Day":"End of Day","End Period":"End Period","Energy":"Energy","EOO":"EOO","Equities":"Equities","Error":"Error","Estimated volume totals":"Estimated volume totals","Est. Vol":"Est. Vol","Est. Volume":"Est. Volume","ETFs":"ETFs","Event":"Event","Events":"Events","Events can&#39;t display updates right now. The issue will be resolved soon.":"Events can&#39;t display updates right now. The issue will be resolved soon.","Exchange":"Exchange","Exercise & Assignment Price":"Exercise & Assignment Price","Exercises":"Exercises","Expiration":"Expiration","Expired":"Expired","Expiry":"Expiry","Featured":"Featured","Featured Subscriptions":"Featured Subscriptions","Featured Watchlists":"Featured Watchlists","Filter":"Filter","Filter By":"Filter By","Filter Reports":"Filter Reports","Filters":"Filters","Final":"Final","Final Close of the date. Day and GTD (current trade date) orders are eliminated.":"Final Close of the date. Day and GTD (current trade date) orders are eliminated.","Final Data":"Final Data","Final volume updates at 10 am CT next business day.":"Final volume updates at 10 am CT next business day.","Financial Times":"Financial Times","Find Broker":"Find Broker","Finish":"Finish","First Delivery":"First Delivery","First Holding":"First Holding","first name":"first name","First Notice":"First Notice","First Position":"First Position","First Select Products":"First Select Products","First Trade":"First Trade","FISN":"FISN","Fixing Code":"Fixing Code","Follow":"Follow","Follow Watchlist":"Follow Watchlist","Followers":"Followers","Forbes":"Forbes","Foreign Exchange":"Foreign Exchange","Format: Globex product code, Month, Year":"Format: Globex product code, Month, Year","Forwards":"Forwards","Frequency":"Frequency","Frequency of Alerts":"Frequency of Alerts","From:":"From:","From":"From","from":"from","Front months are called out with FM indicator":"Front months are called out with FM indicator","Future Volume":"Future Volume","Futures":"Futures","Futures Fixing":"Futures Fixing","FX RATE":"FX RATE","FX Currency Pair":"FX Currency Pair","FX Spots/Forwards/Non-Deliverable Forwards":"FX Spots/Forwards/Non-Deliverable Forwards","GEM Division":"GEM Division","Get notifications pushed to you on any device where you are logged into the CME Group Mobile App":"Get notifications pushed to you on any device where you are logged into the CME Group Mobile App","Globex":"Globex","Globex Code":"Globex Code","Great Job!":"Great Job!","Globex Product Code":"Globex Product Code","Go to Watchlists":"Go to Watchlists","Help":"Help","High":"High","High Impact":"High Impact","Historical Month End Seat Pricing":"Historical Month End Seat Pricing","Historical Price Trends":"Historical Price Trends","Historical Prices":"Historical Prices","Historical Pricing":"Historical Pricing","Historical Pricing (Avg/Mo)":"Historical Pricing (Avg/Mo)","Historical Sales Pricing":"Historical Sales Pricing","holiday hours are outlined in yellow.":"holiday hours are outlined in yellow.","Holiday Hours outlined in yellow.":"Holiday Hours outlined in yellow.","Hosting Services":"Hosting Services","hour":"HOUR","hr":"hr","If you have any questions, please feel free to":"If you have any questions, please feel free to","IMM Division":"IMM Division","Impact":"Impact","Implied Volatility":"Implied Volatility","In progress":"In progress","In This Article":"In This Article","Incentive Program":"Incentive Program","Incorrect":"Incorrect","Index":"Index","Index Value %":"Index Value %","Indicator":"Indicator","Interest Rates/Credit":"Interest Rates/Credit","Internal Testing Only: BTIC & Taco Products (CST)":"Internal Testing Only: BTIC & Taco Products (CST)","Inters/Intex/Supers":"Inters/Intex/Supers","Interrumption of continuous trading. Only order cancellation is allowed. No order matching.":"Interrumption of continuous trading. Only order cancellation is allowed. No order matching.","Intras":"Intras","Introducing Watchlists":"Introducing Watchlists","Investopedia":"Investopedia","IOM Division":"IOM Division","job role":"job role","Leave this page":"Leave this page","Last":"Last","Last 3 membership sales":"Last 3 membership sales","Last Delivery":"Last Delivery","Last Holding":"Last Holding","Last Launched":"Last Launched","last name":"last name","Last Notice":"Last Notice","Last Position":"Last Position","Last Price":"Last Price","Last Sale":"Last Sale","Last Trade":"Last Trade","Last updated":"Last updated","Last Updated":"Last Updated","Launch Course":"Launch Course","Launch Lesson":"Launch Lesson","Lease Price":"Lease Price","Lease prices with corresponding sales prices as of":"Lease prices with corresponding sales prices as of","Leases Available":"Leases Available","Lesson":"Lesson","Lessons":"Lessons","lesson Completed":"lesson Completed","lessons completed":"lessons completed","lessons complete":"lessons complete","Lessor":"Lessor","Let us know what educational content you would be interested in seeing":"Let us know what educational content you would be interested in seeing","Link copied to clipboard":"Link copied to clipboard","List":"List","listen":"Listen","Loading...":"Loading...","Load All":"Load All","Load More":"Load More","Loading results":"Loading results","Loading results...":"Loading results...","Login":"Login","Log in":"Log in","Log management":"Log management","Login or create a free account to add products from this watchlist":"Login or create a free account to add products from this watchlist","Login or create a free account to add products to watchlist":"Login or create a free account to add products to watchlist","Login or create a free account to copy products to watchlist":"Login or create a free account to copy products to watchlist","Login or create a free account to duplicate this watchlist":"Login or create a free account to duplicate this watchlist","Login or create a free account to follow this watchlist":"Login or create a free account to follow this watchlist","Log in or create a free account to set up alerts via email or push notifications to your phone.":"Log in or create a free account to set up alerts via email or push notifications to your phone.","Login or create a free account to stream block trade data.":"Login or create a free account to stream block trade data.","Login or create a free account to stream BrokerTec data.":"Login or create a free account to stream BrokerTec data.","Login or create a free account to stream product quotes data.":"Login or create a free account to stream product quotes data.","Login or create a free account to subscribe or manage Newsletter Subscriptions.":"Login or create a free account to subscribe or manage Newsletter Subscriptions.","Log In":"Log In","Log in to or create a CMEGroup.com Account to download trading hours data for requested dates and products.":"Log in to or create a CMEGroup.com Account to download trading hours data for requested dates and products.","Log in to receive block alerts notifications via email or push notifications on your phone.":"Log in to receive block alerts notifications via email or push notifications on your phone.","Logout":"Logout","London 13:30":"London 13:30","Low":"Low","Low Impact":"Low Impact","Main. Vol. Scan":"Main. Vol. Scan","Maintenance":"Maintenance","Maintenance Som Rate":"Maintenance SOM Rate","Manage":"Manage","Manage block alerts notifications via email or push notifications on your phone.":"Manage block alerts notifications via email or push notifications on your phone.","Manage Email Subscriptions":"Manage Email Subscriptions","Manage Portfolio":"Manage Portfolio","Manage your email subscriptions":"Manage your email subscriptions","Managed Futures":"Managed Futures","Margin Requirements":"Margin Requirements","Margins":"Margins","MarketWatch":"MarketWatch","Market Alerts can&#39;t display updates right now. The issue will be resolved soon.":"Market Alerts can&#39;t display updates right now. The issue will be resolved soon.","Market data is delayed by at least":"Market data is delayed by at least","Marker Price":"Marker Price","Market Data":"Market Data","Market Pulse":"Market Pulse","Markets events can&#39;t display updates right now. The issue will be resolved soon.":"Markets events can&#39;t display updates right now. The issue will be resolved soon.","market sentiment":"market sentiment","Matching Events":"Matching Events","Matching Events for":"Matching Events for","Maturity":"Maturity","Membership Interest Sales":"Membership Interest Sales","Membership Interest Swap Sales":"Membership Interest Swap Sales","Membership (W/out Stock)":"Membership (W/out Stock)","Metals":"Metals","min":"Min","min read":"min read","min watch":"min watch","Minimal Impact":"Minimal Impact","Minimum Tick Value":"Minimum Tick Value","Minimum Price Fluctuation":"Minimum Price Fluctuation","Minimum Trade Size":"Minimum Trade Size","Mobile app push notification":"Mobile app push notification","Month":"Month","More":"More","Most recently saved":"Most recently saved","MSN":"MSN","My Alerts":"My Alerts","My Blocks allows you to view the block trades for which you have alerts set.":"My Blocks allows you to view the block trades for which you have alerts set.","My Brokers":"My Brokers","My Portfolio":"My Portfolio","My Watchlists":"My Watchlists","Name":"Name","Name of watchlist":"Name of watchlist","Negotiated Date":"Negotiated Date","NET PRICE":"NET PRICE","New":"New","New Products Only":"New Products Only","New York 16:00":"New York 16:00","Next":"Next","Next Fed Meeting:":"Next Fed Meeting:","Next Question":"Next Question","Next release date:":"Next release date:","No":"No","No data":"No data","no matching":"no matching","No Matching Events":"No Matching Events","No matching records found.":"No matching records found.","No Products found":"No Products found","No products found. Please try again":"No products found. Please try again","No results found":"No results found","No results found.":"No results found.","No results found. There are no results that meet your selection criteria.":"No results found. There are no results that meet your selection criteria.","No results match your filter sections":"No results match your filter sections","No results match your filter selections":"No results match your filter selections","Non-tradeable Settlements":"Non-tradeable Settlements","Notice Date:":"Notice Date:","Notional Value":"Notional Value","Notional Exposure":"Notional Exposure","NYMEX Division Class A Membership Seat":"NYMEX Division Class A Membership Seat","NYMEX/COMEX Lease Prices":"NYMEX/COMEX Lease Prices","of":"of","of watchlists":"of watchlists","Offer":"Offer","Oi":"Oi","Oldest":"Oldest","On-the-run":"On-the-run","Once saved you will receive notifications as your market conditions has been met":"Once saved you will receive notifications as your market conditions has been met","Open":"Open","Open Interest":"Open Interest","Open Outcry":"Open Outcry","Opt Out":"Opt Out","Opt out of all marketing communications":"Opt out of all marketing communications","Opt out of marketing communications emails":"Opt out of marketing communications emails","Options":"Options","Options on Futures":"Options on Futures","Options Volume":"Options Volume","or":"or","Order Entry, modification, and cancel are allowed. No order matching.":"Order Entry, modification, and cancel are allowed. No order matching.","OTC Cleared Swaps":"OTC Cleared Swaps","OTC Solutions":"OTC Solutions","Other":"Other","other (please specify)":"other (please specify)","Outright Sofr Rate":"Outright Sofr Rate","Outrights/Vol Scans":"Outrights/Vol Scans","Overall Combined Total":"Overall Combined Total","Overnight":"Overnight","PDF Viewer":"PDF Viewer","Pending all relevant regulatory reviews":"Pending all relevant regulatory reviews","Period":"Period","PGP Keys":"PGP Keys","Phone No.":"Phone No.","Play animation - 2012 to present":"Play animation - 2012 to present","Please":"Please","Please choose new filters or check back at a later time.":"Please choose new filters or check back at a later time.","Please enter a Minimum trade size between 1 and 100,000.":"Please enter a Minimum trade size between 1 and 100,000.","Please limit the message to 500 characters.":"Please limit the message to 500 characters.","Please Select...":"Please Select...","Please select a delivery method.":"Please select a delivery method.","Please select alert frequency.":"Please select alert frequency.","Please select block contents to continue.":"Please select block contents to continue.","Please select new filters or check back at a later time.":"Please select new filters or check back at a later time.","Please select one or more product groups to receive block trade alerts.":"Please select one or more product groups to receive block trade alerts.","Please Select Product to generate calculation":"Please Select Product to generate calculation","PNT / ClearPort":"PNT / ClearPort","PNT ClearPort":"PNT ClearPort","PNT is an acronym for privately negotiated trades, which may be reported through Clearport, CME Group’s clearing service for over-the-counter markets, or directly into CME Clearing.":"PNT is an acronym for privately negotiated trades, which may be reported through Clearport, CME Group’s clearing service for over-the-counter markets, or directly into CME Clearing.","Popular":"Popular","powered by Red Sky, is a real-time notification and analytics service that delivers automated alerts generated by a significant move in price or technical indicators":"powered by Red Sky, is a real-time notification and analytics service that delivers automated alerts generated by a significant move in price or technical indicators","Preliminary":"Preliminary","Preliminary Data":"Preliminary Data","Preliminary volume updates at approximately 9 pm CT.":"Preliminary volume updates at approximately 9 pm CT.","Premium":"Premium","Premium Course":"Premium Course","Presented to":"Presented to","Prev":"Prev","Prev. Day Volume":"Prev. Day Volume","Previous Day Volume":"Previous Day Volume","Previous 6 Month":"Previous 6 Month","Previous Month":"Previous Month","Price":"Price","Price Action Alerts":"Price Action Alerts","Price for matched BID/OFFER transactions":"Price for matched BID/OFFER transactions","Prices are as of":"Prices are as of","Primary Product Service or Interest":"Primary Product Service or Interest","Prior":"Prior","Prior day OI":"Prior day OI","Prior day open interest totals":"Prior day open interest totals","Prior Settle":"Prior Settle","Privacy Policy":"Privacy Policy","Processing of all personal data shared will be completed in accordance with the":"Processing of all personal data shared will be completed in accordance with the","Product":"Product","Product Details":"Product Details","Product Group":"Product Group","Product Page":"Product Page","Product Slot":"Product Slot","Products":"Products","PRODUCTS":"PRODUCTS","Products added to your watchlist":"Products added to your watchlist","Product Code":"Product Code","Product Name":"Product Name","Profile":"Profile","Protocols":"Protocols","Provide feedback or share an idea":"Provide feedback or share an idea","Put Total":"Put Total","Puts":"Puts","QTY":"QTY","Quotes":"Quotes","Quotes are delayed by at least 10 minutes. Last updated":"Quotes are delayed by at least 10 minutes. Last updated","Ratio":"Ratio","read":"read","read more":"read more","Read more":"Read more","Real Time":"Real Time","Real-Time Index":"Real-Time Index","Recaptcha validation fail.":"Recaptcha validation fail.","Receive block alerts notifications via email or push notifications on your phone.":"Receive block alerts notifications via email or push notifications on your phone.","recent sentiment alerts":"recent sentiment alerts","Recent trend shifts":"Recent trend shifts","Recommended":"Recommended","Reference Rate":"Reference Rate","Refine By":"Refine By","Register":"Register","Register for this event":"Register for this event","RFR Sterling":"RFR Sterling","RFR USD 3pm, End of Day":"RFR USD 3pm, End of Day","RFR USD 10am":"RFR USD 10am","Remove":"Remove","Remove all":"Remove all","Remove bookmark":"Remove bookmark","Remove Subscriptions":"Remove Subscriptions","reports for":"reports for","Reported Lease Information - Lease Renewals":"Reported Lease Information - Lease Renewals","Reported Lease Information - New Leases":"Reported Lease Information - New Leases","Reset":"Reset","Reset all Filters":"Reset all Filters","Reset filters":"Reset filters","Resources you use for trade ideas/news/education?":"Resources you use for trade ideas/news/education?","Restore":"Restore","Retail":"Retail","Return to top":"Return to top","Review contract highlights":"Review contract highlights","Review your Answers":"Review your Answers","Sample":"Sample","Save":"Save","Saved":"Saved","Saved to":"Saved to","Saving...":"Saving...","Search":"Search","Search All Brokers":"Search All Brokers","Search by event":"Search by event","Search by product name, Clearing or Globex code":"Search by product name, Clearing or Globex code","Search by Product name or code":"Search by Product name or code","Search by product name or globex code":"Search by product name or globex code","Search by product name or symbol":"Search by product name or symbol","Search product names or codes":"Search product names or codes","Search products, pages and more":"Search products, pages and more","Select all that apply":"Select all that apply","Select one of the following":"Select one of the following","Search results for:":"Search results for:","See other dates or refilter results":"See other dates or refilter results","Seeking Alpha":"Seeking Alpha","Select All":"Select All","Select cover image":"Select cover image","Select Products":"Select Products","Selected":"Selected","Service Error - Please try again later":"Service Error - Please try again later","Set Alerts":"Set Alerts","Set Alerts now to create your custom view.":"Set Alerts now to create your custom view.","Set All":"Set All","Set block alerts":"Set block alerts","Settlement":"Settlement","Settlements":"Settlements","Settlement (Spot Index)":"Settlement (Spot Index)","Settlement (Non-tradeable Cleared future)":"Settlement (Non-tradeable Cleared future)","Settle":"Settle","Share":"Share","Share this watchlist":"Share this watchlist","Short Option Minimum":"Short Option Minimum","Showing":"Showing","Showing {total} Results":"Showing {total} Results","Showing {total} Brokers":"Showing {total} Brokers","Side":"Side","Size":"Size","Sign up or Log in":"Sign up or Log in","Size is the number of spreads of the traded ratio.":"Size is the number of spreads of the traded ratio.","Sofr":"Sofr","Sofr Averages":"Sofr Averages","Sofr Ois Basis (BP)":"Sofr Ois Basis (BP)","Sort By":"Sort By","Sorry, please select a new date range":"Sorry, please select a new date range","Spread Product":"Spread Products","Start":"Start","Start of continuous trading phase. Order matching begins.":"Start of continuous trading phase. Order matching begins.","Start Period":"Start Period","Stock Options":"Stock Options","Stocks":"Stocks","Straddle":"Straddle","Strike":"Strike","Strike Price":"Strike Price","Strike Range":"Strike Range","Subscribe":"Subscribe","Subscribed":"Subscribed","Subscription Center":"Subscription Center","Suggestions":"Suggestions","Submit":"Submit","Sub Category":"Sub Category","SUB CATEGORY":"SUB CATEGORY","SYM":"SYM","Sym":"Sym","Tags":"Tags","Tags:":"Tags:","TAS":"TAS","Tenor":"Tenor","Test Your Knowledge":"Test Your Knowledge","Term":"Term","Terms of Service":"Terms of Service","Thank you for completing the form":"Thank you for completing the form","Thank you for confirming your attendance":"Thank you for confirming your attendance","Thank you for opting back in to receive CME Group marketing communications. Do you want to restore your previous subscriptions?":"Thank you for opting back in to receive CME Group marketing communications. Do you want to restore your previous subscriptions?","Thank you for subscribing. To manage your subscriptions, please visit the":"Thank you for subscribing. To manage your subscriptions, please visit the","Thank you, your feedback has been submitted.":"Thank you, your feedback has been submitted.","The amount of money needed to hold a position in a futures contract.":"The amount of money needed to hold a position in a futures contract.","The amount of price movement in the underlying future that the option market is pricing in over the life of the option.":"The amount of price movement in the underlying future that the option market is pricing in over the life of the option.","The contract unit is the quantity of the product delivered for a single contract.":"The contract unit is the quantity of the product delivered for a single contract.","The current amount at which you can buy or sell the contract.":"The current amount at which you can buy or sell the contract.","The dollar amount of exposure of the position calculated by multiplying the price by the contract multiplier.":"The dollar amount of exposure of the position calculated by multiplying the price by the contract multiplier.","The price quotation is the contract amount expressed in currency (e.g. dollars and cents) per unit of the product (e.g. per pound, per bushel, etc.).":"The price quotation is the contract amount expressed in currency (e.g. dollars and cents) per unit of the product (e.g. per pound, per bushel, etc.).","The product code is a one- to three-letter code identifying the product, followed by additional characters indicating the month and year of expiration.":"The product code is a one- to three-letter code identifying the product, followed by additional characters indicating the month and year of expiration.","The Street":"The Street","The trading hours are the hours of operation for trading a product.":"The trading hours are the hours of operation for trading a product.","The smallest possible increment between a bid and offer.":"The smallest possible increment between a bid and offer.","There are":"There are","There are no contracts to display":"There are no contracts to display","There are no contracts to show at this time":"There are no contracts to show at this time","There are no products to display":"There are no products to display","There are no results for today's date. View all":"There are no results for today's date. View all","There are no results based on your selected filters.":"There are no results based on your selected filters.","There are <span class=bolder>No Results</span> based on your search.":"There are <span class=bolder>No Results</span> based on your search.","There is currently no calendar data for this product.":"There is currently no calendar data for this product.","There is currently no contract specs data for this product.":"There is currently no contract specs data for this product.","There is currently no data available. Please check again later.":"There is currently no data available. Please check again later.","There is currently no data for this product.":"There is currently no data for this product.","There is currently no margins data for this product.":"There is currently no margins data for this product.","There is currently no quotes data for this product.":"There is currently no quotes data for this product.","There is currently no settlement data for this product.":"There is currently no settlement data for this product.","There is currently no volume data for this product.":"There is currently no volume data for this product.","There is no contract specs for this product":"There is no contract specs for this product","There is no Time and Sales for this product":"There is no Time and Sales for this product","This site is protected by reCAPTCHA and the Google":"This site is protected by reCAPTCHA and the Google","This content is no longer available":"This content is no longer available","Ticker/Symbol":"Ticker/Symbol","Time":"Time","TIME (CT)":"TIME (CT)","Time & Sales":"Time & Sales","Time Period":"Time Period","Timestamp":"Timestamp","Timestamp (CT)":"Timestamp (CT)","Title":"Title","to":"to","To:":"To:","To browse and save articles, videos, podcasts and more, :":"To browse and save articles, videos, podcasts and more, :","To browse courses and lessons":"To browse courses and lessons","to Create or Edit your Watchlist.":"to Create or Edit your Watchlist.","to edit your portfolio.":"to edit your portfolio.","to edit your Watchlist.":"to edit your Watchlist.","To opt out of receiving all marketing communications emails, please select the following option":"To opt out of receiving all marketing communications emails, please select the following option","to save and track your progress.":"to save and track your progress.","To set up block trade alerts, select one or more product groups and adjust the minimum trade size to your liking. Then, select your delivery method(s) and click “Save” at the bottom of the page":"To set up block trade alerts, select one or more product groups and adjust the minimum trade size to your liking. Then, select your delivery method(s) and click “Save” at the bottom of the page","Tokyo 15:00":"Tokyo 15:00","Total":"Total","Total Finance Adjustment":"Total Finance Adjustment","Total Volume":"Total Volume","Totals":"Totals","Track your progress for courses and lessons with CME Institute.":"Track your progress for courses and lessons with CME Institute.","Trade Event":"Trade Event","Trade date":"Trade date","Trade Date":"Trade Date","Trade Type Detail":"Trade Type Detail","Trading Event":"Trading Event","Trading Hours":"Trading Hours","Trading Interests":"Trading Interests","Type":"Type","Underlying Future":"Underlying Future","Underlying Product Code":"Underlying Product Code","Unfollow":"Unfollow","Unfollow Watchlist":"Unfollow Watchlist","Unselect All":"Unselect All","Unsubscribe":"Unsubscribe","UPCOMING":"UPCOMING","Update":"Update","Updated":"Updated","UPI":"UPI","UPI Underlier Name":"UPI Underlier Name","US News & World Report":"US News & World Report","Value":"Value","Venue":"Venue","Venue Detail":"Venue Detail","View":"View","View:":"View:","View All":"View All","View all month codes":"View all month codes","View and manage alerts for the markets you care about, delivered straight to your inbox or CME Group mobile app":"View and manage alerts for the markets you care about, delivered straight to your inbox or CME Group mobile app","View and manage all of your alerts":"View and manage all of your alerts","View Certificate":"View Certificate","View Chart":"View Chart","View the Dashboard":"View the Dashboard","View full contract specs":"View full contract specs","View Lessons":"View Lessons","View Page":"View Page","View PDF":"View PDF","View Product":"View Product","View Results":"View Results","View sample":"View sample","View Specs":"View Specs","View Volume Detail":"View Volume Detail","View Watchlist":"View Watchlist","Viewing":"Viewing","Visit Subscription Center":"Visit Subscription Center","Volume":"Volume","Volume and Open Interest":"Volume and Open Interest","Volume & Open Interest":"Volume & Open Interest","Wall St. Journal":"Wall St. Journal","watch":"Watch","Watchlist":"Watchlist","Watchlist Link":"Watchlist Link","Watchlists":"Watchlists","We are sorry, there is a problem. Your alert can&apos;t be submitted right now.":"We are sorry, there is a problem. Your alert can&apos;t be submitted right now.","We are sorry, there is a problem. Your feedback can&apos;t be submitted right now.":"We are sorry, there is a problem. Your feedback can&apos;t be submitted right now.","We&#39;re sorry to hear that you no longer want to receive our communications. Before you go, would you mind sharing why you&#39;re opting out? We value your feedback.":"We&#39;re sorry to hear that you no longer want to receive our communications. Before you go, would you mind sharing why you&#39;re opting out? We value your feedback.","We have changed the Portfolio feature to now be part of watchlists. You can access this via your user menu.":"We have changed the Portfolio feature to now be part of watchlists. You can access this via your user menu.","Week":"Week","Welcome":"Welcome","Welcome, ":"Welcome, ","Welcome back, ":"Welcome back, ","Welcome Back":"Welcome Back","What markets are you already trading and investing?":"What markets are you already trading and investing?","Yahoo Finance":"Yahoo Finance","Year":"Year","Yield":"Yield","You are about to copy the following products":"You are about to copy the following products","You are already subscribed. To manage your subscriptions, please visit the":"You are already subscribed. To manage your subscriptions, please visit the","You are now logged out from CMEGroup.com. You may still be logged into other CME Group applications. To completely log out from all CME applications, please close your browser":"You are now logged out from CMEGroup.com. You may still be logged into other CME Group applications. To completely log out from all CME applications, please close your browser","You have completed this activity":"You have completed this activity","You have no saved bookmarks":"You have no saved bookmarks","You currently have no products in your watchlist":"You currently have no products in your watchlist","You currently have no watchlists created":"You currently have no watchlists created","You have currently no active subscriptions. Please visit our":"You have currently no active subscriptions. Please visit our","You have no courses or lessons in progress.":"You have no courses or lessons in progress.","You have not selected a distribution method. Select a distribution method above to receive alerts":"You have not selected a distribution method. Select a distribution method above to receive alerts","You have Opted Out of All Marketing Emails. Please re-activate your status to subscribe to new content as well as view and manage your subscription list":"You have Opted Out of All Marketing Emails. Please re-activate your status to subscribe to new content as well as view and manage your subscription list","You have successfully deleted your selected watchlist":"You have successfully deleted your selected watchlist","Your Message":"Your Message","Your Products":"Your Products","Your products have been copied successfully to the selected watchlists":"Your products have been copied successfully to the selected watchlists","Your Products have been removed successfully":"Your Products have been removed successfully","You&#39;ve completed all the courses.":"You&#39;ve completed all the courses.","10AM NY":"10AM NY"};
+</script>
+
+
+    
+    
+    
+  
+  
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/vendor.fa2dd57a95e30129da3fe95cfba93fd6.js"></script>
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/common.d90a30652b9c2aa8ecaf4205681ea2f3.js"></script>
+
+
+
+
+  
+  
+<script src="/etc.clientlibs/clientlibs/granite/jquery.1fc733054ddb2e2fcd4a0f763671047b.js"></script>
+
+<script src="/etc.clientlibs/cmegroupaem/clientlibs/dependencies.e420e99671686097433a87b2a109856a.js"></script>
+
+
+
+
+  
+  
+
+
+<div><div></div>
+<div></div>
+<div class="component react marketing-popup" data-is-edit="false" data-is-reverse="false" data-path="/content/cmegroup/en/articles/whitepapers/using-financial-crude-oil-options-as-a-cash-management-tool" data-is-iframe="false" data-is-hide-add-this-ext="false" data-is-personalized="false" data-is-sitewide-popup-author-view="false" data-is-form-popup-author-view="false">
+</div>
+
+
+  
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/externals/choices-js.bf26fe52b1539d25bba81089f1ec7f9b.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<link as="style" href="/etc.clientlibs/cmegroupaem/clientlibs/marketing-popup.b89e03821a783bebc1abb78b0790a132.css" media="all" onload="this.onload=null;this.rel='stylesheet'" rel="preload" type="text/css">
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/externals/choices-js.c3e970f7e4bef69005972ee855ed7f1d.js"></script>
+
+<script async="true" src="/etc.clientlibs/cmegroupaem/clientlibs/marketing-popup.a7dfb67e734e1105ad38aa2d7a1e1bcc.js"></script>
+
+
+
+
+
+    
+
+</div>
+
+
+
+
+
+    
+
+
+    <script>
+window.addEventListener('beforeunload', function() {
+window.dataLayer.push({
+"event": 'beforeunload'
+});
+});
+</script>
+
+  <script type="text/javascript"  src="/MGDdYKSRaRShSJE40A/fa3zDLb0zmmrzDOk7r/ZRlOJA/N2FpJ/yYTQmIB" async></script><noscript><img src="https://www.cmegroup.com/akam/13/pixel_3336c7d9?a=dD05NmFlOGY1Yzc1YTQ3ODk5MzM3ODRkYjJmYTE1NDA1MGM4M2YyNzY3JmpzPW9mZg==" style="visibility: hidden; position: absolute; left: -999px; top: -999px;" /></noscript></body>
+</html>

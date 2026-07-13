@@ -1,0 +1,5 @@
+source_file,section,field_name,definition,evidence_role
+ice-futures-data-mft-user-guide-v1-9.pdf,5.2 Settlement Snapshot - Futures & Options,Product ID,Unique numerical identifier of ProductName,confirms PRODUCT_ID semantics in ICE settlement snapshot reports
+ice-futures-data-mft-user-guide-v1-9.pdf,5.2 Settlement Snapshot - Futures & Options,Contract Type,"F/M/D futures, C call option, P put option, I index, CASH/CS cash",confirms C/P/F contract type interpretation used by local feed
+ice-futures-data-mft-user-guide-v1-9.pdf,5.2 Settlement Snapshot - Futures & Options,IMPLIED_VOLATILITY,only available in Options files - estimated volatility of underlying futures price fluctuations,confirms option volatility field semantics
+ice-futures-data-mft-user-guide-v1-9.pdf,5.2 Settlement Snapshot - Futures & Options,DELTA FACTOR,only available in Options files - change in price of underlying future with change in options price,confirms delta factor field semantics

@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from .base import ProviderBase, RAW_SCHEMA, validate_schema
+from .product_identity import ProductIdentityResolver, summarize_product_identity
 from .symbology import Symbology
 from .versioned_cache import add_availability_columns
 
@@ -60,6 +61,7 @@ class SettlementLoader(ProviderBase):
         self.cfg = cfg or {}
         # Populated during fetch(); consumed by the run manifest (issue 002).
         self.unit_assumptions: dict = {}
+        self.product_identity_summary: dict = {}
 
     def fetch(self, path_or_symbol: str, start, end) -> pd.DataFrame:
         """Parse pipe-delimited settlement file → RAW_SCHEMA DataFrame.
@@ -86,13 +88,39 @@ class SettlementLoader(ProviderBase):
         if "TRADE DATE" in df.columns:
             df = df[(df["TRADE DATE"] >= start_ts) & (df["TRADE DATE"] <= end_ts)].copy()
 
-        # ── Disambiguate future vs option ──
-        contract_type = df.get("CONTRACT TYPE", pd.Series(dtype=str))
-        strike = df.get("STRIKE", pd.Series(dtype=float))
+        # ── Product identity + row instrument type ──
+        resolver = ProductIdentityResolver.from_config(self.cfg)
+        df = resolver.resolve_frame(df, self.cfg)
+        self.product_identity_summary = summarize_product_identity(df, resolver.master)
 
-        is_opt = contract_type.isin(["C", "P"]) & strike.notna()
-        df["instrument_type"] = np.where(is_opt, "option", "future")
-        df["right"] = np.where(is_opt, contract_type, None)
+        status = df["product_identity_status"].astype("string").fillna("unknown")
+        unresolved = status.isin(["unknown", "conflict"])
+        policy = str(
+            self.cfg.get(
+                "product_identity_policy",
+                "fail" if self.cfg.get("require_fixed_data_version") else "quarantine",
+            )
+        ).strip().lower()
+        if unresolved.any() and policy == "fail":
+            examples = (
+                df.loc[unresolved, ["PRODUCT_ID", "HUB", "PRODUCT", "CONTRACT", "CONTRACT TYPE"]]
+                .head(5)
+                .to_dict("records")
+            )
+            counts = status[unresolved].value_counts().to_dict()
+            raise ValueError(
+                "Unresolved product identity rows in settlement data "
+                f"({counts}); examples: {examples}"
+            )
+        if unresolved.any():
+            df["quarantine"] = False
+            df["quarantine_reason"] = ""
+            df.loc[unresolved, "quarantine"] = True
+            df.loc[unresolved, "quarantine_reason"] = df.loc[
+                unresolved, "product_identity_reason"
+            ].astype("string")
+
+        is_opt = df["instrument_type"].astype("string").str.lower().eq("option")
 
         # Null out option-only fields for futures
         for col in ["STRIKE", "OPTION_VOLATILITY", "DELTA_FACTOR"]:

@@ -1,0 +1,34 @@
+schema_version: 1
+products:
+  - provider: ice_settlement_file
+    source_product_id: 425
+    hub: WTI
+    source_product_name: WTI Crude Futures
+    source_contract: T
+    product_family: futures_options
+    underlying_root: T
+    source_option_root: T
+    option_underlying_type: future
+    exercise_style: american
+    settlement_type: exercise_into_futures
+    equivalent_option_roots:
+      cme: LO
+    source_product_identity: ICE WTI American-Style Options
+    identity_confidence: high_for_current_feed_tuple
+    evidence_ref: docs/reference/product_identity/wti/MANIFEST.yaml
+
+  - provider: ice_settlement_file
+    source_product_id: 254
+    hub: North Sea
+    source_product_name: Brent Crude Futures
+    source_contract: B
+    product_family: futures_options
+    underlying_root: B
+    source_option_root: B
+    option_underlying_type: future
+    exercise_style: european
+    settlement_type: exercise_into_futures
+    equivalent_option_roots: {}
+    source_product_identity: ICE Brent Crude Futures Options
+    identity_confidence: configured_product_tuple
+    evidence_ref: configs/symbology/product_map.yaml

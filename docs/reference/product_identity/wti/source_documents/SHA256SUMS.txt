@@ -1,0 +1,9 @@
+dfbd112ef1008596a383c55ef8351e540168b1b7b34565ef98f0982ba8bd971a  cme-light-sweet-crude-european-financial-option-lc-whitepaper.html
+0111c0d58fbf6eefb9071326dbed9f794d95b4b1c9e99767b0cd08539ee795f4  cme-nymex-chapter-310-light-sweet-crude-oil-option.pdf
+b8f12840fd36b97a9462fa88434f8e97126672ac9fc29372cb936ed4efdfa2cb  cme-nymex-chapter-550-light-sweet-crude-oil-european-financial-option.pdf
+33d97df1b33c9e22e512f2447fbfce0a19f01c183d0c721a9f10c587831e03e1  cme-strike-price-listing-and-exercise-procedures-table.xlsx
+4c7c1155d156a02d9a54d9b1dbb144218adb995628e705ab6e62bf1321e75ae7  ice-daily-eu-style-wti-option-64286938-contract-spec.pdf
+6aac61f5914c2c290712ccad575504621670511110a842ed16b287faf461b26f  ice-eu-style-wti-options-11527595-contract-spec.pdf
+d0c0831b2de041661598909167254099a7e95054974fdb9c7e46aef34fc01a59  ice-futures-data-mft-user-guide-v1-9.pdf
+6c6ccf4a4388a854694943c75be8b2c8445ae04e6dc23e21966d08e001239346  ice-wti-american-style-options-908-contract-spec.pdf
+92c22b376394df4904692c03f454b3fbd93f2eadb69032b787df11fc9a6f2b6a  ice-wti-crude-futures-213-contract-spec.pdf

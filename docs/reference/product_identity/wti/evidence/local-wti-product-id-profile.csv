@@ -1,0 +1,4 @@
+row_count,product_id,hub,product,contract,contract_type
+906711,425,WTI,"WTI Crude Futures",T,C
+38174,425,WTI,"WTI Crude Futures",T,F
+906711,425,WTI,"WTI Crude Futures",T,P

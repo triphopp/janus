@@ -1,0 +1,112 @@
+downloaded_at: 2026-07-08
+purpose: >
+  Reference set for mapping the current WTI settlement feed identity
+  (PRODUCT_ID=425, HUB=WTI, PRODUCT=WTI Crude Futures, CONTRACT=T) to a Janus
+  product identity without inferring identity from the pricing model.
+
+local_feed_evidence:
+  file: evidence/local-wti-product-id-profile.csv
+  source_data: data/WTI.csv
+  summary:
+    - "PRODUCT_ID=425 appears only with HUB=WTI, PRODUCT=WTI Crude Futures, CONTRACT=T."
+    - "Observed contract types are C, P, and F."
+    - "Option rows with C/P match the ICE WTI American-style options specification, not the ICE WTI European-style symbols."
+  evidence_boundary:
+    - "ICE public data dictionary confirms what Product ID means."
+    - "The value 425 itself is observed in the subscribed/local settlement file."
+    - "A public ICE product-master row explicitly stating 425 -> WTI Crude Futures has not been found."
+
+source_documents:
+  - file: source_documents/ice-futures-data-mft-user-guide-v1-9.pdf
+    url: https://www.ice.com/publicdocs/futures/ICE_Futures_Data_MFT_User_Guide.pdf
+    authority: ICE
+    sha256: d0c0831b2de041661598909167254099a7e95054974fdb9c7e46aef34fc01a59
+    confirms:
+      - "ICE MFT settlement snapshot reports include Product ID."
+      - "Product ID is defined as a unique numerical identifier of ProductName."
+      - "Contract Type values include C for call option, P for put option, and F for monthly future."
+
+  - file: source_documents/ice-wti-crude-futures-213-contract-spec.pdf
+    url: https://www.ice.com/api/productguide/spec/213/pdf
+    authority: ICE
+    sha256: 92c22b376394df4904692c03f454b3fbd93f2eadb69032b787df11fc9a6f2b6a
+    confirms:
+      - "ICE WTI Crude Futures use contract symbol T."
+      - "The public ICE product page id is 213; this is not the same namespace as the feed PRODUCT_ID=425."
+
+  - file: source_documents/ice-wti-american-style-options-908-contract-spec.pdf
+    url: https://www.ice.com/api/productguide/spec/908/pdf
+    authority: ICE
+    sha256: 6c6ccf4a4388a854694943c75be8b2c8445ae04e6dc23e21966d08e001239346
+    confirms:
+      - "ICE WTI American-style options are based on ICE WTI Crude Futures Contract (T)."
+      - "Exercise results in a corresponding futures position."
+      - "The option is American-style."
+
+  - file: source_documents/ice-eu-style-wti-options-11527595-contract-spec.pdf
+    url: https://www.ice.com/api/productguide/spec/11527595/pdf
+    authority: ICE
+    sha256: 6aac61f5914c2c290712ccad575504621670511110a842ed16b287faf461b26f
+    confirms:
+      - "ICE EU-style WTI options use contract symbol WUL."
+      - "This is a counterexample showing European WTI identity should not be inferred from generic WTI."
+
+  - file: source_documents/ice-daily-eu-style-wti-option-64286938-contract-spec.pdf
+    url: https://www.ice.com/api/productguide/spec/64286938/pdf
+    authority: ICE
+    sha256: 4c7c1155d156a02d9a54d9b1dbb144218adb995628e705ab6e62bf1321e75ae7
+    confirms:
+      - "ICE Daily EU-style WTI options use contract symbol TDE."
+      - "This is another counterexample to treating CONTRACT=T as all WTI option styles."
+
+  - file: source_documents/cme-strike-price-listing-and-exercise-procedures-table.xlsx
+    url: https://www.cmegroup.com/trading/files/strike-price/strike-price-listing-and-exercise-procedures-table.xlsx
+    authority: CME
+    sha256: 33d97df1b33c9e22e512f2447fbfce0a19f01c183d0c721a9f10c587831e03e1
+    confirms:
+      - "CME LO is Light Sweet Crude Oil Option, American-style, rulebook chapter 310."
+      - "CME LC/LCE is Light Sweet Crude Oil European Financial Option, European-style, rulebook chapter 550."
+
+  - file: source_documents/cme-nymex-chapter-310-light-sweet-crude-oil-option.pdf
+    url: https://www.cmegroup.com/rulebook/NYMEX/3/310.pdf
+    authority: CME
+    sha256: 0111c0d58fbf6eefb9071326dbed9f794d95b4b1c9e99767b0cd08539ee795f4
+    confirms:
+      - "Light Sweet Crude Oil Option is an American-style option on CL futures."
+
+  - file: source_documents/cme-nymex-chapter-550-light-sweet-crude-oil-european-financial-option.pdf
+    url: https://www.cmegroup.com/rulebook/NYMEX/5/550.pdf
+    authority: CME
+    sha256: b8f12840fd36b97a9462fa88434f8e97126672ac9fc29372cb936ed4efdfa2cb
+    confirms:
+      - "Light Sweet Crude Oil European Financial Option is financially settled and European-style."
+
+  - file: source_documents/cme-light-sweet-crude-european-financial-option-lc-whitepaper.html
+    url: https://www.cmegroup.com/articles/whitepapers/using-financial-crude-oil-options-as-a-cash-management-tool.html
+    authority: CME
+    sha256: dfbd112ef1008596a383c55ef8351e540168b1b7b34565ef98f0982ba8bd971a
+    confirms:
+      - "CME describes Light Sweet Crude Oil European Financial options as LC and Globex LCE."
+
+recommended_mapping:
+  current_local_wti_feed:
+    provider: ice_settlement_file
+    source_product_id: 425
+    hub: WTI
+    source_product_name: WTI Crude Futures
+    source_contract: T
+    underlying_root: T
+    source_option_contract_symbol: T
+    exercise_style: american
+    source_product_identity: ICE WTI American-Style Options
+    cme_equivalent_root: LO
+    identity_confidence: high_for_current_feed_tuple
+    caveat: >
+      PRODUCT_ID=425 is treated as a feed-specific id. Do not assume it is a
+      public ICE product page id, and do not map it without HUB, PRODUCT, and
+      CONTRACT corroboration.
+    unresolved_public_evidence_gap: >
+      The public ICE MFT guide defines Product ID semantics, but no public
+      product-master file has been found that directly lists
+      PRODUCT_ID=425 -> WTI Crude Futures. That row is currently confirmed by
+      the local/subscribed settlement feed.
