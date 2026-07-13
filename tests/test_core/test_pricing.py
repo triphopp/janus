@@ -3,6 +3,8 @@
 Must pass: diff vs QuantLib < 1e-6 in golden set; PCP within tolerance.
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -46,6 +48,23 @@ class TestBlack76:
         """Expired option: price = intrinsic only."""
         C = price("black76", 90, 80, 0, 0.05, 0.3, "C")
         assert C == 10.0
+
+    def test_explicit_european_alias_matches_black76(self):
+        args = (80, 85, 0.5, 0.05, 0.3, "C")
+        assert price("black76_european", *args) == pytest.approx(price("black76", *args))
+
+    def test_invalid_lognormal_domain_returns_nan_without_runtime_warning(self):
+        invalid_cases = [
+            (-37.63, 70.0, 0.5, 0.05, 0.3, "C"),
+            (80.0, 0.0, 0.5, 0.05, 0.3, "C"),
+            (80.0, 70.0, 0.5, 0.05, 0.0, "C"),
+            (80.0, 70.0, 0.5, 0.05, 0.3, "X"),
+        ]
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            out = [price("black76", *case) for case in invalid_cases]
+        assert all(np.isnan(value) for value in out)
+        assert not [w for w in caught if issubclass(w.category, RuntimeWarning)]
 
     def test_golden_reference_file(self):
         """Golden Black-76 fixture must match closed-form prices and Greeks."""
@@ -106,6 +125,19 @@ class TestIVSolver:
         mkt = price("black76", F, K, T, r, sigma, "C")
         solved = solve_iv("black76", mkt, F, K, T, r, "C")
         assert solved == pytest.approx(sigma, abs=1e-5)
+
+    def test_alias_round_trip(self):
+        F, K, T, r, sigma = 80, 80, 0.5, 0.05, 0.3
+        mkt = price("black76_european", F, K, T, r, sigma, "C")
+        solved = solve_iv("black76_european", mkt, F, K, T, r, "C")
+        assert solved == pytest.approx(sigma, abs=1e-5)
+
+    def test_invalid_domain_returns_nan_without_warning(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = solve_iv("black76", 1.0, -37.63, 70, 0.5, 0.05, "C")
+        assert np.isnan(result)
+        assert not [w for w in caught if issubclass(w.category, RuntimeWarning)]
 
     def test_arb_violation_returns_nan(self):
         """Intrinsic > mkt_price → NaN (arbitrage)."""

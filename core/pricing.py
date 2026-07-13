@@ -10,6 +10,7 @@ from statistics import NormalDist
 from typing import Optional, Tuple
 
 import numpy as np
+from core import pricing_models as _models
 
 try:
     from scipy.optimize import brentq
@@ -51,6 +52,24 @@ def _root(fn, low: float, high: float, tol: float) -> float:
     return _bisect_root(fn, low, high, tol)
 
 
+def _nan() -> float:
+    return float("nan")
+
+
+def _finite(value) -> tuple[bool, float]:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return False, float("nan")
+    return bool(np.isfinite(out)), out
+
+
+def _expired_intrinsic(S_or_F: float, K: float, right: str) -> float:
+    if right == "C":
+        return max(0.0, S_or_F - K)
+    return max(0.0, K - S_or_F)
+
+
 def price(
     model: str,
     S_or_F: float,
@@ -76,33 +95,49 @@ def price(
     Returns:
         Option price (premium)
     """
-    if T <= 0:
+    impl = _models.price_runtime_model(model)
+    right_norm = _models.normalize_right(right)
+
+    s_ok, s = _finite(S_or_F)
+    k_ok, strike = _finite(K)
+    t_ok, t = _finite(T)
+    if right_norm is None or not s_ok or not k_ok or not t_ok:
+        return _nan()
+
+    if t <= 0:
         # Expired — intrinsic only
-        if right == "C":
-            return max(0.0, S_or_F - K)
-        else:
-            return max(0.0, K - S_or_F)
+        return _expired_intrinsic(s, strike, right_norm)
 
-    if model == "black76":
-        F = S_or_F
-        d1 = (np.log(F / K) + 0.5 * sigma ** 2 * T) / (sigma * np.sqrt(T))
-        d2 = d1 - sigma * np.sqrt(T)
-        disc = np.exp(-r * T)
-        if right == "C":
-            return disc * (F * _norm_cdf(d1) - K * _norm_cdf(d2))
-        else:
-            return disc * (K * _norm_cdf(-d2) - F * _norm_cdf(-d1))
+    domain = _models.validate_pricing_domain(impl, s, strike, t, r, sigma, right_norm)
+    if not domain.valid:
+        return _nan()
 
-    elif model in ("bs", "bsm"):
-        S = S_or_F
-        d1 = (np.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-        d2 = d1 - sigma * np.sqrt(T)
-        if right == "C":
-            return S * np.exp(-q * T) * _norm_cdf(d1) - K * np.exp(-r * T) * _norm_cdf(d2)
-        else:
-            return K * np.exp(-r * T) * _norm_cdf(-d2) - S * np.exp(-q * T) * _norm_cdf(-d1)
+    r = float(r)
+    sigma = float(sigma)
 
-    raise ValueError(f"Unknown pricing model: {model}")
+    if impl == "black76":
+        F = s
+        d1 = (np.log(F / strike) + 0.5 * sigma ** 2 * t) / (sigma * np.sqrt(t))
+        d2 = d1 - sigma * np.sqrt(t)
+        disc = np.exp(-r * t)
+        if right_norm == "C":
+            return disc * (F * _norm_cdf(d1) - strike * _norm_cdf(d2))
+        else:
+            return disc * (strike * _norm_cdf(-d2) - F * _norm_cdf(-d1))
+
+    elif impl in ("bs", "bsm"):
+        q_ok, q_value = _finite(q)
+        if not q_ok:
+            return _nan()
+        S = s
+        d1 = (np.log(S / strike) + (r - q_value + 0.5 * sigma ** 2) * t) / (sigma * np.sqrt(t))
+        d2 = d1 - sigma * np.sqrt(t)
+        if right_norm == "C":
+            return S * np.exp(-q_value * t) * _norm_cdf(d1) - strike * np.exp(-r * t) * _norm_cdf(d2)
+        else:
+            return strike * np.exp(-r * t) * _norm_cdf(-d2) - S * np.exp(-q_value * t) * _norm_cdf(-d1)
+
+    raise ValueError(_models.unknown_model_message(model))
 
 
 def solve_iv(
@@ -133,26 +168,49 @@ def solve_iv(
     Returns:
         Implied volatility (annualized), or NaN if unsolvable
     """
-    if T <= 0:
+    impl = _models.price_runtime_model(model)
+    mkt_ok, mkt = _finite(mkt_price)
+    s_ok, s = _finite(S_or_F)
+    k_ok, strike = _finite(K)
+    t_ok, t = _finite(T)
+    r_ok, r_value = _finite(r)
+    right_norm = _models.normalize_right(right)
+    if (
+        not mkt_ok or mkt <= 0
+        or not s_ok or not k_ok or not t_ok or t <= 0
+        or not r_ok or right_norm is None
+    ):
+        return np.nan
+
+    low, high = bounds
+    low_ok, low = _finite(low)
+    high_ok, high = _finite(high)
+    if not low_ok or not high_ok or low <= 0 or high <= low:
+        return np.nan
+
+    domain = _models.validate_pricing_domain(
+        impl, s, strike, t, r_value, low, right_norm
+    )
+    if not domain.valid:
         return np.nan
 
     # Check arbitrage violation
-    if right == "C":
-        intrinsic = max(0.0, S_or_F - K)
-    else:
-        intrinsic = max(0.0, K - S_or_F)
+    intrinsic = _expired_intrinsic(s, strike, right_norm)
 
-    if mkt_price < intrinsic * np.exp(-r * T) - tol:
+    if mkt < intrinsic * np.exp(-r_value * t) - tol:
         return np.nan  # arbitrage — log and skip
 
     def f(sigma):
-        return price(model, S_or_F, K, T, r, sigma, right, q) - mkt_price
+        return price(impl, s, strike, t, r_value, sigma, right_norm, q) - mkt
 
     # Check that root is bracketed
     try:
-        f_low = f(bounds[0])
-        f_high = f(bounds[1])
+        f_low = f(low)
+        f_high = f(high)
     except (ValueError, ZeroDivisionError):
+        return np.nan
+
+    if not np.isfinite(f_low) or not np.isfinite(f_high):
         return np.nan
 
     # If both have same sign, root not bracketed
@@ -164,14 +222,14 @@ def solve_iv(
         # Try lower bound
         try:
             f_super_low = f(1e-6)
-            if f_low * f_super_low < 0:
-                return _root(f, 1e-6, bounds[0], tol)
+            if np.isfinite(f_super_low) and f_low * f_super_low < 0:
+                return _root(f, 1e-6, low, tol)
         except (ValueError, ZeroDivisionError):
             pass
         return np.nan
 
     try:
-        return _root(f, bounds[0], bounds[1], tol)
+        return _root(f, low, high, tol)
     except (ValueError, ZeroDivisionError):
         return np.nan
 
@@ -217,7 +275,7 @@ def validate_provided_iv(
             S_or_F=underlying,
             K=row["strike"],
             T=row.get("T", np.nan),
-            r=row.get("r", 0.05),
+            r=row.get("r", np.nan),
             right=row["right"],
             q=q,
             bounds=bounds,

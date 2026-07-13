@@ -2,7 +2,7 @@
 
 Urgency: `P1-high`
 
-Status: `draft`
+Status: `in_progress`
 
 Source plan:
 
@@ -18,6 +18,51 @@ introducing a single rate resolver (`core/rates.py`) that sources a real
 rate, joins it point-in-time, converts to the pricer's convention, stamps a
 per-row `r` column exactly once, and makes any fallback loud. All downstream
 consumers read that column and never invent their own default.
+
+## Implementation Status
+
+Updated: `2026-07-07`
+
+Implemented:
+
+- Added `core/rates.py` as the central risk-free-rate resolver.
+- Added `DEFAULT_RISK_FREE_RATE = 0.05` as the only central fallback.
+- Added `resolve_rate()`, `stamp_rate()`, and `resolve_scalar_rate()`.
+- Added simple ACT/360 to continuously-compounded ACT/365 conversion.
+- Added PIT-aware rate-table join support through `available_at`.
+- Rewired adapter prep to stamp `df["r"]` through `core.rates`.
+- Rewired standalone `run_greeks.py --input` to stamp `df["r"]` before
+  `resolve_greek_inputs()`.
+- Changed `resolve_greek_inputs()` so missing/invalid `r` is an invalid-input
+  reason (`missing_rate`) instead of a silent fallback.
+- Removed private `0.05` / `0.0` rate fallbacks from pricing/Greeks/export
+  decision points; production grep now leaves `rf_rate` resolution in
+  `core/rates.py`.
+- Added `rate_summary` to Greek-only summaries and option-quality summaries.
+- Added `guard_status.rate_sourcing` for pipeline summaries.
+- Added tests for fallback visibility, PIT lookahead rejection, convention
+  conversion, missing-rate handling, standalone stamping, and export behavior.
+
+Verified:
+
+- `pytest -q` passed: `1037 passed, 10 skipped`.
+
+Still open:
+
+- Add a public-safe SOFR ingestion/source fixture so official configs using
+  `rf_rate_source: sofr` do not fall back to the central constant.
+- Make official run gating stricter: `pass` only when sourced coverage meets
+  policy, `warn` on fallback, `fail` when a configured source is missing.
+- Add PCP-implied-rate cross-check and report
+  `pcp_implied_rate_spread_bps`.
+- Add an automated grep/CI guard proving no pricing-rate fallback exists
+  outside `core/rates.py`.
+- Update export data dictionary/report copy to explain rate source and
+  convention.
+- Split Level B term-structure interpolation into a follow-up issue once
+  Level A SOFR sourcing is live.
+- Keep repo-rate support as a follow-up source option, not the default
+  discount curve.
 
 ## Why It Matters
 
@@ -188,6 +233,33 @@ Ordered to keep every step shippable with tests green.
 Explicitly deferred (Level B, separate issue): per-`T` term-structure
 interpolation; multi-currency discounting.
 
+## Repo-Rate Follow-Up
+
+Repo rates are relevant, but they should be added as explicit rate sources or
+financing/carry diagnostics rather than silently replacing SOFR discounting.
+SOFR remains the default USD discount-rate source for collateralized derivative
+pricing because it is already a broad Treasury repo-based overnight reference
+rate.
+
+Potential source names:
+
+| Source | Intended use | Notes |
+|---|---|---|
+| `sofr` | Default USD discounting | Primary Level A source. |
+| `repo_gc` | General-collateral financing/carry diagnostics | Candidate after SOFR source is live. |
+| `repo_special` | Collateral/security-specific financing | Requires collateral identity; not a generic default. |
+| `constant` | Explicit fallback or test mode | Must remain visible in `rate_summary`. |
+
+Design rule:
+
+- Do not set `pricing.r = repo_rate` globally without source identity,
+  collateral policy, and summary metadata.
+- If repo rates are introduced, expose them through `core/rates.py` with the
+  same PIT join, convention conversion, coverage summary, and gate semantics
+  as SOFR.
+- For P&L attribution, repo rates may feed funding/carry diagnostics separately
+  from the canonical Black-76 discount rate.
+
 ## Public-Safe Notes
 
 - No local absolute paths; SOFR fixture must be a small synthetic or
@@ -196,24 +268,24 @@ interpolation; multi-currency discounting.
 
 ## Acceptance Criteria
 
-- [ ] `core/rates.py` exists; it is the only module producing `r` from
+- [x] `core/rates.py` exists; it is the only module producing `r` from
       config/constants (CI grep proves no other `rf_rate` literal defaults).
-- [ ] Entry-door parity: pipeline prep and `run_greeks --input` produce an
+- [x] Entry-door parity: pipeline prep and `run_greeks --input` produce an
       identical `r` column for the same input frame (test).
-- [ ] Export path consumes the same stamped `r`; no private `fillna(0.05)`
+- [x] Export path consumes the same stamped `r`; no private `fillna(0.05)`
       remains, including under `compute_greeks: false`.
 - [ ] A per-row `r` column is populated from the sourced series for every
       option row in a run where `rf_rate_source` is configured.
-- [ ] The join is PIT: a test proves a rate published after the row's
+- [x] The join is PIT: a test proves a rate published after the row's
       settlement `available_at` is never used for that row.
-- [ ] Convention conversion is unit-tested (act/360 simple → cc act/365)
+- [x] Convention conversion is unit-tested (act/360 simple → cc act/365)
       against independently computed values.
-- [ ] Missing rate data produces a visible run-summary warning and gate
+- [x] Missing rate data produces a visible run-summary warning and gate
       status, not a silent constant; `rate_summary` (source, coverage,
       fallback count) appears in every run summary.
 - [ ] PCP-implied `r` vs sourced `r` spread is computed on a sampled chain
       and reported; a threshold breach flags the run.
-- [ ] Existing Greek parity/golden tests still pass with `r` supplied
+- [x] Existing Greek parity/golden tests still pass with `r` supplied
       row-level (tolerances reviewed once, intentionally).
 
 ## Evidence Required
