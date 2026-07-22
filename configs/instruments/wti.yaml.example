@@ -56,7 +56,7 @@ data_file_sha256: <fill-with-file-sha256>
 metrics_mode: strategy_required   # require explicit strategy/P&L returns for Stage 4 performance
 
 pricing:
-  model: black76                # futures options → Black-76
+  model: auto                   # product identity is American → Black-76 BAW
   iv_validate_threshold: 0.005
   validate_provided_iv: false   # trust exchange settlement IV; opt in only for a model self-test (issue 025)
   iv_validate_sample_size: 5000
@@ -68,7 +68,7 @@ pricing:
 
 option_universe:
   min_dte_days: 1
-  max_dte_days: 730
+  max_dte_days: 365              # BAW requires CRR review beyond its 1y recommended tenor
   min_option_price: 0.00001
 
 dte:

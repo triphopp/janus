@@ -70,26 +70,26 @@ Implemented runtime models:
 | `black76_european` | Alias of `black76` | Explicit European futures option label |
 | `bs` | Black-Scholes | Legacy equity option path |
 | `bsm` | Black-Scholes-Merton | Equity/index options with dividend yield |
+| `bachelier` / `normal` | Normal futures model | Negative/near-zero futures; absolute-price volatility |
+| `black76_shifted` | Shifted Black-76 | Negative/near-zero futures with an explicit shift |
+| `black76_baw` | Barone-Adesi-Whaley | American futures options |
+| `black76_shifted_baw` | Shifted BAW | Experimental shifted American futures options |
+| `bsm_baw` | Barone-Adesi-Whaley | American equity options |
+| `crr_binomial` | CRR binomial tree | Slower American/European reference engine |
 
 Registered but not runtime-enabled yet:
 
-- `bachelier` / `normal`
-- `black76_shifted`
-- `black76_baw`
-- `black76_shifted_baw`
-- `bsm_baw`
-- `crr_binomial`
 - `trinomial`
 - `finite_difference`
 
 Lognormal scalar paths now fail closed without NumPy runtime warnings. For
-`black76`, `black76_european`, `bs`, and `bsm`, invalid domains such as
+all implemented models, invalid domains such as
 non-positive underlying, non-positive strike, non-positive volatility, missing
 rate, expired `T`, or invalid right return `NaN` rather than silently running
 `log()` on bad inputs.
 
 Put-call parity checks now use registry metadata. European models keep parity
-equality checks; planned American models do not reuse European equality gates.
+equality checks; American models use individual premium bounds instead.
 
 ## Pipeline Shape
 
@@ -282,18 +282,19 @@ converted to continuously compounded ACT/365 through the rate utilities.
 ## Pricing Model Policy
 
 Janus does not auto-switch pricing models row by row. A run has one canonical
-pricing model. Comparison models should be diagnostic-only until explicitly
-implemented.
+pricing model. `--compare-model` writes separate row-level comparison artifacts
+without replacing canonical output.
 
 Important consequences:
 
 - Negative futures prices can be real data.
 - Lognormal models such as `black76` cannot price `F <= 0`.
 - Bad model domain is a pricing-domain state, not necessarily bad raw data.
-- Bachelier/normal and shifted Black are planned for negative or near-zero
-  regimes, but are not enabled yet.
-- `black76_baw` is planned for American futures-option approximation work, but
-  is not enabled yet.
+- Bachelier/normal uses absolute-price volatility, while Black-family models use
+  fractional volatility; Janus blocks provided IV when those units disagree.
+- Shifted Black requires an explicit `pricing_shift`.
+- BAW is the fast American approximation and emits a review warning beyond one
+  year; CRR is the slower reference engine.
 
 ## Low-level Full Pipeline
 
@@ -449,7 +450,7 @@ data_file: /absolute/path/to/WTI.csv
 data_version: sha256:<file-sha256>
 data_file_sha256: <file-sha256>
 pricing:
-  model: black76
+  model: auto
 iv_source: provided
 ```
 

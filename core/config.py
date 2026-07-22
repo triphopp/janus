@@ -36,6 +36,13 @@ def normalize_config(cfg: dict | None) -> dict:
         "greeks_cuda_min_rows",
         "allow_model_approximation",
         "compare_models",
+        "pricing_shift",
+        "baw_boundary_tol",
+        "baw_boundary_max_iter",
+        "tree_steps",
+        "tree_exercise_style",
+        "tree_underlying_type",
+        "provided_iv_volatility_unit",
     ):
         _setdefault_from(out, key, pricing, key)
 

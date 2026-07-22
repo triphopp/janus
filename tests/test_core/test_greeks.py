@@ -5,6 +5,7 @@ from math import erf
 
 import numpy as np
 import pytest
+from core import pricing_models as _models
 from core.greeks import (
     single_leg_greeks, net_greeks, bump_greeks, Leg,
     batch_greeks, _resolve_greeks_backend, _cupy_available, _cuda_device_count,
@@ -278,6 +279,49 @@ class TestClosedFormGreeks:
             g = single_leg_greeks("black76", F, K, T, r, sigma, right)
             option_price = price("black76", F, K, T, r, sigma, right)
             assert g["rho"] == pytest.approx(-T * option_price, rel=1e-10)
+
+    def test_bachelier_supports_negative_underlying_and_matches_batch(self):
+        scalar = single_leg_greeks(
+            "bachelier", -37.63, 10.0, 0.5, 0.05, 50.0, "C"
+        )
+        batch = batch_greeks(
+            "bachelier",
+            [-37.63],
+            [10.0],
+            [0.5],
+            [0.05],
+            [50.0],
+            ["C"],
+            backend="numpy",
+        )
+        assert all(np.isfinite(scalar[name]) for name in scalar)
+        for name in scalar:
+            assert batch[name][0] == pytest.approx(scalar[name], rel=1e-10, abs=1e-12)
+
+    @pytest.mark.parametrize("right", ["C", "P"])
+    def test_baw_numerical_greeks_are_finite_and_registered(self, right):
+        result = single_leg_greeks(
+            "black76_baw", 80.0, 80.0, 0.5, 0.05, 0.30, right
+        )
+        assert all(np.isfinite(result[name]) for name in result)
+        assert _models.default_greek_method("black76_baw") == "numerical_bump"
+
+    def test_shifted_black_greeks_require_and_use_shift(self):
+        invalid = single_leg_greeks(
+            "black76_shifted", -37.63, 10.0, 0.5, 0.05, 0.30, "C"
+        )
+        assert all(np.isnan(invalid[name]) for name in invalid)
+        valid = single_leg_greeks(
+            "black76_shifted",
+            -37.63,
+            10.0,
+            0.5,
+            0.05,
+            0.30,
+            "C",
+            shift=50.0,
+        )
+        assert all(np.isfinite(valid[name]) for name in valid)
 
     def test_invalid_lognormal_domain_returns_nan_without_runtime_warning(self):
         with warnings.catch_warnings(record=True) as caught:

@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from pathlib import Path
 from core.greeks import single_leg_greeks
-from core.pricing import price, solve_iv
+from core.pricing import price, price_with_diagnostics, solve_iv
 
 
 class TestBlack76:
@@ -115,6 +115,26 @@ class TestBSMerton:
         # because BS doesn't discount the forward
         assert c_black76 != pytest.approx(c_bs, abs=0.01)
 
+    @pytest.mark.parametrize(
+        "model,S,K,right,q",
+        [
+            ("bs", 50.0, 100.0, "P", 0.0),
+            ("bsm", 50.0, 100.0, "P", 0.02),
+            ("bsm", 100.0, 80.0, "C", 0.10),
+        ],
+    )
+    def test_iv_round_trip_deep_itm_uses_spot_model_bound(self, model, S, K, right, q):
+        sigma = 0.10
+        mkt = price(model, S, K, 1.0, 0.05, sigma, right, q=q)
+        solved = solve_iv(model, mkt, S, K, 1.0, 0.05, right, q=q)
+        assert solved == pytest.approx(sigma, abs=1e-5)
+
+    def test_plain_bs_ignores_dividend_yield(self):
+        args = (100.0, 100.0, 1.0, 0.05, 0.20, "C")
+        assert price("bs", *args, q=0.10) == pytest.approx(price("bs", *args, q=0.0))
+        with_dividend = price("bsm", *args, q=0.10)
+        assert with_dividend != pytest.approx(price("bs", *args, q=0.10))
+
 
 class TestIVSolver:
     """Implied volatility solver."""
@@ -153,6 +173,108 @@ class TestIVSolver:
         result = solve_iv("black76", 5.0, 80, 82, 0.001, 0.05, "C")
         # May or may not converge — but shouldn't crash
         assert result is not None
+
+
+class TestAdditionalPricingEngines:
+    def test_bachelier_prices_negative_futures_and_round_trips_absolute_vol(self):
+        F, K, T, r, normal_vol = -37.63, 10.0, 0.5, 0.05, 25.0
+        premium = price("bachelier", F, K, T, r, normal_vol, "C")
+        assert np.isfinite(premium)
+        assert premium > 0
+        solved = solve_iv(
+            "bachelier",
+            premium,
+            F,
+            K,
+            T,
+            r,
+            "C",
+            bounds=(1e-4, 100.0),
+        )
+        assert solved == pytest.approx(normal_vol, abs=1e-5)
+
+    def test_shifted_black_requires_explicit_shift(self):
+        assert np.isnan(price("black76_shifted", -37.63, 10.0, 0.5, 0.05, 0.3, "C"))
+        premium = price(
+            "black76_shifted", -37.63, 10.0, 0.5, 0.05, 0.3, "C", shift=50.0
+        )
+        assert np.isfinite(premium)
+        solved = solve_iv(
+            "black76_shifted",
+            premium,
+            -37.63,
+            10.0,
+            0.5,
+            0.05,
+            "C",
+            shift=50.0,
+        )
+        assert solved == pytest.approx(0.3, abs=1e-5)
+
+    @pytest.mark.parametrize(
+        "right,K,S,q,r,T,sigma,expected",
+        [
+            ("C", 100.0, 90.0, 0.10, 0.10, 0.10, 0.15, 0.0206),
+            ("C", 100.0, 100.0, 0.10, 0.10, 0.50, 0.25, 6.8015),
+            ("P", 100.0, 90.0, 0.10, 0.10, 0.10, 0.15, 10.0000),
+            ("P", 100.0, 100.0, 0.10, 0.10, 0.10, 0.25, 3.1277),
+        ],
+    )
+    def test_bsm_baw_matches_haug_quantlib_reference(
+        self, right, K, S, q, r, T, sigma, expected
+    ):
+        # Public reference cases used by QuantLib's American-option test suite.
+        calculated = price("bsm_baw", S, K, T, r, sigma, right, q=q)
+        assert calculated == pytest.approx(expected, abs=3e-3)
+
+    @pytest.mark.parametrize("right", ["C", "P"])
+    def test_black76_baw_has_premium_and_iv_round_trip(self, right):
+        F, K, T, r, sigma = 80.0, 80.0, 0.5, 0.05, 0.30
+        european = price("black76", F, K, T, r, sigma, right)
+        result = price_with_diagnostics("black76_baw", F, K, T, r, sigma, right)
+        assert result.value >= european
+        assert result.diagnostics["baw_boundary_converged"] is True
+        assert result.diagnostics["baw_boundary_iterations"] > 0
+        solved = solve_iv("black76_baw", result.value, F, K, T, r, right)
+        assert solved == pytest.approx(sigma, abs=1e-5)
+
+    def test_baw_negative_rate_fails_closed_with_reason(self):
+        result = price_with_diagnostics(
+            "black76_baw", 80.0, 80.0, 0.5, -0.01, 0.30, "C"
+        )
+        assert np.isnan(result.value)
+        assert result.diagnostics["pricing_domain_reason"] == "baw_negative_rate_not_supported"
+
+    def test_baw_long_tenor_emits_reference_warning(self):
+        result = price_with_diagnostics(
+            "black76_baw", 80.0, 80.0, 1.5, 0.05, 0.30, "P"
+        )
+        assert result.diagnostics["model_validity_warning"] == (
+            "baw_reference_recommended_for_t_gt_1y"
+        )
+
+    def test_crr_reference_matches_european_black76_and_american_baw(self):
+        european = price("black76", 100.0, 100.0, 1.0, 0.05, 0.20, "C")
+        european_tree = price(
+            "crr_binomial", 100.0, 100.0, 1.0, 0.05, 0.20, "C",
+            model_params={
+                "tree_steps": 800,
+                "tree_exercise_style": "european",
+                "tree_underlying_type": "future",
+            },
+        )
+        american = price("black76_baw", 100.0, 100.0, 0.5, 0.05, 0.25, "P")
+        american_tree = price(
+            "crr_binomial", 100.0, 100.0, 0.5, 0.05, 0.25, "P",
+            model_params={
+                "tree_steps": 800,
+                "tree_exercise_style": "american",
+                "tree_underlying_type": "future",
+            },
+        )
+
+        assert european_tree == pytest.approx(european, abs=0.003)
+        assert american_tree == pytest.approx(american, abs=0.02)
 
     def test_deep_otm_solve(self):
         """Deep OTM — vega near 0 — should return NaN not crash."""

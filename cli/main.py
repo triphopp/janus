@@ -87,8 +87,12 @@ def _add_run_opts(p: argparse.ArgumentParser) -> None:
     p.add_argument("--allow-model-approximation", action="store_true",
                    help="allow an explicitly labelled diagnostic model approximation")
     p.add_argument("--compare-model", action="append", default=[],
-                   choices=list(pricing_models_mod.supported_model_names()),
+                   choices=list(pricing_models_mod.implemented_price_model_names()),
                    help="add a diagnostic comparison model; does not replace canonical output")
+    p.add_argument("--pricing-shift", type=float, default=None,
+                   help="explicit displacement for shifted-Black models")
+    p.add_argument("--tree-steps", type=int, default=None,
+                   help="number of CRR reference-tree steps (default: 400)")
 
 
 # ── commands ──────────────────────────────────────────────────────────────────
@@ -165,6 +169,16 @@ def _build_plan_from_args(args, run_id):
             plan.cfg.setdefault("pricing", {})["compare_models"] = models
             plan.cfg["compare_models"] = models
             plan.cfg.setdefault("runtime_overrides", {})["compare_models"] = models
+    if getattr(args, "pricing_shift", None) is not None:
+        shift = float(args.pricing_shift)
+        plan.cfg.setdefault("pricing", {})["pricing_shift"] = shift
+        plan.cfg["pricing_shift"] = shift
+        plan.cfg.setdefault("runtime_overrides", {})["pricing_shift"] = shift
+    if getattr(args, "tree_steps", None) is not None:
+        steps = int(args.tree_steps)
+        plan.cfg.setdefault("pricing", {})["tree_steps"] = steps
+        plan.cfg["tree_steps"] = steps
+        plan.cfg.setdefault("runtime_overrides", {})["tree_steps"] = steps
     progress = getattr(args, "progress", "plain") or "plain"
     plan.cfg["progress_mode"] = progress
     plan.cfg.setdefault("runtime_overrides", {})["progress"] = progress

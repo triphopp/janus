@@ -48,6 +48,8 @@ def test_runtime_overrides_set_nested_and_flat_cli_controls():
         pricing_model="auto",
         allow_model_approximation=True,
         compare_models=["black76_european"],
+        pricing_shift=50.0,
+        tree_steps=600,
         metrics_mode="diagnostic",
         min_dte=3,
         max_dte=90,
@@ -66,6 +68,8 @@ def test_runtime_overrides_set_nested_and_flat_cli_controls():
     assert out["pricing_model"] == "auto"
     assert out["allow_model_approximation"] is True
     assert out["compare_models"] == ["black76_european"]
+    assert out["pricing_shift"] == 50.0
+    assert out["tree_steps"] == 600
     assert out["metrics_mode"] == "diagnostic"
     assert out["option_universe"]["min_dte_days"] == 3
     assert out["option_universe"]["max_dte_days"] == 90

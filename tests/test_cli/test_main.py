@@ -176,6 +176,8 @@ def test_run_accepts_pricing_model_policy_flags(tmp_path, capsys, monkeypatch):
         "--pricing-model", "auto",
         "--allow-model-approximation",
         "--compare-model", "black76_european",
+        "--pricing-shift", "50",
+        "--tree-steps", "600",
     ], reg)
 
     assert rc == 0
@@ -183,6 +185,8 @@ def test_run_accepts_pricing_model_policy_flags(tmp_path, capsys, monkeypatch):
     assert captured["cfg"]["pricing"]["model"] == "auto"
     assert captured["cfg"]["allow_model_approximation"] is True
     assert captured["cfg"]["compare_models"] == ["black76_european"]
+    assert captured["cfg"]["pricing_shift"] == 50.0
+    assert captured["cfg"]["tree_steps"] == 600
 
 
 def test_run_advanced_override_syncs_pricing_model(tmp_path, capsys, monkeypatch):

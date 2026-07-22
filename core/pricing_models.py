@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,8 @@ class PricingModelSpec:
     speed_tier: str
     maturity: str
     approximation: str = "none"
+    volatility_unit: str = "fraction_per_sqrt_year"
+    max_recommended_tenor_years: float | None = None
     runtime_model: str | None = None
     uses_dividend_yield: bool = False
     implemented_price: bool = False
@@ -144,7 +147,10 @@ _REGISTRY: dict[str, PricingModelSpec] = {
         speed_tier="fast",
         maturity="legacy",
         runtime_model="bs",
-        uses_dividend_yield=True,
+        # Plain Black-Scholes is the q=0 specialization.  Keep ``bsm`` as the
+        # explicit continuous-dividend model so selecting ``bs`` cannot
+        # silently consume a configured dividend yield.
+        uses_dividend_yield=False,
         implemented_price=True,
         implemented_greeks=True,
     ),
@@ -170,17 +176,24 @@ _REGISTRY: dict[str, PricingModelSpec] = {
     "bachelier": PricingModelSpec(
         name="bachelier",
         aliases=("normal",),
-        family="generic_options",
+        # Initial runtime implementation is the discounted normal model for
+        # options on futures.  A spot-normal variant would need an explicit
+        # carry contract instead of reusing this name silently.
+        family="futures_options",
         exercise_style="european",
         price_dynamics="normal",
         supports_negative_underlying=True,
         requires_shift=False,
         supports_closed_form_price=True,
-        supports_closed_form_greeks=False,
+        supports_closed_form_greeks=True,
         default_greek_method="closed_form",
         parity_check_mode="equality",
         speed_tier="fast",
-        maturity="planned",
+        maturity="production_candidate",
+        volatility_unit="absolute_price_per_sqrt_year",
+        runtime_model="bachelier",
+        implemented_price=True,
+        implemented_greeks=True,
     ),
     "black76_shifted": PricingModelSpec(
         name="black76_shifted",
@@ -192,10 +205,13 @@ _REGISTRY: dict[str, PricingModelSpec] = {
         requires_shift=True,
         supports_closed_form_price=True,
         supports_closed_form_greeks=False,
-        default_greek_method="closed_form",
+        default_greek_method="numerical_bump",
         parity_check_mode="equality",
         speed_tier="fast",
-        maturity="planned",
+        maturity="production_candidate",
+        runtime_model="black76_shifted",
+        implemented_price=True,
+        implemented_greeks=True,
     ),
     "black76_baw": PricingModelSpec(
         name="black76_baw",
@@ -210,8 +226,12 @@ _REGISTRY: dict[str, PricingModelSpec] = {
         default_greek_method="numerical_bump",
         parity_check_mode="american_bounds",
         speed_tier="medium",
-        maturity="planned",
+        maturity="production_candidate",
         approximation="barone_adesi_whaley",
+        max_recommended_tenor_years=1.0,
+        runtime_model="black76_baw",
+        implemented_price=True,
+        implemented_greeks=True,
     ),
     "black76_shifted_baw": PricingModelSpec(
         name="black76_shifted_baw",
@@ -226,8 +246,12 @@ _REGISTRY: dict[str, PricingModelSpec] = {
         default_greek_method="numerical_bump",
         parity_check_mode="american_bounds",
         speed_tier="medium",
-        maturity="planned",
+        maturity="experimental",
         approximation="barone_adesi_whaley",
+        max_recommended_tenor_years=1.0,
+        runtime_model="black76_shifted_baw",
+        implemented_price=True,
+        implemented_greeks=True,
     ),
     "bsm_baw": PricingModelSpec(
         name="bsm_baw",
@@ -242,8 +266,12 @@ _REGISTRY: dict[str, PricingModelSpec] = {
         default_greek_method="numerical_bump",
         parity_check_mode="american_bounds",
         speed_tier="medium",
-        maturity="planned",
+        maturity="production_candidate",
         approximation="barone_adesi_whaley",
+        max_recommended_tenor_years=1.0,
+        runtime_model="bsm_baw",
+        implemented_price=True,
+        implemented_greeks=True,
     ),
     "crr_binomial": PricingModelSpec(
         name="crr_binomial",
@@ -258,8 +286,11 @@ _REGISTRY: dict[str, PricingModelSpec] = {
         default_greek_method="numerical_bump",
         parity_check_mode="disabled",
         speed_tier="slow",
-        maturity="planned_reference",
+        maturity="production_reference",
         approximation="crr_tree",
+        runtime_model="crr_binomial",
+        implemented_price=True,
+        implemented_greeks=True,
     ),
     "trinomial": PricingModelSpec(
         name="trinomial",
@@ -382,6 +413,47 @@ def parity_check_mode(model: str) -> str:
     return get_model_spec(model).parity_check_mode
 
 
+def default_greek_method(model: str) -> str:
+    return get_model_spec(model).default_greek_method
+
+
+def runtime_model_params(cfg: dict | None) -> dict[str, Any]:
+    """Resolve model-specific runtime parameters from normalized or nested config."""
+    cfg = cfg or {}
+    pricing = cfg.get("pricing") or {}
+    shifted = pricing.get("shifted_black") or {}
+    baw = pricing.get("baw") or {}
+    tree = pricing.get("tree") or {}
+
+    shift = cfg.get(
+        "pricing_shift",
+        pricing.get("shift", shifted.get("shift")),
+    )
+    params: dict[str, Any] = {}
+    if shift is not None:
+        params["shift"] = float(shift)
+    params["baw_boundary_tol"] = float(
+        cfg.get("baw_boundary_tol", baw.get("boundary_tol", 1e-8))
+    )
+    params["baw_boundary_max_iter"] = int(
+        cfg.get("baw_boundary_max_iter", baw.get("max_iter", 100))
+    )
+    params["tree_steps"] = int(cfg.get("tree_steps", tree.get("steps", 400)))
+    params["tree_exercise_style"] = str(
+        cfg.get(
+            "tree_exercise_style",
+            tree.get("exercise_style", cfg.get("exercise_style", "american")),
+        )
+    ).strip().lower()
+    params["tree_underlying_type"] = str(
+        cfg.get(
+            "tree_underlying_type",
+            tree.get("underlying_type", cfg.get("option_underlying_type", "spot")),
+        )
+    ).strip().lower()
+    return params
+
+
 def resolve_pricing_model(
     requested_model: str | None,
     *,
@@ -481,7 +553,13 @@ def resolve_pricing_model(
     if not family_ok:
         reason = "pricing_model_family_mismatch"
     elif not style_ok:
-        if allow_model_approximation and spec.exercise_style == "european" and contract_style == "american":
+        diagnostic = str(run_trust_level).strip().lower() == "diagnostic"
+        if (
+            diagnostic
+            and allow_model_approximation
+            and spec.exercise_style == "european"
+            and contract_style == "american"
+        ):
             approx = True
             reason = "european_approximation_for_american_contract"
         else:
@@ -571,7 +649,15 @@ def validate_pricing_domain(
     if not sig_ok or vol <= 0:
         return PricingDomainResult(False, "nonpositive_sigma")
 
-    if spec.price_dynamics == "lognormal":
+    rate_ok, rate_value = _finite_float(r)
+    if (
+        rate_ok
+        and spec.approximation == "barone_adesi_whaley"
+        and rate_value < 0
+    ):
+        return PricingDomainResult(False, "baw_negative_rate_not_supported")
+
+    if spec.price_dynamics in {"lognormal", "tree"}:
         if s <= 0:
             return PricingDomainResult(False, "lognormal_underlying_nonpositive")
         if strike <= 0:

@@ -1,9 +1,8 @@
 """Backtest-readiness regression tests.
 
 These lock the cross-module behavior from issue 035: product identity must be
-resolved before model policy, official WTI American options must not silently
-fall back to a European model, and diagnostic fallback exports must carry the
-approximation metadata.
+resolved before model policy and WTI American options must select the runtime
+BAW engine without silently falling back to a European model.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ import json
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 
 WTI_HEADER = (
@@ -75,19 +73,24 @@ def _load_raw(path: Path, cfg: dict) -> pd.DataFrame:
     )
 
 
-def test_official_auto_wti_american_blocks_until_baw_is_implemented(tmp_path):
-    """Regression: official auto must not silently price American WTI as European."""
+def test_official_auto_wti_american_uses_baw_without_european_fallback(tmp_path):
+    """Regression: official auto prices American WTI with the implemented BAW engine."""
     from adapters.futures_options_adapter import FuturesOptionsAdapter
 
     cfg = _base_cfg(require_fixed_data_version=True)
     raw = _load_raw(_write_wti_chain(tmp_path / "wti.psv"), cfg)
 
-    with pytest.raises(NotImplementedError, match="pricing_model_not_implemented: black76_baw"):
-        FuturesOptionsAdapter(cfg).prepare(raw)
+    prepared, prepared_cfg = FuturesOptionsAdapter(cfg).prepare(raw)
+    options = prepared[prepared["instrument_type"] == "option"]
+
+    assert prepared_cfg["pricing_model"] == "black76_baw"
+    assert set(options["pricing_model_source"]) == {"policy_default"}
+    assert options["pricing_model_contract_match"].all()
+    assert not options["is_model_approximation"].all()
 
 
-def test_diagnostic_auto_wti_american_export_is_labelled_approximation(tmp_path):
-    """Regression: explicit diagnostic fallback must be visible in downstream export."""
+def test_diagnostic_auto_wti_american_export_uses_baw_contract_identity(tmp_path):
+    """Regression: diagnostic mode also uses BAW once the runtime exists."""
     from adapters.futures_options_adapter import FuturesOptionsAdapter
     from core import option_chain_export as oce
 
@@ -112,20 +115,18 @@ def test_diagnostic_auto_wti_american_export_is_labelled_approximation(tmp_path)
     frame = pd.read_csv(csv_path)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    assert set(frame["pricing_model"]) == {"black76_european"}
+    assert set(frame["pricing_model"]) == {"black76_baw"}
     assert set(frame["pricing_model_target"]) == {"black76_baw"}
-    assert set(frame["pricing_model_source"]) == {"temporary_fallback"}
-    assert set(frame["pricing_model_contract_match"].astype(str).str.lower()) == {"false"}
-    assert set(frame["pricing_model_contract_reason"]) == {
-        "european_approximation_for_american_contract"
-    }
-    assert set(frame["is_model_approximation"].astype(str).str.lower()) == {"true"}
+    assert set(frame["pricing_model_source"]) == {"policy_default"}
+    assert set(frame["pricing_model_contract_match"].astype(str).str.lower()) == {"true"}
+    assert set(frame["pricing_model_contract_reason"]) == {"policy_default_contract_match"}
+    assert set(frame["is_model_approximation"].astype(str).str.lower()) == {"false"}
     assert set(frame["product_family"]) == {"futures_options"}
     assert set(frame["option_underlying_type"]) == {"future"}
     assert set(frame["exercise_style"]) == {"american"}
 
-    assert manifest["pricing_model"] == "black76_european"
+    assert manifest["pricing_model"] == "black76_baw"
     assert manifest["pricing_model_target"] == "black76_baw"
-    assert manifest["is_model_approximation"] is True
-    assert manifest["pricing_model_contract_match"] is False
+    assert manifest["is_model_approximation"] is False
+    assert manifest["pricing_model_contract_match"] is True
     assert manifest["root_provenance"]["option_root_source"] == "source_option_root"
