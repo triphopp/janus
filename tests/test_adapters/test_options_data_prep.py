@@ -58,6 +58,18 @@ def test_futures_options_maps_underlying_price_not_premium():
     assert not (options["F"] == options["option_price"]).any()
 
 
+def test_bachelier_rejects_fractional_exchange_iv_without_explicit_unit():
+    from adapters.futures_options_adapter import FuturesOptionsAdapter
+
+    with pytest.raises(ValueError, match="Provided IV unit is incompatible"):
+        FuturesOptionsAdapter({
+            "pricing_model": "bachelier",
+            "iv_source": "provided",
+            "dte": {"basis": "calendar", "day_count": "act_365"},
+            "vol_window": 5,
+        }).prepare(_mixed_futures_options_fixture())
+
+
 def test_futures_options_option_only_fails_fast():
     """Futures options require PIT futures rows for the underlying map."""
     from adapters.futures_options_adapter import FuturesOptionsAdapter
@@ -146,7 +158,7 @@ def test_pcp_black76_european_alias_uses_equality_gate():
     assert adapter._option_quality["pcp_check_mode"] == "equality"
 
 
-def test_pcp_american_planned_model_does_not_use_european_equality():
+def test_pcp_american_model_checks_individual_premium_bounds():
     from adapters.futures_options_adapter import FuturesOptionsAdapter
 
     df = pd.DataFrame({
@@ -168,7 +180,11 @@ def test_pcp_american_planned_model_does_not_use_european_equality():
     adapter = FuturesOptionsAdapter({"pricing_model": "black76_baw"})
     checked = adapter.check_pcp(df)
     assert not checked["_pcp_flag"].any()
-    assert adapter._option_quality["pcp_check_status"] == "disabled_american_bounds"
+    assert adapter._option_quality["pcp_check_status"] == "checked_american_bounds"
+
+    df.loc[df["right"] == "C", "option_price"] = -1.0
+    checked = adapter.check_pcp(df)
+    assert checked.loc[df["right"] == "C", "_pcp_flag"].all()
 
 
 def test_equity_options_requires_chain_schema():
@@ -416,20 +432,29 @@ def test_futures_options_adapter_rejects_product_family_mismatch():
         }).prepare(raw)
 
 
-def test_auto_pricing_blocks_unimplemented_american_target_for_official_run():
+def test_auto_pricing_selects_implemented_american_target_for_official_run():
     from adapters.futures_options_adapter import FuturesOptionsAdapter
 
-    with pytest.raises(NotImplementedError, match="pricing_model_not_implemented: black76_baw"):
-        FuturesOptionsAdapter({
-            "pricing_model": "auto",
-            "iv_source": "provided",
-            "dte": {"basis": "calendar", "day_count": "act_365"},
-            "vol_window": 5,
-            "require_fixed_data_version": True,
-        }).prepare(_identity_tagged_wti_fixture())
+    df, core_cfg = FuturesOptionsAdapter({
+        "pricing_model": "auto",
+        "iv_source": "provided",
+        "compute_greeks": False,
+        "dte": {"basis": "calendar", "day_count": "act_365"},
+        "vol_window": 5,
+        "require_fixed_data_version": True,
+    }).prepare(_identity_tagged_wti_fixture())
+
+    opts = df[df["instrument_type"] == "option"]
+    assert core_cfg["pricing_model"] == "black76_baw"
+    assert set(opts["pricing_model_source"]) == {"policy_default"}
+    assert opts["pricing_model_contract_match"].all()
+    assert not opts["is_model_approximation"].all()
+    assert opts["baw_boundary_converged"].all()
+    assert set(opts["pricing_status"]) == {"ok"}
+    assert core_cfg["option_quality"]["pricing_model_diagnostics"]["validity_warnings"] == 0
 
 
-def test_auto_pricing_allows_labelled_diagnostic_american_approximation():
+def test_auto_pricing_diagnostic_still_selects_implemented_american_model():
     from adapters.futures_options_adapter import FuturesOptionsAdapter
 
     df, core_cfg = FuturesOptionsAdapter({
@@ -444,14 +469,12 @@ def test_auto_pricing_allows_labelled_diagnostic_american_approximation():
     }).prepare(_identity_tagged_wti_fixture())
 
     opts = df[df["instrument_type"] == "option"]
-    assert core_cfg["pricing_model"] == "black76_european"
+    assert core_cfg["pricing_model"] == "black76_baw"
     assert set(opts["pricing_model_target"]) == {"black76_baw"}
-    assert set(opts["pricing_model_source"]) == {"temporary_fallback"}
-    assert not opts["pricing_model_contract_match"].all()
-    assert opts["is_model_approximation"].all()
-    assert set(opts["pricing_model_contract_reason"]) == {
-        "european_approximation_for_american_contract"
-    }
+    assert set(opts["pricing_model_source"]) == {"policy_default"}
+    assert opts["pricing_model_contract_match"].all()
+    assert not opts["is_model_approximation"].all()
+    assert set(opts["pricing_model_contract_reason"]) == {"policy_default_contract_match"}
 
 
 def test_nested_options_config_is_normalized_before_adapter_math():

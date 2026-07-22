@@ -69,7 +69,8 @@ def test_has_expected_columns_in_order():
     expected = ("trade_date,product,underlying_symbol,option_symbol,contract_month,"
                 "expiration_date,option_type,strike_price,option_settlement_price,"
                 "underlying_settlement_price,implied_volatility,delta,gamma,vega,theta,"
-                "rho,dte_days,pricing_model,product_family,option_underlying_type,"
+                "rho,dte_days,pricing_model,greek_method,volatility_unit,pricing_shift,"
+                "product_family,option_underlying_type,"
                 "exercise_style,pricing_model_target,pricing_model_source,"
                 "pricing_model_contract_match,pricing_model_contract_reason,"
                 "is_model_approximation").split(",")
@@ -231,7 +232,23 @@ def test_manifest_declares_product_precision_and_iv_unit():
 def test_schema_pricing_model_allowed_values_come_from_registry():
     schema = oce.build_export_schema(_CFG)
     pricing_model = next(c for c in schema["columns"] if c["name"] == "pricing_model")
-    assert pricing_model["allowed_values"] == ["black76", "black76_european", "bs", "bsm"]
+    assert pricing_model["allowed_values"] == list(
+        oce._pricing_models.implemented_greek_model_names()
+    )
+
+
+def test_bachelier_export_keeps_negative_underlying_and_records_absolute_vol_unit():
+    frame = _prepared_frame()
+    option_mask = frame["instrument_type"].eq("option")
+    frame.loc[option_mask, "underlying_price"] = -10.0
+    cfg = {**_CFG, "pricing_model": "bachelier"}
+
+    built = oce.build_option_chain_greeks(frame, cfg)
+    schema = oce.build_export_schema(cfg)
+    iv_field = next(c for c in schema["columns"] if c["name"] == "implied_volatility")
+
+    assert built["n_exported"] == 4
+    assert iv_field["unit"] == "absolute_price_per_sqrt_year"
 
 
 def test_manifest_declares_settlement_timing_policy():

@@ -112,6 +112,8 @@ def apply_runtime_overrides(
     pricing_model: str | None = None,
     allow_model_approximation: bool | None = None,
     compare_models: list[str] | None = None,
+    pricing_shift: float | None = None,
+    tree_steps: int | None = None,
     greeks_backend: str | None = None,
     greeks_batch_size: int | None = None,
     greeks_dtype: str | None = None,
@@ -156,6 +158,16 @@ def apply_runtime_overrides(
         out.setdefault("pricing", {})["compare_models"] = models
         out["compare_models"] = models
         runtime["compare_models"] = models
+
+    if pricing_shift is not None:
+        out.setdefault("pricing", {})["pricing_shift"] = float(pricing_shift)
+        out["pricing_shift"] = float(pricing_shift)
+        runtime["pricing_shift"] = float(pricing_shift)
+
+    if tree_steps is not None:
+        out.setdefault("pricing", {})["tree_steps"] = int(tree_steps)
+        out["tree_steps"] = int(tree_steps)
+        runtime["tree_steps"] = int(tree_steps)
 
     if greeks_backend is not None:
         out.setdefault("pricing", {})["greeks_backend"] = greeks_backend
@@ -1471,6 +1483,18 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
             iv_mismatch_review_path = run_dir / "tables" / "iv_mismatch_review.csv"
             review_df.to_csv(iv_mismatch_review_path, index=False)
 
+    # Optional model-comparison artifact. Every comparison model is calibrated
+    # to the same observed premium; fixed-vol differences are emitted only for
+    # models with matching volatility units.
+    model_comparison_summary = {}
+    comparison_models = core_cfg.get("compare_models", []) if is_options_run else []
+    if comparison_models:
+        from core import model_comparison as model_comparison_mod
+
+        model_comparison_summary = model_comparison_mod.write_model_comparison(
+            df, core_cfg, run_dir
+        )
+
     # Grain provenance (issue 012): the prepared option chain is contract-grain
     # (many rows per date); date-level features are reduced to one row per decision
     # date via core.causal/core.grain before any rolling/regime/fold computation.
@@ -1545,6 +1569,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "product_identity": product_identity_summary,
         "domain_run_readiness": domain_run_readiness,
         "iv_mismatch_review": iv_mismatch_review_summary,
+        "model_comparison": model_comparison_summary,
         "grain": grain_summary,
         "event_availability": event_availability,
         "unit_assumptions": unit_assumptions,
@@ -1572,6 +1597,11 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     }
     if iv_mismatch_review_path is not None:
         summary["artifacts"]["iv_mismatch_review"] = str(iv_mismatch_review_path)
+    if model_comparison_summary:
+        summary["artifacts"]["model_comparison_csv"] = model_comparison_summary["csv"]
+        summary["artifacts"]["model_comparison_summary"] = model_comparison_summary[
+            "summary_json"
+        ]
 
     # ── Downstream option-chain Greeks export (issues 023/024) ──
     # Additive, market-facing clean dataset. Gated by option-market readiness
@@ -1714,8 +1744,12 @@ Example (WTI Q4 2024, near-term liquid options + Greeks):
     parser.add_argument("--allow-model-approximation", action="store_true",
                         help="Allow an explicitly labelled diagnostic model approximation.")
     parser.add_argument("--compare-model", action="append", default=[],
-                        choices=list(pricing_models_mod.supported_model_names()),
+                        choices=list(pricing_models_mod.implemented_price_model_names()),
                         help="Add a diagnostic comparison model; does not replace canonical output.")
+    parser.add_argument("--pricing-shift", type=float, default=None,
+                        help="Explicit displacement for shifted-Black models.")
+    parser.add_argument("--tree-steps", type=int, default=None,
+                        help="Number of CRR reference-tree steps. (default: 400)")
     parser.add_argument("--greeks-backend", default=None,
                         choices=["numpy", "loop", "auto", "cuda"],
                         help="Backend for vectorized Greek computation. "
@@ -1817,6 +1851,8 @@ Example (WTI Q4 2024, near-term liquid options + Greeks):
         pricing_model=args.pricing_model,
         allow_model_approximation=args.allow_model_approximation or None,
         compare_models=args.compare_model or None,
+        pricing_shift=args.pricing_shift,
+        tree_steps=args.tree_steps,
         greeks_backend=args.greeks_backend,
         metrics_mode=args.metrics_mode,
         min_dte=args.min_dte,

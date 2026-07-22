@@ -655,8 +655,10 @@ class OptionsBase(AdapterBase):
         dte_cfg = self.cfg.get("dte", {})
         div_yield = self.cfg.get("div_yield", 0.0)
         solver_bounds = tuple(self.cfg.get("iv_solver_bounds", (1e-4, 5.0)))
+        model_params = _pricing_models.runtime_model_params(self.cfg)
 
         option_mask = self._option_mask(df)
+        model_params = self._runtime_model_params_for_frame(df, option_mask, model_params)
         if "expiry" in df.columns and "as_of_date" in df.columns:
             df["T"] = np.nan
             df["dte_days"] = np.nan
@@ -677,6 +679,18 @@ class OptionsBase(AdapterBase):
 
         if iv_source == "provided" and "iv_provided" in df.columns and option_mask.any():
             pricing_cfg = self.cfg.get("pricing") or {}
+            model_spec = _pricing_models.get_model_spec(model)
+            provided_unit = self.cfg.get(
+                "provided_iv_volatility_unit",
+                pricing_cfg.get("provided_iv_volatility_unit", "fraction_per_sqrt_year"),
+            )
+            if str(provided_unit) != model_spec.volatility_unit:
+                raise ValueError(
+                    "Provided IV unit is incompatible with pricing model: "
+                    f"provided={provided_unit}, model={model}, "
+                    f"required={model_spec.volatility_unit}. Use iv_source=solve or "
+                    "configure provided_iv_volatility_unit explicitly."
+                )
             # Exchange settlement IV is authoritative (issue 025): by default we do NOT
             # re-derive IV by inverting the settlement price. Price-inversion is only a
             # reliable cross-check near the money and merely reproduces the exchange IV
@@ -739,6 +753,8 @@ class OptionsBase(AdapterBase):
                     right=row.get("right", "C"),
                     q=div_yield,
                     bounds=solver_bounds,
+                    shift=model_params.get("shift"),
+                    model_params=model_params,
                 )
                 ivs.loc[idx] = iv
             df["iv"] = ivs
@@ -755,6 +771,16 @@ class OptionsBase(AdapterBase):
         df = df.copy()
         model = self.cfg.get("pricing_model", "black76")
         div_yield = self.cfg.get("div_yield", 0.0)
+        model_params = _pricing_models.runtime_model_params(self.cfg)
+        greek_method = _pricing_models.default_greek_method(model)
+
+        option_mask = self._option_mask(df)
+        model_params = self._runtime_model_params_for_frame(df, option_mask, model_params)
+
+        df = self._stamp_pricing_domain(df, model=model, model_params=model_params)
+        option_mask = self._option_mask(df)
+        df["greek_method"] = pd.NA
+        df.loc[option_mask, "greek_method"] = greek_method
 
         greeks_cols = ["delta", "gamma", "vega", "theta", "rho"]
         for col in greeks_cols:
@@ -779,7 +805,6 @@ class OptionsBase(AdapterBase):
         if cuda_min_rows is not None:
             cuda_min_rows = int(cuda_min_rows)
 
-        option_mask = self._option_mask(df)
         option_rows = df.loc[option_mask]
 
         if option_rows.empty:
@@ -813,7 +838,12 @@ class OptionsBase(AdapterBase):
             else pd.Series(False, index=option_rows.index)
         )
         self._option_quality["rate_missing_rows"] = int((~valid_r).sum())
-        valid_mask = valid_T & valid_iv & valid_r
+        valid_domain = (
+            option_rows["pricing_domain_valid"].fillna(False).astype(bool)
+            if "pricing_domain_valid" in option_rows.columns
+            else pd.Series(True, index=option_rows.index)
+        )
+        valid_mask = valid_T & valid_iv & valid_r & valid_domain
         valid_rows = option_rows.loc[valid_mask]
         resolved_backend = None
         if not valid_rows.empty:
@@ -822,6 +852,8 @@ class OptionsBase(AdapterBase):
                 len(valid_rows),
                 cuda_min_rows=cuda_min_rows,
             )
+            if greek_method == "numerical_bump" and resolved_backend != "cuda":
+                resolved_backend = "loop"
         self._option_quality["greeks_runtime"] = {
             "status": "computed" if not valid_rows.empty else "skipped",
             "reason": None if not valid_rows.empty else "no_valid_t_iv_rows",
@@ -865,6 +897,8 @@ class OptionsBase(AdapterBase):
                 batch_size=batch_size,
                 dtype=str(dtype),
                 cuda_min_rows=cuda_min_rows,
+                shift=model_params.get("shift"),
+                model_params=model_params,
             )
 
             for col in greeks_cols:
@@ -874,6 +908,123 @@ class OptionsBase(AdapterBase):
             df = self._filter_delta_band(df, "delta")
 
         return df
+
+    @staticmethod
+    def _runtime_model_params_for_frame(
+        df: pd.DataFrame,
+        option_mask: pd.Series,
+        base: dict,
+    ) -> dict:
+        """Fill generic tree parameters from resolved row identity."""
+        params = dict(base)
+        option_rows = df.loc[option_mask]
+        for column, key in (
+            ("exercise_style", "tree_exercise_style"),
+            ("contract_exercise_style", "tree_exercise_style"),
+            ("option_underlying_type", "tree_underlying_type"),
+        ):
+            if column not in option_rows.columns:
+                continue
+            values = option_rows[column].dropna().astype(str).str.lower().unique()
+            if len(values) == 1:
+                params[key] = values[0]
+        return params
+
+    def _stamp_pricing_domain(
+        self,
+        df: pd.DataFrame,
+        *,
+        model: str,
+        model_params: dict,
+    ) -> pd.DataFrame:
+        """Attach auditable row-level model-domain diagnostics."""
+        out = df.copy()
+        option_mask = self._option_mask(out)
+        out["pricing_model_supported"] = False
+        out["pricing_domain_valid"] = False
+        out["pricing_domain_reason"] = "not_option_row"
+        spec = _pricing_models.get_model_spec(model)
+        diagnostic_model = (
+            spec.approximation == "barone_adesi_whaley"
+            or spec.name == "crr_binomial"
+        )
+        diagnostic_columns = (
+            "pricing_status",
+            "model_validity_warning",
+            "baw_boundary_converged",
+            "baw_boundary_iterations",
+            "baw_boundary_solver_status",
+            "baw_critical_boundary",
+            "tree_steps",
+            "tree_exercise_style",
+            "tree_probability",
+        )
+        if diagnostic_model:
+            for column in diagnostic_columns:
+                if column not in out.columns:
+                    out[column] = pd.NA
+        runtime_supported = bool(spec.implemented_price and spec.implemented_greeks)
+        if not option_mask.any():
+            return out
+
+        for idx, row in out.loc[option_mask].iterrows():
+            domain = _pricing_models.validate_pricing_domain(
+                model,
+                self._row_underlying_value(row),
+                row.get("strike", row.get("K", np.nan)),
+                row.get("T", np.nan),
+                row.get("r", np.nan),
+                row.get("iv", row.get("iv_provided", np.nan)),
+                row.get("right"),
+                shift=model_params.get("shift"),
+            )
+            out.at[idx, "pricing_model_supported"] = runtime_supported
+            out.at[idx, "pricing_domain_valid"] = bool(runtime_supported and domain.valid)
+            out.at[idx, "pricing_domain_reason"] = (
+                "ok"
+                if runtime_supported and domain.valid
+                else domain.reason or "pricing_model_not_implemented"
+            )
+            if diagnostic_model and runtime_supported and domain.valid:
+                result = _pricing.price_with_diagnostics(
+                    model,
+                    self._row_underlying_value(row),
+                    row.get("strike", row.get("K", np.nan)),
+                    row.get("T", np.nan),
+                    row.get("r", np.nan),
+                    row.get("iv", row.get("iv_provided", np.nan)),
+                    row.get("right"),
+                    q=float(self.cfg.get("div_yield", 0.0) or 0.0),
+                    shift=model_params.get("shift"),
+                    model_params=model_params,
+                )
+                for column in diagnostic_columns:
+                    if column in result.diagnostics:
+                        out.at[idx, column] = result.diagnostics[column]
+
+        invalid = option_mask & ~out["pricing_domain_valid"].astype(bool)
+        self._option_quality["pricing_domain"] = {
+            "model": model,
+            "valid_rows": int((option_mask & out["pricing_domain_valid"].astype(bool)).sum()),
+            "invalid_rows": int(invalid.sum()),
+            "reasons": {
+                str(reason): int(count)
+                for reason, count in out.loc[invalid, "pricing_domain_reason"].value_counts().items()
+            },
+        }
+        if diagnostic_model:
+            solver_status = out.loc[option_mask, "pricing_status"].astype("string")
+            self._option_quality["pricing_model_diagnostics"] = {
+                "rows": int(option_mask.sum()),
+                "pricing_status": {
+                    str(status): int(count)
+                    for status, count in solver_status.value_counts(dropna=False).items()
+                },
+                "validity_warnings": int(
+                    out.loc[option_mask, "model_validity_warning"].notna().sum()
+                ),
+            }
+        return out
 
     def compute_vrp_sign(self, df: pd.DataFrame) -> pd.DataFrame:
         """Compute Variance Risk Premium sign.
@@ -942,6 +1093,31 @@ class OptionsBase(AdapterBase):
         model = self.cfg.get("pricing_model", "black76")
         parity_mode = _pricing_models.parity_check_mode(model)
         self._option_quality["pcp_check_mode"] = parity_mode
+        if parity_mode == "american_bounds":
+            violations = 0
+            for idx, row in option_df.iterrows():
+                try:
+                    premium = float(self._row_option_price(row))
+                    underlying = float(self._row_underlying_value(row))
+                    strike = float(row.get("strike", np.nan))
+                except (TypeError, ValueError):
+                    continue
+                if not all(np.isfinite(v) for v in (premium, underlying, strike)):
+                    continue
+                right = str(row.get("right", "")).upper()
+                if right not in {"C", "P"}:
+                    continue
+                intrinsic = max(
+                    underlying - strike if right == "C" else strike - underlying,
+                    0.0,
+                )
+                upper = underlying if right == "C" else strike
+                if premium < intrinsic - tol or premium > upper + tol:
+                    df.loc[idx, "_pcp_flag"] = True
+                    violations += 1
+            self._option_quality["pcp_check_status"] = "checked_american_bounds"
+            self._option_quality["pcp_bound_violations"] = violations
+            return df
         if parity_mode != "equality":
             self._option_quality["pcp_check_status"] = f"disabled_{parity_mode}"
             return df
@@ -978,7 +1154,7 @@ class OptionsBase(AdapterBase):
             k = c_row["strike"]
             disc_r = np.exp(-r * t)
 
-            if model_impl == "black76":
+            if model_impl in {"black76", "bachelier", "black76_shifted"}:
                 expected_diff = disc_r * (self._row_underlying_value(c_row) - k)
             elif model_impl in ("bs", "bsm"):
                 s = self._row_underlying_value(c_row)

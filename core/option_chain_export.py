@@ -134,49 +134,49 @@ COLUMN_SPEC: list[dict] = [
     },
     {
         "name": "implied_volatility", "domain_label": "Implied Volatility",
-        "description": "Canonical decimal implied volatility.",
+        "description": "Implied volatility in the selected model's recorded volatility unit.",
         "source_field": "iv (raw OPTION_VOLATILITY via unit registry)",
-        "source_transform": f"canonical decimal unit; round to {IV_DP} decimals",
-        "dtype": "number", "format": "decimal", "unit": "decimal_fraction",
+        "source_transform": f"model-specific canonical unit; round to {IV_DP} decimals",
+        "dtype": "number", "format": "decimal", "unit": "model_volatility_unit",
         "precision": IV_DP, "nullable": False, "allowed_values": None,
         "example_canonical": "0.300000", "example_display": "30.00%",
     },
     {
         "name": "delta", "domain_label": "Delta",
-        "description": "Black-76 delta.", "source_field": "core.greeks.batch_greeks",
-        "source_transform": f"Black-76; round to {GREEK_DP} decimals",
+        "description": "Delta under the recorded pricing model.", "source_field": "core.greeks.batch_greeks",
+        "source_transform": f"selected model; round to {GREEK_DP} decimals",
         "dtype": "number", "format": "decimal", "unit": None, "precision": GREEK_DP,
         "nullable": False, "allowed_values": None,
         "example_canonical": "0.52341098", "example_display": "0.5234",
     },
     {
         "name": "gamma", "domain_label": "Gamma",
-        "description": "Black-76 gamma.", "source_field": "core.greeks.batch_greeks",
-        "source_transform": f"Black-76; round to {GREEK_DP} decimals",
+        "description": "Gamma under the recorded pricing model.", "source_field": "core.greeks.batch_greeks",
+        "source_transform": f"selected model; round to {GREEK_DP} decimals",
         "dtype": "number", "format": "decimal", "unit": None, "precision": GREEK_DP,
         "nullable": False, "allowed_values": None,
         "example_canonical": "0.04210000", "example_display": "0.0421",
     },
     {
         "name": "vega", "domain_label": "Vega",
-        "description": "Black-76 vega.", "source_field": "core.greeks.batch_greeks",
-        "source_transform": f"Black-76; round to {GREEK_DP} decimals",
+        "description": "Vega under the recorded pricing model.", "source_field": "core.greeks.batch_greeks",
+        "source_transform": f"selected model; round to {GREEK_DP} decimals",
         "dtype": "number", "format": "decimal", "unit": None, "precision": GREEK_DP,
         "nullable": False, "allowed_values": None,
         "example_canonical": "0.08123456", "example_display": "0.0812",
     },
     {
         "name": "theta", "domain_label": "Theta",
-        "description": "Black-76 theta.", "source_field": "core.greeks.batch_greeks",
-        "source_transform": f"Black-76; round to {GREEK_DP} decimals",
+        "description": "Theta under the recorded pricing model.", "source_field": "core.greeks.batch_greeks",
+        "source_transform": f"selected model; round to {GREEK_DP} decimals",
         "dtype": "number", "format": "decimal", "unit": None, "precision": GREEK_DP,
         "nullable": False, "allowed_values": None,
         "example_canonical": "-0.01987654", "example_display": "-0.0199",
     },
     {
         "name": "rho", "domain_label": "Rho",
-        "description": "Black-76 rho.", "source_field": "core.greeks.batch_greeks",
-        "source_transform": f"Black-76; round to {GREEK_DP} decimals",
+        "description": "Rho under the recorded pricing model.", "source_field": "core.greeks.batch_greeks",
+        "source_transform": f"selected model; round to {GREEK_DP} decimals",
         "dtype": "number", "format": "decimal", "unit": None, "precision": GREEK_DP,
         "nullable": False, "allowed_values": None,
         "example_canonical": "0.03456789", "example_display": "0.0346",
@@ -198,6 +198,34 @@ COLUMN_SPEC: list[dict] = [
         "dtype": "string", "format": "enum", "unit": None, "precision": None,
         "nullable": False, "allowed_values": list(_pricing_models.implemented_greek_model_names()),
         "example_canonical": "black76", "example_display": "Black-76",
+    },
+    {
+        "name": "greek_method", "domain_label": "Greek Method",
+        "description": "Closed-form or numerical-bump method used for Greeks.",
+        "source_field": "pricing model registry",
+        "source_transform": "registry default Greek method",
+        "dtype": "string", "format": "enum", "unit": None, "precision": None,
+        "nullable": False, "allowed_values": ["closed_form", "numerical_bump"],
+        "example_canonical": "numerical_bump", "example_display": "Numerical bump",
+    },
+    {
+        "name": "volatility_unit", "domain_label": "Volatility Unit",
+        "description": "Unit convention consumed by the selected pricing model.",
+        "source_field": "pricing model registry",
+        "source_transform": "registry volatility-unit metadata",
+        "dtype": "string", "format": "enum", "unit": None, "precision": None,
+        "nullable": False,
+        "allowed_values": ["fraction_per_sqrt_year", "absolute_price_per_sqrt_year"],
+        "example_canonical": "fraction_per_sqrt_year", "example_display": "Fraction / sqrt(year)",
+    },
+    {
+        "name": "pricing_shift", "domain_label": "Pricing Shift",
+        "description": "Explicit displacement used by shifted-lognormal models.",
+        "source_field": "pricing.shifted_black.shift",
+        "source_transform": "configured scalar; blank for non-shifted models",
+        "dtype": "number", "format": "decimal", "unit": "price_unit", "precision": IV_DP,
+        "nullable": True, "allowed_values": None,
+        "example_canonical": "50.000000", "example_display": "50 price units",
     },
     {
         "name": "product_family", "domain_label": "Product Family",
@@ -312,7 +340,7 @@ def _option_mask(df: pd.DataFrame) -> pd.Series:
     return it.astype("string").str.lower().eq("option").fillna(False)
 
 
-def _clean_release_mask(df: pd.DataFrame) -> pd.Series:
+def _clean_release_mask(df: pd.DataFrame, model: str = "black76") -> pd.Series:
     """Row-level release gate: clean, fully-priced option rows with an underlying."""
     mask = _option_mask(df)
 
@@ -320,7 +348,9 @@ def _clean_release_mask(df: pd.DataFrame) -> pd.Series:
     mask &= iv.notna() & (iv > 0)
 
     underlying = _underlying_series(df)
-    mask &= underlying.notna() & (underlying > 0)
+    mask &= underlying.notna()
+    if not _pricing_models.get_model_spec(model).supports_negative_underlying:
+        mask &= underlying > 0
 
     if "T" in df.columns:
         mask &= pd.to_numeric(df["T"], errors="coerce").fillna(0) > 0
@@ -335,6 +365,8 @@ def _clean_release_mask(df: pd.DataFrame) -> pd.Series:
                  "_pcp_flag", "_underlying_map_flag", "quarantine", "held_back"):
         if flag in df.columns:
             mask &= ~df[flag].fillna(False).astype(bool)
+    if "pricing_domain_valid" in df.columns:
+        mask &= df["pricing_domain_valid"].fillna(False).astype(bool)
     return mask
 
 
@@ -488,9 +520,18 @@ def _resolve_column_spec(cfg: Optional[dict] = None) -> list[dict]:
     if cfg is None:
         return spec
     exp = export_config(cfg)
+    model = cfg.get("pricing_model", (cfg.get("pricing") or {}).get("model", "black76"))
+    volatility_unit = _pricing_models.get_model_spec(model).volatility_unit
+    schema_volatility_unit = (
+        "decimal_fraction"
+        if volatility_unit == "fraction_per_sqrt_year"
+        else volatility_unit
+    )
     for col in spec:
         if col.get("unit") == "price_unit":
             col["unit"] = exp["price_unit"]
+        elif col.get("unit") == "model_volatility_unit":
+            col["unit"] = schema_volatility_unit
     return spec
 
 
@@ -502,11 +543,23 @@ def build_option_chain_greeks(df: pd.DataFrame, cfg: dict, readiness: Optional[d
     """
     exp = export_config(cfg)
     model = cfg.get("pricing_model", (cfg.get("pricing") or {}).get("model", "black76"))
+    model_spec = _pricing_models.get_model_spec(model)
+    model_params = _pricing_models.runtime_model_params(cfg)
 
     opt_mask = _option_mask(df)
     n_option_rows = int(opt_mask.sum())
-    clean = _clean_release_mask(df)
+    clean = _clean_release_mask(df, model)
     rows = df.loc[clean].copy()
+
+    for column, key in (
+        ("exercise_style", "tree_exercise_style"),
+        ("contract_exercise_style", "tree_exercise_style"),
+        ("option_underlying_type", "tree_underlying_type"),
+    ):
+        if column in rows.columns:
+            values = rows[column].dropna().astype(str).str.lower().unique()
+            if len(values) == 1:
+                model_params[key] = values[0]
 
     if rows.empty:
         frame = pd.DataFrame(columns=EXPORT_COLUMNS)
@@ -530,7 +583,32 @@ def build_option_chain_greeks(df: pd.DataFrame, cfg: dict, readiness: Optional[d
         model=model, S_or_F=underlying.to_numpy(), K=strike.to_numpy(),
         T=T.to_numpy(), r=r.to_numpy(), sigma=iv.to_numpy(),
         right=right.to_numpy(), q=cfg.get("div_yield", 0.0),
+        shift=model_params.get("shift"), model_params=model_params,
     )
+
+    greek_valid = np.logical_and.reduce([
+        np.isfinite(g[name]) for name in ("delta", "gamma", "vega", "theta", "rho")
+    ])
+    if not greek_valid.all():
+        keep = np.flatnonzero(greek_valid)
+        rows = rows.iloc[keep].copy()
+        underlying = underlying.iloc[keep]
+        strike = strike.iloc[keep]
+        T = T.iloc[keep]
+        r = r.iloc[keep]
+        iv = iv.iloc[keep]
+        right = right.iloc[keep]
+        g = {name: values[keep] for name, values in g.items()}
+    if rows.empty:
+        frame = pd.DataFrame(columns=EXPORT_COLUMNS)
+        return {
+            "frame": frame,
+            "n_input_option_rows": n_option_rows,
+            "n_exported": 0,
+            "n_excluded": n_option_rows,
+            "pricing_model": model,
+            "root_provenance": {"root_source_policy": "none"},
+        }
 
     delivery = pd.to_datetime(rows["delivery_month"])
     expiry = pd.to_datetime(rows["expiry"])
@@ -568,6 +646,11 @@ def build_option_chain_greeks(df: pd.DataFrame, cfg: dict, readiness: Optional[d
         out["rho"].append(_fmt(g["rho"][i], GREEK_DP))
         out["dte_days"].append("" if pd.isna(dte.iloc[i]) else str(int(dte.iloc[i])))
         out["pricing_model"].append(str(model))
+        out["greek_method"].append(model_spec.default_greek_method)
+        out["volatility_unit"].append(model_spec.volatility_unit)
+        out["pricing_shift"].append(
+            "" if model_params.get("shift") is None else _fmt(model_params["shift"], IV_DP)
+        )
         out["product_family"].append(_text_value(row, "product_family"))
         out["option_underlying_type"].append(_text_value(row, "option_underlying_type"))
         out["exercise_style"].append(
@@ -639,6 +722,11 @@ def build_export_manifest(
         "pricing_price_dynamics": model_spec.price_dynamics,
         "pricing_approximation": model_spec.approximation,
         "pricing_parity_check_mode": model_spec.parity_check_mode,
+        "greek_method": model_spec.default_greek_method,
+        "volatility_unit": model_spec.volatility_unit,
+        "pricing_shift": _pricing_models.runtime_model_params(cfg).get("shift"),
+        "max_recommended_tenor_years": model_spec.max_recommended_tenor_years,
+        "model_runtime_params": _pricing_models.runtime_model_params(cfg),
         "data_frequency": "daily",
         "date_format": "ISO_8601_YYYY_MM_DD",
         "contract_month_format": "ISO_8601_YYYY_MM_01",
@@ -649,7 +737,11 @@ def build_export_manifest(
         "tradable_time_policy": "next_trading_session_after_trade_date",
         "exchange_calendar": exp["exchange_calendar"],
         "timezone": exp["timezone"],
-        "iv_unit": "decimal",
+        "iv_unit": (
+            "decimal"
+            if model_spec.volatility_unit == "fraction_per_sqrt_year"
+            else model_spec.volatility_unit
+        ),
         "iv_decimal_places": IV_DP,
         "price_decimal_places": PRICE_DP,
         "greek_decimal_places": GREEK_DP,
