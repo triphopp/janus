@@ -26,7 +26,13 @@ class FuturesOptionsAdapter(OptionsBase):
     def prepare(self, raw_df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
         """Futures options prepare pipeline."""
         df = self._normalize_option_columns(raw_df)
+        df = self._validate_adapter_identity(
+            df,
+            adapter_family="futures_options",
+            option_underlying_type="future",
+        )
         self._require_option_chain_schema(df, "futures options")
+        df = self._apply_pricing_model_policy(df, default_model="black76")
 
         # ── Build continuous futures (shared with FuturesAdapter) ──
         fut = FuturesAdapter(self.cfg)

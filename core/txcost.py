@@ -14,6 +14,8 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
+from core import rates as _rates
+
 
 @dataclass
 class CostBreakdown:
@@ -179,7 +181,9 @@ def financing_cost(trades_df: pd.DataFrame, cfg: Optional[dict] = None) -> float
     days = trades_df["days_held"] if "days_held" in trades_df.columns else 1.0
     if "rf_rate" in trades_df.columns:
         rate = trades_df["rf_rate"]
+    elif "financing_rate" in txcfg:
+        rate = float(txcfg["financing_rate"])
     else:
-        rate = float(txcfg.get("financing_rate", txcfg.get("rf_rate", 0.0)))
+        rate, _ = _rates.resolve_scalar_rate(txcfg)
     margin = float(txcfg.get("margin_requirement", 1.0))
     return float((trades_df["notional"].abs() * margin * rate * days / 365.0).fillna(0.0).sum())

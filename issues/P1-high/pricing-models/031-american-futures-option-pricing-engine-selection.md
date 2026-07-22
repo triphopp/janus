@@ -2,7 +2,7 @@
 
 Urgency: `P1-high`
 
-Status: `draft`
+Status: `in_progress`
 
 Source signal:
 
@@ -26,6 +26,34 @@ choose the exercise/approximation model, for example:
 The important design rule: `black76_baw` must not silently replace `black76`.
 Model choice is a run input and must be visible in config, outputs, summaries,
 and exported option-chain metadata.
+
+## Implementation Status
+
+Updated: `2026-07-07`
+
+Implemented:
+
+- `core/pricing_models.py` now registers model metadata, including
+  `black76`, `black76_european`, `bs`, `bsm`, and planned American/reference
+  engines.
+- `black76_european` is active as an explicit alias of the existing European
+  Black-76 implementation.
+- CLI choices, core pricing/Greeks, adapter PCP, and export schema/manifest
+  consume the registry instead of separate hardcoded allow-lists.
+- `black76_baw` is registered as planned metadata with
+  `exercise_style=american`, `approximation=barone_adesi_whaley`, and
+  `parity_check_mode=american_bounds`.
+- European put-call parity equality now runs only for registry models with
+  `parity_check_mode=equality`; planned American models do not reuse that gate.
+
+Still open:
+
+- `black76_baw` pricing, IV inversion, boundary-solver diagnostics, and Greek
+  policy are not implemented yet.
+- American no-arbitrage bounds are not implemented; equality PCP is disabled
+  for planned American models until that check exists.
+- WTI validation comparing `black76` against an American approximation remains
+  future work.
 
 ## Why It Matters
 

@@ -38,6 +38,7 @@ if _env_file.exists():
 # ── Ingestion ──
 from ingestion.settlement_loader import SettlementLoader
 from ingestion.equity_loader_a import EquityLoaderA
+from ingestion.product_identity import summarize_product_identity
 from ingestion.symbology import Symbology
 from ingestion.versioned_cache import get_versioned_cache
 
@@ -51,6 +52,7 @@ from adapters.futures_options_adapter import FuturesOptionsAdapter
 from core import validators, stability as stab, splitter as spl
 from core import metrics, overfitting as ovf, regime, audit as aud
 from core import attribution as attr
+from core import pricing_models as pricing_models_mod
 from core import reporting
 from core import data_quality as dq
 from core import options_quality as opt_quality
@@ -107,6 +109,11 @@ def apply_runtime_overrides(
     ticker: str | None = None,
     *,
     compute_greeks: bool | None = None,
+    pricing_model: str | None = None,
+    allow_model_approximation: bool | None = None,
+    compare_models: list[str] | None = None,
+    pricing_shift: float | None = None,
+    tree_steps: int | None = None,
     greeks_backend: str | None = None,
     greeks_batch_size: int | None = None,
     greeks_dtype: str | None = None,
@@ -135,6 +142,32 @@ def apply_runtime_overrides(
         out.setdefault("pricing", {})["compute_greeks"] = bool(compute_greeks)
         out["compute_greeks"] = bool(compute_greeks)
         runtime["compute_greeks"] = bool(compute_greeks)
+
+    if pricing_model is not None:
+        out.setdefault("pricing", {})["model"] = pricing_model
+        out["pricing_model"] = pricing_model
+        runtime["pricing_model"] = pricing_model
+
+    if allow_model_approximation is not None:
+        out.setdefault("pricing", {})["allow_model_approximation"] = bool(allow_model_approximation)
+        out["allow_model_approximation"] = bool(allow_model_approximation)
+        runtime["allow_model_approximation"] = bool(allow_model_approximation)
+
+    if compare_models is not None:
+        models = list(compare_models)
+        out.setdefault("pricing", {})["compare_models"] = models
+        out["compare_models"] = models
+        runtime["compare_models"] = models
+
+    if pricing_shift is not None:
+        out.setdefault("pricing", {})["pricing_shift"] = float(pricing_shift)
+        out["pricing_shift"] = float(pricing_shift)
+        runtime["pricing_shift"] = float(pricing_shift)
+
+    if tree_steps is not None:
+        out.setdefault("pricing", {})["tree_steps"] = int(tree_steps)
+        out["tree_steps"] = int(tree_steps)
+        runtime["tree_steps"] = int(tree_steps)
 
     if greeks_backend is not None:
         out.setdefault("pricing", {})["greeks_backend"] = greeks_backend
@@ -536,6 +569,118 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _artifact_record(
+    run_dir: Path,
+    *,
+    key: str,
+    audience: str,
+    path,
+    fmt: str,
+    description: str,
+    rows: int | None = None,
+    schema_path=None,
+    manifest_path=None,
+) -> dict:
+    p = Path(path)
+    rel = p
+    try:
+        rel = p.relative_to(run_dir)
+    except ValueError:
+        pass
+    rec = {
+        "key": key,
+        "audience": audience,
+        "path": str(rel),
+        "format": fmt,
+        "description": description,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if rows is not None:
+        rec["rows"] = int(rows)
+    if p.exists():
+        rec["bytes"] = int(p.stat().st_size)
+    if schema_path:
+        sp = Path(schema_path)
+        try:
+            sp = sp.relative_to(run_dir)
+        except ValueError:
+            pass
+        rec["schema_path"] = str(sp)
+    if manifest_path:
+        mp = Path(manifest_path)
+        try:
+            mp = mp.relative_to(run_dir)
+        except ValueError:
+            pass
+        rec["manifest_path"] = str(mp)
+    return rec
+
+
+def _write_artifact_index(run_dir: Path, summary: dict, *, run_id: str, symbol: str, cfg: dict) -> str:
+    artifacts: list[dict] = []
+    summary_path = run_dir / "summary.json"
+    artifacts.append(_artifact_record(
+        run_dir,
+        key="summary_json",
+        audience="machine",
+        path=summary_path,
+        fmt="json",
+        description="Stable machine run summary",
+    ))
+
+    data_export = summary.get("data_export") or {}
+    if data_export.get("csv"):
+        artifacts.append(_artifact_record(
+            run_dir,
+            key="prepared_csv",
+            audience="debug",
+            path=data_export["csv"],
+            fmt="csv",
+            rows=data_export.get("n_rows"),
+            description="Wide prepared compatibility view; not canonical downstream input",
+        ))
+    if data_export.get("parquet"):
+        artifacts.append(_artifact_record(
+            run_dir,
+            key="prepared_parquet",
+            audience="debug",
+            path=data_export["parquet"],
+            fmt="parquet",
+            rows=data_export.get("n_rows"),
+            description="Prepared internal pipeline frame",
+        ))
+
+    export = summary.get("option_chain_greeks") or {}
+    if export.get("status") != "blocked" and export.get("option_chain_greeks_csv"):
+        artifacts.append(_artifact_record(
+            run_dir,
+            key="canonical_option_chain_greeks",
+            audience="downstream",
+            path=export["option_chain_greeks_csv"],
+            fmt="csv",
+            rows=export.get("n_exported"),
+            schema_path=export.get("option_chain_greeks_schema"),
+            manifest_path=export.get("option_chain_greeks_manifest"),
+            description="Canonical downstream-ready option-chain Greeks export",
+        ))
+
+    index = {
+        "run_id": run_id,
+        "ticker": symbol,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "profile": cfg.get("preset", cfg.get("output_profile", "standard")),
+        "canonical_backtest_input": (
+            "canonical_option_chain_greeks"
+            if any(a["key"] == "canonical_option_chain_greeks" for a in artifacts)
+            else None
+        ),
+        "artifacts": artifacts,
+    }
+    path = run_dir / "artifacts.json"
+    path.write_text(json.dumps(index, indent=2, default=str), encoding="utf-8")
+    return str(path)
+
+
 def _enforce_cache_guard(cache_guard: dict, cfg: dict) -> None:
     """Require pinned raw inputs unless the run explicitly opts out."""
     if not bool(cfg.get("require_fixed_data_version", True)):
@@ -611,6 +756,20 @@ def _enforce_data_integrity_gates(
             "IV unit assumption failed for an official options run "
             f"(issue 002): {unit_status.get('reason')}. Declare a known iv_raw_unit "
             "and ensure the canonical IV scale passes the smoke check."
+        )
+
+
+def _enforce_product_identity_gate(cfg: dict, product_identity: dict) -> None:
+    """Block official runs when provider product identity did not resolve."""
+    if not bool(cfg.get("require_fixed_data_version", True)):
+        return
+    if (product_identity or {}).get("status") == "fail":
+        raise ValueError(
+            "Product identity is unresolved for an official options run "
+            f"(unknown_rows={product_identity.get('unknown_rows')}, "
+            f"conflict_rows={product_identity.get('conflict_rows')}). "
+            "Fix configs/symbology/product_identity.yaml or run with a diagnostic "
+            "preset only for labelled research output."
         )
 
 
@@ -805,9 +964,14 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     _family = cfg.get("family", "equity")
     _is_options_run = str(_family).endswith("_options")
     unit_assumptions = getattr(provider, "unit_assumptions", {}) or {}
+    product_identity_summary = (
+        getattr(provider, "product_identity_summary", {}) or summarize_product_identity(raw_df)
+    )
     settlement_availability = _settlement_availability_status(cfg, provider_name)
     unit_assumptions_status = _unit_assumptions_status(unit_assumptions, _is_options_run)
     _enforce_data_integrity_gates(cfg, settlement_availability, unit_assumptions_status)
+    if _is_options_run and provider_name == "settlement":
+        _enforce_product_identity_gate(cfg, product_identity_summary)
 
     stage_tracker.advance("Ingestion")
 
@@ -1269,7 +1433,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     stage_tracker.start("Outputs")
     outputs_root = Path("outputs")
     run_dir = reporting.run_output_dir(outputs_root, run_id, symbol, cfg["family"], start, end)
-    for subdir in ["tables", "attribution", "data", "report"]:
+    for subdir in ["tables", "attribution", "data", "exports", "report"]:
         (run_dir / subdir).mkdir(parents=True, exist_ok=True)
 
     attribution_summary = None
@@ -1318,6 +1482,18 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         if not review_df.empty:
             iv_mismatch_review_path = run_dir / "tables" / "iv_mismatch_review.csv"
             review_df.to_csv(iv_mismatch_review_path, index=False)
+
+    # Optional model-comparison artifact. Every comparison model is calibrated
+    # to the same observed premium; fixed-vol differences are emitted only for
+    # models with matching volatility units.
+    model_comparison_summary = {}
+    comparison_models = core_cfg.get("compare_models", []) if is_options_run else []
+    if comparison_models:
+        from core import model_comparison as model_comparison_mod
+
+        model_comparison_summary = model_comparison_mod.write_model_comparison(
+            df, core_cfg, run_dir
+        )
 
     # Grain provenance (issue 012): the prepared option chain is contract-grain
     # (many rows per date); date-level features are reduced to one row per decision
@@ -1377,6 +1553,8 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
             "contract_gate": contract_gate,
             "coverage_sla": coverage_gate.get("status"),
             "option_market_readiness": domain_run_readiness["status"] if is_options_run else None,
+            "rate_sourcing": (option_quality_summary.get("rate") or {}).get("status") if is_options_run else None,
+            "product_identity": product_identity_summary.get("status") if is_options_run else None,
             "settlement_availability": settlement_availability.get("status"),
             "iv_unit_assumption": unit_assumptions_status.get("status"),
             "event_availability": event_availability.get("status"),
@@ -1388,8 +1566,10 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         "quarantine": quarantine_summary,
         "data_quality": data_quality,
         "option_quality": option_quality_summary,
+        "product_identity": product_identity_summary,
         "domain_run_readiness": domain_run_readiness,
         "iv_mismatch_review": iv_mismatch_review_summary,
+        "model_comparison": model_comparison_summary,
         "grain": grain_summary,
         "event_availability": event_availability,
         "unit_assumptions": unit_assumptions,
@@ -1417,6 +1597,11 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
     }
     if iv_mismatch_review_path is not None:
         summary["artifacts"]["iv_mismatch_review"] = str(iv_mismatch_review_path)
+    if model_comparison_summary:
+        summary["artifacts"]["model_comparison_csv"] = model_comparison_summary["csv"]
+        summary["artifacts"]["model_comparison_summary"] = model_comparison_summary[
+            "summary_json"
+        ]
 
     # ── Downstream option-chain Greeks export (issues 023/024) ──
     # Additive, market-facing clean dataset. Gated by option-market readiness
@@ -1445,6 +1630,7 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
         n_trials=n_trials_used,
         n_trials_source="config",
         knowledge_cutoff_fallback=end,
+        extra={"product_identity": product_identity_summary},
     )
     manifest_path = manifest_mod.write_manifest(run_manifest)
     # also drop a copy beside the run's other artifacts
@@ -1467,6 +1653,16 @@ def run_pipeline(cfg: dict, start: str, end: str, run_id: str = None):
             summary[_prov_key] = cfg[_prov_key]
     if cfg.get("runtime_overrides"):
         summary.setdefault("runtime_overrides", cfg["runtime_overrides"])
+
+    artifacts_index_path = _write_artifact_index(
+        run_dir,
+        summary,
+        run_id=run_id,
+        symbol=symbol,
+        cfg=cfg,
+    )
+    summary["artifacts_index"] = artifacts_index_path
+    summary["artifacts"]["artifacts_json"] = artifacts_index_path
 
     summary_path = run_dir / "summary.json"
     with open(summary_path, "w") as f:
@@ -1542,6 +1738,18 @@ Example (WTI Q4 2024, near-term liquid options + Greeks):
                              "Required before --min-abs-delta / --max-abs-delta can filter by delta. "
                              "Uses vectorized NumPy by default (~40-50x faster than scalar loop). "
                              "Overrides pricing.compute_greeks in the instrument YAML.")
+    parser.add_argument("--pricing-model", default=None,
+                        choices=["auto", *pricing_models_mod.supported_model_names()],
+                        help="Pricing model policy target. Use auto to select from product identity.")
+    parser.add_argument("--allow-model-approximation", action="store_true",
+                        help="Allow an explicitly labelled diagnostic model approximation.")
+    parser.add_argument("--compare-model", action="append", default=[],
+                        choices=list(pricing_models_mod.implemented_price_model_names()),
+                        help="Add a diagnostic comparison model; does not replace canonical output.")
+    parser.add_argument("--pricing-shift", type=float, default=None,
+                        help="Explicit displacement for shifted-Black models.")
+    parser.add_argument("--tree-steps", type=int, default=None,
+                        help="Number of CRR reference-tree steps. (default: 400)")
     parser.add_argument("--greeks-backend", default=None,
                         choices=["numpy", "loop", "auto", "cuda"],
                         help="Backend for vectorized Greek computation. "
@@ -1640,6 +1848,11 @@ Example (WTI Q4 2024, near-term liquid options + Greeks):
         cfg,
         ticker=args.ticker,
         compute_greeks=args.compute_greeks,
+        pricing_model=args.pricing_model,
+        allow_model_approximation=args.allow_model_approximation or None,
+        compare_models=args.compare_model or None,
+        pricing_shift=args.pricing_shift,
+        tree_steps=args.tree_steps,
         greeks_backend=args.greeks_backend,
         metrics_mode=args.metrics_mode,
         min_dte=args.min_dte,

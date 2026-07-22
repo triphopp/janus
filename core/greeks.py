@@ -1,4 +1,4 @@
-"""Closed-form Greeks + net Greeks for spreads.
+"""Closed-form and numerical Greeks plus net Greeks for spreads.
 
 v1.3: always use closed-form as primary. Numerical bump is sanity check in tests only.
 Calendar spread: vega must be split into short_term/long_term buckets because
@@ -11,10 +11,13 @@ BS delta = N(d₁); Black-76 delta = e^(-rT)·N(d₁) — difference is ~e^(rT) 
 from dataclasses import dataclass
 from math import exp, pi, sqrt
 from statistics import NormalDist
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 import numpy as np
 from scipy.special import ndtr as _ndtr
+
+from core import pricing_models as _models
+from core import rates as _rates
 
 _NORMAL = NormalDist()
 
@@ -29,6 +32,22 @@ def _norm_cdf(x: float) -> float:
 
 def _norm_pdf_vec(x: np.ndarray) -> np.ndarray:
     return np.exp(-0.5 * x ** 2) / np.sqrt(2 * np.pi)
+
+
+def _nan_greeks() -> dict:
+    return {"delta": np.nan, "gamma": np.nan, "vega": np.nan, "theta": np.nan, "rho": np.nan}
+
+
+def _zero_greeks() -> dict:
+    return {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "theta": 0.0, "rho": 0.0}
+
+
+def _finite_float(value) -> tuple[bool, float]:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return False, float("nan")
+    return bool(np.isfinite(out)), out
 
 
 @dataclass
@@ -52,80 +71,144 @@ def single_leg_greeks(
     sigma: float,
     right: str,
     q: float = 0.0,
+    *,
+    shift: float | None = None,
+    model_params: Mapping[str, Any] | None = None,
 ) -> dict:
     """Closed-form Greeks for a single option leg.
 
     Args:
-        model: 'black76' | 'bs' | 'bsm'
+        model: any runtime-enabled model from ``core.pricing_models``
         S_or_F, K, T, r, sigma, right, q: option parameters
 
     Returns:
         dict with keys: delta, gamma, vega, theta, rho
     """
-    if T <= 0:
-        return {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "theta": 0.0, "rho": 0.0}
+    selected = _models.canonical_model_name(model)
+    impl = _models.greek_runtime_model(selected)
+    right_norm = _models.normalize_right(right)
+    t_ok, t = _finite_float(T)
+    s_ok, s = _finite_float(S_or_F)
+    k_ok, strike = _finite_float(K)
+    if right_norm is None or not t_ok or not s_ok or not k_ok:
+        return _nan_greeks()
+    if t <= 0:
+        return _zero_greeks()
 
-    sqrt_T = np.sqrt(T)
+    configured_shift = shift
+    if configured_shift is None and model_params is not None:
+        configured_shift = model_params.get("shift")
+    domain = _models.validate_pricing_domain(
+        selected,
+        s,
+        strike,
+        t,
+        r,
+        sigma,
+        right_norm,
+        shift=configured_shift,
+    )
+    if not domain.valid:
+        return _nan_greeks()
+
+    r = float(r)
+    sigma = float(sigma)
+
+    sqrt_T = np.sqrt(t)
     phi = _norm_pdf  # standard normal PDF
     Phi = _norm_cdf  # standard normal CDF
 
-    if model == "black76":
-        F = S_or_F
-        d1 = (np.log(F / K) + 0.5 * sigma ** 2 * T) / (sigma * sqrt_T)
+    if impl == "black76":
+        F = s
+        d1 = (np.log(F / strike) + 0.5 * sigma ** 2 * t) / (sigma * sqrt_T)
         d2 = d1 - sigma * sqrt_T
-        disc = np.exp(-r * T)
+        disc = np.exp(-r * t)
         phi_d1 = phi(d1)
 
-        if right == "C":
+        if right_norm == "C":
             delta = disc * Phi(d1)
             theta = (
                 -disc * F * phi_d1 * sigma / (2 * sqrt_T)
-                - r * K * disc * Phi(d2)
+                - r * strike * disc * Phi(d2)
                 + r * F * disc * Phi(d1)
             )
-            rho_val = -T * disc * (F * Phi(d1) - K * Phi(d2))
+            rho_val = -t * disc * (F * Phi(d1) - strike * Phi(d2))
         else:
             delta = -disc * Phi(-d1)
             theta = (
                 -disc * F * phi_d1 * sigma / (2 * sqrt_T)
-                + r * K * disc * Phi(-d2)
+                + r * strike * disc * Phi(-d2)
                 - r * F * disc * Phi(-d1)
             )
-            rho_val = -T * disc * (K * Phi(-d2) - F * Phi(-d1))
+            rho_val = -t * disc * (strike * Phi(-d2) - F * Phi(-d1))
 
         gamma = disc * phi_d1 / (F * sigma * sqrt_T)
         vega = disc * F * phi_d1 * sqrt_T  # per 1.0 vol unit
 
-    elif model in ("bs", "bsm"):
-        S = S_or_F
-        d1 = (np.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
+    elif impl in ("bs", "bsm"):
+        q_ok, q_value = _finite_float(0.0 if impl == "bs" else q)
+        if not q_ok:
+            return _nan_greeks()
+        S = s
+        d1 = (np.log(S / strike) + (r - q_value + 0.5 * sigma ** 2) * t) / (sigma * sqrt_T)
         d2 = d1 - sigma * sqrt_T
         phi_d1 = phi(d1)
-        disc_r = np.exp(-r * T)
-        disc_q = np.exp(-q * T)
+        disc_r = np.exp(-r * t)
+        disc_q = np.exp(-q_value * t)
 
-        if right == "C":
+        if right_norm == "C":
             delta = disc_q * Phi(d1)
             theta = (
                 -S * phi_d1 * sigma * disc_q / (2 * sqrt_T)
-                - r * K * disc_r * Phi(d2)
-                + q * S * disc_q * Phi(d1)
+                - r * strike * disc_r * Phi(d2)
+                + q_value * S * disc_q * Phi(d1)
             )
-            rho_val = K * T * disc_r * Phi(d2)
+            rho_val = strike * t * disc_r * Phi(d2)
         else:
             delta = -disc_q * Phi(-d1)
             theta = (
                 -S * phi_d1 * sigma * disc_q / (2 * sqrt_T)
-                + r * K * disc_r * Phi(-d2)
-                - q * S * disc_q * Phi(-d1)
+                + r * strike * disc_r * Phi(-d2)
+                - q_value * S * disc_q * Phi(-d1)
             )
-            rho_val = -K * T * disc_r * Phi(-d2)
+            rho_val = -strike * t * disc_r * Phi(-d2)
 
         gamma = disc_q * phi_d1 / (S * sigma * sqrt_T)
         vega = disc_q * S * phi_d1 * sqrt_T
 
+    elif impl == "bachelier":
+        F = s
+        stddev = sigma * sqrt_T
+        d = (F - strike) / stddev
+        disc = np.exp(-r * t)
+        phi_d = phi(d)
+        if right_norm == "C":
+            delta = disc * Phi(d)
+            option_price = disc * ((F - strike) * Phi(d) + stddev * phi_d)
+        else:
+            delta = -disc * Phi(-d)
+            option_price = disc * ((strike - F) * Phi(-d) + stddev * phi_d)
+        gamma = disc * phi_d / stddev
+        vega = disc * sqrt_T * phi_d
+        theta = r * option_price - disc * sigma * phi_d / (2 * sqrt_T)
+        rho_val = -t * option_price
+
     else:
-        raise ValueError(f"Unknown pricing model: {model}")
+        from core.pricing import price as pricing_price
+
+        return bump_greeks(
+            selected,
+            pricing_price,
+            s,
+            strike,
+            t,
+            r,
+            sigma,
+            right_norm,
+            q=q,
+            shift=configured_shift,
+            model_params=model_params,
+        )
 
     return {
         "delta": delta,
@@ -192,10 +275,13 @@ def _batch_greeks_numpy(
     right_str = np.asarray(right, dtype=object)
     call_mask = right_str == "C"
     put_mask = right_str == "P"
+    normal_model = model == "bachelier"
+    positive_underlying = np.ones(n, dtype=bool) if normal_model else (S_or_F > 0)
+    positive_strike = np.ones(n, dtype=bool) if normal_model else (K > 0)
     valid = (
         (T > 0) & np.isfinite(T)
-        & (S_or_F > 0) & np.isfinite(S_or_F)
-        & (K > 0) & np.isfinite(K)
+        & positive_underlying & np.isfinite(S_or_F)
+        & positive_strike & np.isfinite(K)
         & (sigma > 0) & np.isfinite(sigma)
         & np.isfinite(r)
         & (call_mask | put_mask)
@@ -234,10 +320,11 @@ def _batch_greeks_numpy(
         rho = np.where(cv, rho_c, rho_p)
 
     elif model in ("bs", "bsm"):
-        d1 = (np.log(Sv / Kv) + (rv - q + 0.5 * sv ** 2) * Tv) / (sv * sqrt_T)
+        q_value = 0.0 if model == "bs" else q
+        d1 = (np.log(Sv / Kv) + (rv - q_value + 0.5 * sv ** 2) * Tv) / (sv * sqrt_T)
         d2 = d1 - sv * sqrt_T
         disc_r = np.exp(-rv * Tv)
-        disc_q = np.exp(-q * Tv)
+        disc_q = np.exp(-q_value * Tv)
         phi_d1 = _norm_pdf_vec(d1)
         Phi_d1 = _ndtr(d1)
         Phi_d2 = _ndtr(d2)
@@ -247,15 +334,31 @@ def _batch_greeks_numpy(
         delta = np.where(cv, disc_q * Phi_d1, -disc_q * Phi_nd1)
         gamma = disc_q * phi_d1 / (Sv * sv * sqrt_T)
         vega = disc_q * Sv * phi_d1 * sqrt_T
-        theta_c = -Sv * phi_d1 * sv * disc_q / (2 * sqrt_T) - rv * Kv * disc_r * Phi_d2 + q * Sv * disc_q * Phi_d1
-        theta_p = -Sv * phi_d1 * sv * disc_q / (2 * sqrt_T) + rv * Kv * disc_r * Phi_nd2 - q * Sv * disc_q * Phi_nd1
+        theta_c = -Sv * phi_d1 * sv * disc_q / (2 * sqrt_T) - rv * Kv * disc_r * Phi_d2 + q_value * Sv * disc_q * Phi_d1
+        theta_p = -Sv * phi_d1 * sv * disc_q / (2 * sqrt_T) + rv * Kv * disc_r * Phi_nd2 - q_value * Sv * disc_q * Phi_nd1
         theta = np.where(cv, theta_c, theta_p)
         rho_c = Kv * Tv * disc_r * Phi_d2
         rho_p = -Kv * Tv * disc_r * Phi_nd2
         rho = np.where(cv, rho_c, rho_p)
 
+    elif model == "bachelier":
+        stddev = sv * sqrt_T
+        d = (Sv - Kv) / stddev
+        disc = np.exp(-rv * Tv)
+        phi_d = _norm_pdf_vec(d)
+        Phi_d = _ndtr(d)
+        Phi_nd = _ndtr(-d)
+        call_price = disc * ((Sv - Kv) * Phi_d + stddev * phi_d)
+        put_price = disc * ((Kv - Sv) * Phi_nd + stddev * phi_d)
+        option_price = np.where(cv, call_price, put_price)
+        delta = np.where(cv, disc * Phi_d, -disc * Phi_nd)
+        gamma = disc * phi_d / stddev
+        vega = disc * sqrt_T * phi_d
+        theta = rv * option_price - disc * sv * phi_d / (2 * sqrt_T)
+        rho = -Tv * option_price
+
     else:
-        raise ValueError(f"Unknown pricing model: {model}")
+        raise ValueError(_models.unknown_model_message(model))
 
     out["delta"][valid] = delta
     out["gamma"][valid] = gamma
@@ -276,6 +379,8 @@ def _batch_greeks_loop(
     right: np.ndarray,
     q: float,
     dtype: str,
+    shift: float | None = None,
+    model_params: Mapping[str, Any] | None = None,
 ) -> dict[str, np.ndarray]:
     n = len(S_or_F)
     out = {g: np.full(n, np.nan, dtype=dtype) for g in ("delta", "gamma", "vega", "theta", "rho")}
@@ -291,15 +396,26 @@ def _batch_greeks_loop(
 
         if (
             not np.isfinite(Ti) or Ti <= 0
-            or not np.isfinite(Si) or Si <= 0
-            or not np.isfinite(Ki) or Ki <= 0
+            or not np.isfinite(Si)
+            or not np.isfinite(Ki)
             or not np.isfinite(si) or si <= 0
             or not np.isfinite(ri_r)
             or ri not in ("C", "P")
         ):
             continue
 
-        g = single_leg_greeks(model=model, S_or_F=Si, K=Ki, T=Ti, r=ri_r, sigma=si, right=ri, q=q)
+        g = single_leg_greeks(
+            model=model,
+            S_or_F=Si,
+            K=Ki,
+            T=Ti,
+            r=ri_r,
+            sigma=si,
+            right=ri,
+            q=q,
+            shift=shift,
+            model_params=model_params,
+        )
         for key in ("delta", "gamma", "vega", "theta", "rho"):
             out[key][i] = g[key]
 
@@ -378,10 +494,11 @@ def _batch_greeks_cuda(
         rho = cp.where(cv, rho_c, rho_p)
 
     elif model in ("bs", "bsm"):
-        d1 = (cp.log(Sv / Kv) + (rv - q + 0.5 * sv ** 2) * Tv) / (sv * sqrt_T)
+        q_value = 0.0 if model == "bs" else q
+        d1 = (cp.log(Sv / Kv) + (rv - q_value + 0.5 * sv ** 2) * Tv) / (sv * sqrt_T)
         d2 = d1 - sv * sqrt_T
         disc_r = cp.exp(-rv * Tv)
-        disc_q = cp.exp(-q * Tv)
+        disc_q = cp.exp(-q_value * Tv)
         phi_d1 = cp.exp(-0.5 * d1 ** 2) / cp.sqrt(cp.array(2.0 * np.pi, dtype=dtype))
         Phi_d1 = _ndtr_gpu(d1, cp)
         Phi_d2 = _ndtr_gpu(d2, cp)
@@ -391,15 +508,15 @@ def _batch_greeks_cuda(
         delta = cp.where(cv, disc_q * Phi_d1, -disc_q * Phi_nd1)
         gamma = disc_q * phi_d1 / (Sv * sv * sqrt_T)
         vega = disc_q * Sv * phi_d1 * sqrt_T
-        theta_c = -Sv * phi_d1 * sv * disc_q / (2 * sqrt_T) - rv * Kv * disc_r * Phi_d2 + q * Sv * disc_q * Phi_d1
-        theta_p = -Sv * phi_d1 * sv * disc_q / (2 * sqrt_T) + rv * Kv * disc_r * Phi_nd2 - q * Sv * disc_q * Phi_nd1
+        theta_c = -Sv * phi_d1 * sv * disc_q / (2 * sqrt_T) - rv * Kv * disc_r * Phi_d2 + q_value * Sv * disc_q * Phi_d1
+        theta_p = -Sv * phi_d1 * sv * disc_q / (2 * sqrt_T) + rv * Kv * disc_r * Phi_nd2 - q_value * Sv * disc_q * Phi_nd1
         theta = cp.where(cv, theta_c, theta_p)
         rho_c = Kv * Tv * disc_r * Phi_d2
         rho_p = -Kv * Tv * disc_r * Phi_nd2
         rho = cp.where(cv, rho_c, rho_p)
 
     else:
-        raise ValueError(f"Unknown pricing model: {model}")
+        raise ValueError(_models.unknown_model_message(model))
 
     # Transfer results back to CPU
     out["delta"][valid_cpu] = cp.asnumpy(delta)
@@ -425,11 +542,25 @@ def _dispatch_greeks_backend(
     right: np.ndarray,
     q: float,
     dtype: str,
+    shift: float | None = None,
+    model_params: Mapping[str, Any] | None = None,
 ) -> dict[str, np.ndarray]:
     if resolved == "numpy":
         return _batch_greeks_numpy(model, S_or_F, K, T, r, sigma, right, q, dtype)
     if resolved == "loop":
-        return _batch_greeks_loop(model, S_or_F, K, T, r, sigma, right, q, dtype)
+        return _batch_greeks_loop(
+            model,
+            S_or_F,
+            K,
+            T,
+            r,
+            sigma,
+            right,
+            q,
+            dtype,
+            shift,
+            model_params,
+        )
     if resolved == "cuda":
         return _batch_greeks_cuda(model, S_or_F, K, T, r, sigma, right, q, dtype)
     raise ValueError(f"Unknown resolved backend: {resolved!r}")
@@ -451,6 +582,8 @@ def batch_greeks(
     batch_size: int | None = None,
     dtype: str = "float64",
     cuda_min_rows: int | None = None,
+    shift: float | None = None,
+    model_params: Mapping[str, Any] | None = None,
 ) -> dict[str, np.ndarray]:
     """Vectorized Greeks for a batch of option rows.
 
@@ -459,6 +592,8 @@ def batch_greeks(
     CUDA chunking: if backend resolves to 'cuda' and batch_size is None,
     defaults to 250_000 rows per chunk to avoid OOM.
     """
+    selected = _models.canonical_model_name(model)
+    model = _models.greek_runtime_model(selected)
     S_arr = np.asarray(S_or_F, dtype=dtype)
     K_arr = np.asarray(K, dtype=dtype)
     T_arr = np.asarray(T, dtype=dtype)
@@ -468,6 +603,15 @@ def batch_greeks(
 
     n = len(S_arr)
     resolved = _resolve_greeks_backend(backend, n, cuda_min_rows=cuda_min_rows)
+    numerical_model = _models.default_greek_method(selected) == "numerical_bump"
+    if numerical_model:
+        if resolved == "cuda":
+            raise ValueError(
+                f"Greek model {selected!r} uses numerical bumps and does not support CUDA"
+            )
+        resolved = "loop"
+    elif model == "bachelier" and resolved == "cuda":
+        raise ValueError("Bachelier Greeks do not support the CUDA backend")
 
     # CUDA requires chunking; apply conservative default if not set
     effective_batch_size = batch_size
@@ -475,7 +619,20 @@ def batch_greeks(
         effective_batch_size = _CUDA_DEFAULT_BATCH_SIZE
 
     if effective_batch_size is None or int(effective_batch_size) >= n:
-        return _dispatch_greeks_backend(resolved, model, S_arr, K_arr, T_arr, r_arr, sigma_arr, right_arr, q, dtype)
+        return _dispatch_greeks_backend(
+            resolved,
+            model,
+            S_arr,
+            K_arr,
+            T_arr,
+            r_arr,
+            sigma_arr,
+            right_arr,
+            q,
+            dtype,
+            shift,
+            model_params,
+        )
 
     bsz = int(effective_batch_size)
     greek_keys = ("delta", "gamma", "vega", "theta", "rho")
@@ -488,6 +645,7 @@ def batch_greeks(
             S_arr[start:end], K_arr[start:end], T_arr[start:end],
             r_arr[start:end], sigma_arr[start:end], right_arr[start:end],
             q, dtype,
+            shift, model_params,
         )
         for g in greek_keys:
             chunks[g].append(chunk[g])
@@ -514,7 +672,9 @@ def net_greeks(legs: list[Leg], cfg: dict) -> dict:
         vega_long_term, vega_term_risk
     """
     model = cfg.get("pricing_model", "black76")
-    r = cfg.get("rf_rate", 0.05)
+    model_params = _models.runtime_model_params(cfg)
+    r, _ = _rates.resolve_scalar_rate(cfg)
+    q = float(cfg.get("div_yield", 0.0) or 0.0)
     cutoff = cfg.get("vega_bucket_cutoff", 60)  # DTE threshold in days
     vega_beta = cfg.get("vega_beta", 0.7)
 
@@ -540,6 +700,9 @@ def net_greeks(legs: list[Leg], cfg: dict) -> dict:
             r=r,
             sigma=L.iv_at_t,
             right=L.right,
+            q=q,
+            shift=model_params.get("shift"),
+            model_params=model_params,
         )
 
         for k in ("delta", "gamma", "theta", "rho"):
@@ -568,21 +731,65 @@ def bump_greeks(
     right: str,
     q: float = 0.0,
     eps: float = 1e-4,
+    *,
+    shift: float | None = None,
+    model_params: Mapping[str, Any] | None = None,
 ) -> dict:
-    """Numerical (bump) Greeks — for sanity check / test only.
+    """Numerical bump Greeks for models without closed-form sensitivities.
 
-    NOT for primary calculation. Closed-form is always primary.
-    Tolerance vs closed-form should be ≤ 1e-4.
+    The same routine also remains useful as a closed-form regression check.
 
     Returns:
         dict with delta, gamma, vega, theta (same keys as single_leg_greeks)
     """
-    p0 = price_fn(model, S_or_F, K, T, r, sigma, right, q)
+    selected = _models.canonical_model_name(model)
+    impl = _models.greek_runtime_model(selected)
+    right_norm = _models.normalize_right(right)
+    if right_norm is None:
+        return _nan_greeks()
+    configured_shift = shift
+    if configured_shift is None and model_params is not None:
+        configured_shift = model_params.get("shift")
+    domain = _models.validate_pricing_domain(
+        selected,
+        S_or_F,
+        K,
+        T,
+        r,
+        sigma,
+        right_norm,
+        shift=configured_shift,
+    )
+    if not domain.valid:
+        return _nan_greeks()
+    right = right_norm
+
+    def value(s_value, t_value, r_value, sigma_value):
+        return price_fn(
+            selected,
+            s_value,
+            K,
+            t_value,
+            r_value,
+            sigma_value,
+            right,
+            q,
+            shift=configured_shift,
+            model_params=model_params,
+        )
+
+    p0 = value(S_or_F, T, r, sigma)
+    if not np.isfinite(p0):
+        return _nan_greeks()
 
     # Delta: bump underlying
-    bump_s = S_or_F * eps
-    p_up = price_fn(model, S_or_F + bump_s, K, T, r, sigma, right, q)
-    p_dn = price_fn(model, S_or_F - bump_s, K, T, r, sigma, right, q)
+    bump_s = max(abs(float(S_or_F)), abs(float(K)), 1.0) * eps
+    if not np.isfinite(bump_s) or bump_s == 0:
+        return _nan_greeks()
+    p_up = value(S_or_F + bump_s, T, r, sigma)
+    p_dn = value(S_or_F - bump_s, T, r, sigma)
+    if not np.isfinite(p_up) or not np.isfinite(p_dn):
+        return _nan_greeks()
     delta = (p_up - p_dn) / (2 * bump_s)
 
     # Gamma
@@ -590,23 +797,36 @@ def bump_greeks(
 
     # Vega: bump sigma
     bump_v = eps
-    p_vup = price_fn(model, S_or_F, K, T, r, sigma + bump_v, right, q)
-    p_vdn = price_fn(model, S_or_F, K, T, r, sigma - bump_v, right, q)
-    vega = (p_vup - p_vdn) / (2 * bump_v)
+    p_vup = value(S_or_F, T, r, sigma + bump_v)
+    if sigma > bump_v:
+        p_vdn = value(S_or_F, T, r, sigma - bump_v)
+        vega = (p_vup - p_vdn) / (2 * bump_v)
+    else:
+        vega = (p_vup - p0) / bump_v
 
     # Theta: finance convention is calendar-time decay, i.e. -dV/dT.
     bump_t = 1.0 / 365.0  # 1 day
     if T > bump_t:
-        p_tup = price_fn(model, S_or_F, K, T + bump_t, r, sigma, right, q)
-        p_tdn = price_fn(model, S_or_F, K, T - bump_t, r, sigma, right, q)
+        p_tup = value(S_or_F, T + bump_t, r, sigma)
+        p_tdn = value(S_or_F, T - bump_t, r, sigma)
         theta = -(p_tup - p_tdn) / (2 * bump_t)
     else:
-        theta = 0.0
+        p_tup = value(S_or_F, T + bump_t, r, sigma)
+        theta = -(p_tup - p0) / bump_t
 
     # Rho: bump rate
     bump_r = 1e-4  # 1 bp
-    p_rup = price_fn(model, S_or_F, K, T, r + bump_r, sigma, right, q)
-    p_rdn = price_fn(model, S_or_F, K, T, r - bump_r, sigma, right, q)
-    rho = (p_rup - p_rdn) / (2 * bump_r)
+    p_rup = value(S_or_F, T, r + bump_r, sigma)
+    if (
+        _models.get_model_spec(selected).approximation == "barone_adesi_whaley"
+        and r - bump_r < 0
+    ):
+        rho = (p_rup - p0) / bump_r
+    else:
+        p_rdn = value(S_or_F, T, r - bump_r, sigma)
+        rho = (p_rup - p_rdn) / (2 * bump_r)
+
+    if not all(np.isfinite(v) for v in (delta, gamma, vega, theta, rho)):
+        return _nan_greeks()
 
     return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho}

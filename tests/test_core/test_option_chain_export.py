@@ -69,7 +69,11 @@ def test_has_expected_columns_in_order():
     expected = ("trade_date,product,underlying_symbol,option_symbol,contract_month,"
                 "expiration_date,option_type,strike_price,option_settlement_price,"
                 "underlying_settlement_price,implied_volatility,delta,gamma,vega,theta,"
-                "rho,dte_days,pricing_model").split(",")
+                "rho,dte_days,pricing_model,greek_method,volatility_unit,pricing_shift,"
+                "product_family,option_underlying_type,"
+                "exercise_style,pricing_model_target,pricing_model_source,"
+                "pricing_model_contract_match,pricing_model_contract_reason,"
+                "is_model_approximation").split(",")
     assert list(frame.columns) == expected
 
 
@@ -104,8 +108,45 @@ def test_exports_full_greeks():
         assert frame[g].astype(float).notna().all()
 
 
+def test_export_does_not_invent_missing_rate():
+    built = oce.build_option_chain_greeks(_prepared_frame().drop(columns=["r"]), _CFG)
+    frame = built["frame"]
+    for g in ("delta", "gamma", "vega", "theta", "rho"):
+        assert (frame[g] == "").all()
+
+
 def test_uses_black76_for_wti():
     assert (_built()["frame"]["pricing_model"] == "black76").all()
+
+
+def test_export_uses_row_level_source_native_roots_when_present():
+    frame = _prepared_frame()
+    mask = frame["instrument_type"] == "option"
+    frame.loc[mask, "source_option_root"] = "T"
+    frame.loc[mask, "underlying_root"] = "T"
+
+    built = oce.build_option_chain_greeks(frame, _CFG)
+    out = built["frame"]
+
+    assert out["underlying_symbol"].str.startswith("TX24").all()
+    assert out["option_symbol"].str.startswith("TX24").all()
+    assert built["root_provenance"]["option_root_source"] == "source_option_root"
+
+
+def test_export_can_use_cme_equivalent_option_root_without_model_inference():
+    frame = _prepared_frame()
+    mask = frame["instrument_type"] == "option"
+    frame.loc[mask, "source_option_root"] = "T"
+    frame.loc[mask, "underlying_root"] = "T"
+    frame.loc[mask, "equivalent_option_root_cme"] = "LO"
+    cfg = {**_CFG, "export": {**_CFG["export"], "root_source": "cme_equivalent"}}
+
+    built = oce.build_option_chain_greeks(frame, cfg)
+    out = built["frame"]
+
+    assert out["underlying_symbol"].str.startswith("CLX24").all()
+    assert out["option_symbol"].str.startswith("LOX24").all()
+    assert built["root_provenance"]["option_root_source"] == "equivalent_option_root_cme"
 
 
 def test_formats_dates_as_iso():
@@ -161,7 +202,7 @@ def test_blocked_readiness_withholds_export(tmp_path):
     blocked = {"status": "blocked", "reasons": ["pcp_mismatch_rate=0.40>=block"]}
     result = oce.write_option_chain_export(_prepared_frame(), _CFG, blocked, tmp_path)
     assert result["status"] == "blocked"
-    assert not (tmp_path / "data" / "option_chain_greeks" / "option_chain_greeks.csv").exists()
+    assert not (tmp_path / "exports" / "option_chain_greeks" / "option_chain_greeks.csv").exists()
 
 
 def test_trade_date_is_not_treated_as_tradable_time(tmp_path):
@@ -179,8 +220,35 @@ def test_manifest_declares_product_precision_and_iv_unit():
     assert manifest["iv_decimal_places"] == 6
     assert manifest["greek_decimal_places"] == 8
     assert manifest["pricing_model"] == "black76"
+    assert manifest["pricing_exercise_style"] == "european"
+    assert manifest["pricing_price_dynamics"] == "lognormal"
+    assert manifest["pricing_parity_check_mode"] == "equality"
+    assert manifest["pricing_model_contract_match"] is True
+    assert manifest["is_model_approximation"] is False
     assert manifest["exchange_calendar"]
     assert manifest["quality_gate"] == "ready"
+
+
+def test_schema_pricing_model_allowed_values_come_from_registry():
+    schema = oce.build_export_schema(_CFG)
+    pricing_model = next(c for c in schema["columns"] if c["name"] == "pricing_model")
+    assert pricing_model["allowed_values"] == list(
+        oce._pricing_models.implemented_greek_model_names()
+    )
+
+
+def test_bachelier_export_keeps_negative_underlying_and_records_absolute_vol_unit():
+    frame = _prepared_frame()
+    option_mask = frame["instrument_type"].eq("option")
+    frame.loc[option_mask, "underlying_price"] = -10.0
+    cfg = {**_CFG, "pricing_model": "bachelier"}
+
+    built = oce.build_option_chain_greeks(frame, cfg)
+    schema = oce.build_export_schema(cfg)
+    iv_field = next(c for c in schema["columns"] if c["name"] == "implied_volatility")
+
+    assert built["n_exported"] == 4
+    assert iv_field["unit"] == "absolute_price_per_sqrt_year"
 
 
 def test_manifest_declares_settlement_timing_policy():

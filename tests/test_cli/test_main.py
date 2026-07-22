@@ -155,3 +155,61 @@ def test_run_accepts_progress_override(tmp_path, capsys, monkeypatch):
     assert rc == 0
     assert captured["cfg"]["progress_mode"] == "bar"
     assert captured["cfg"]["runtime_overrides"]["progress"] == "bar"
+
+
+def test_run_accepts_pricing_model_policy_flags(tmp_path, capsys, monkeypatch):
+    data = _write_wti(tmp_path / "WTI.csv")
+    reg = tmp_path / "r.yaml"
+    _run(["import", "WTI", str(data)], reg)
+    capsys.readouterr()
+
+    captured = {}
+
+    def fake_run_pipeline(cfg, start, end, run_id):
+        captured.update({"cfg": cfg, "start": start, "end": end, "run_id": run_id})
+
+    import run_pipeline as rp
+
+    monkeypatch.setattr(rp, "run_pipeline", fake_run_pipeline)
+    rc = _run([
+        "run", "WTI", "--window", "2024Q4",
+        "--pricing-model", "auto",
+        "--allow-model-approximation",
+        "--compare-model", "black76_european",
+        "--pricing-shift", "50",
+        "--tree-steps", "600",
+    ], reg)
+
+    assert rc == 0
+    assert captured["cfg"]["pricing_model"] == "auto"
+    assert captured["cfg"]["pricing"]["model"] == "auto"
+    assert captured["cfg"]["allow_model_approximation"] is True
+    assert captured["cfg"]["compare_models"] == ["black76_european"]
+    assert captured["cfg"]["pricing_shift"] == 50.0
+    assert captured["cfg"]["tree_steps"] == 600
+
+
+def test_run_advanced_override_syncs_pricing_model(tmp_path, capsys, monkeypatch):
+    data = _write_wti(tmp_path / "WTI.csv")
+    reg = tmp_path / "r.yaml"
+    _run(["import", "WTI", str(data)], reg)
+    capsys.readouterr()
+
+    captured = {}
+
+    def fake_run_pipeline(cfg, start, end, run_id):
+        captured.update({"cfg": cfg, "start": start, "end": end, "run_id": run_id})
+
+    import run_pipeline as rp
+
+    monkeypatch.setattr(rp, "run_pipeline", fake_run_pipeline)
+    rc = _run([
+        "run", "WTI", "--window", "2024Q4",
+        "--advanced",
+        "--override", "pricing.model=black76_european",
+        "--override", "pricing.allow_model_approximation=true",
+    ], reg)
+
+    assert rc == 0
+    assert captured["cfg"]["pricing_model"] == "black76_european"
+    assert captured["cfg"]["allow_model_approximation"] is True

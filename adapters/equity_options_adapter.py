@@ -23,7 +23,14 @@ class EquityOptionsAdapter(OptionsBase):
     def prepare(self, raw_df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
         """Equity options prepare pipeline."""
         df = self._normalize_option_columns(raw_df)
+        df = self._validate_adapter_identity(
+            df,
+            adapter_family="equity_options",
+            option_underlying_type="spot",
+        )
         option_mask = self._require_option_chain_schema(df, "equity options")
+        df = self._apply_pricing_model_policy(df, default_model="bsm")
+        option_mask = self._option_mask(df)
 
         # ── Build PIT-safe strike / underlying price ──
         # Yahoo-style adjustment factors are retroactive unless the provider marks them

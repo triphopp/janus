@@ -20,34 +20,43 @@ iv_raw_unit: percent            # raw OPTION_VOLATILITY is percent points (issue
 date_grain: eod
 
 # Settlement availability + calendar policy (issues 022, 013): anchor availability
-# to the NYMEX settlement release, never midnight of as_of_date.
-exchange_tz: America/New_York
-settlement_release_time: "14:30"  # NYMEX crude settlement ~2:30pm ET
-exchange_calendar: NYMEX
+# to the ICE settlement release, never midnight of as_of_date. Source feed is ICE
+# WTI Crude Futures (product_id 425, contract root T) per
+# docs/reference/product_identity/wti/ — NOT NYMEX/CME.
+exchange_tz: Europe/London
+settlement_release_time: "19:30"  # ICE WTI futures settlement window close (London)
+exchange_calendar: ICE
 settlement_timing:
   time_kind: settlement_period_end
-  local_time: "14:30:00"
-  timezone: America/New_York
+  local_time: "19:30:00"
+  timezone: Europe/London
   same_day_file_availability_assumption: not_assumed
-  source_reference: https://www.cmegroup.com/trading/energy/files/NYMEX_Energy_Futures_Daily_Settlement_Procedure.pdf
+  source_reference: https://www.ice.com/products/213/WTI-Crude-Futures
+  evidence_note: >
+    Designated settlement period is 19:28:00-19:30:00 London time
+    (14:28:00-14:30:00 EST) per ICE's official Designated Settlement Periods
+    and Volume Thresholds documentation. See
+    docs/reference/product_identity/wti/ for the product-identity evidence
+    trail (ICE ticker T, not NYMEX/CME).
 
 # Downstream option-chain Greeks export policy (issues 023/024).
 export:
   product: WTI
-  underlying_root: CL
-  option_root: LO
-  exchange: NYMEX
+  underlying_root: T
+  option_root: T
+  exchange: ICE
   currency: USD
   price_unit: USD_per_barrel
   contract_unit: 1000_barrels
   price_tick: 0.01
+  equivalent_option_root_cme: LO  # only for consumers that explicitly want CME-style symbols
 
 data_version: sha256:<fill-with-file-sha256>
 data_file_sha256: <fill-with-file-sha256>
 metrics_mode: strategy_required   # require explicit strategy/P&L returns for Stage 4 performance
 
 pricing:
-  model: black76                # futures options → Black-76
+  model: auto                   # product identity is American → Black-76 BAW
   iv_validate_threshold: 0.005
   validate_provided_iv: false   # trust exchange settlement IV; opt in only for a model self-test (issue 025)
   iv_validate_sample_size: 5000
@@ -59,7 +68,7 @@ pricing:
 
 option_universe:
   min_dte_days: 1
-  max_dte_days: 730
+  max_dte_days: 365              # BAW requires CRR review beyond its 1y recommended tenor
   min_option_price: 0.00001
 
 dte:

@@ -1,0 +1,10 @@
+commodity_code,globex_code,product_name,product_group,product_subgroup,exchange,rulebook_chapter,exercise_style,contrary_instructions,margin_style,characteristics,underlying_commodity_code,underlying_product_name
+LC,LCE,Light Sweet Crude Oil European Financial Option,Energy,Crude Oil,NYMEX,550,European,N/A - Financially Settled,Equity,N/A - Financially Settled,CL,Light Sweet Crude Oil Futures
+LO,LO,Light Sweet Crude Oil Option,Energy,Crude Oil,NYMEX,310,American,No,Equity,Exercise Calls.      Abandon Puts.,CL,Light Sweet Crude Oil Futures
+LO1-LO5,LO1-LO5,Crude Oil Friday Weekly Option,Energy,Crude Oil,NYMEX,1011,American,No,Equity,Exercise Calls.      Abandon Puts.,CL,Light Sweet Crude Oil Futures
+ML1-ML5,ML1-ML5,Crude Oil Monday Weekly Option,Energy,Crude Oil,NYMEX,1011,American,No,Equity,Exercise Calls.      Abandon Puts.,CL,Light Sweet Crude Oil Futures
+NL1-NL5,NL1-NL5,Crude Oil Tuesday Weekly Option,Energy,Crude Oil,NYMEX,1011,American,No,Equity,"Exercise Calls.
+Abandon Puts.",CL,Light Sweet Crude Oil Futures
+WL1-WL5,WL1-WL5,Crude Oil Wednesday Weekly Option,Energy,Crude Oil,NYMEX,1011,American,No,Equity,Exercise Calls.      Abandon Puts.,CL,Light Sweet Crude Oil Futures
+XL1-XL5,XL1-XL5,Crude Oil Thursday Weekly Option,Energy,Crude Oil,NYMEX,1011,American,No,Equity,"Exercise Calls.
+Abandon Puts.",CL,Light Sweet Crude Oil Futures

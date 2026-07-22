@@ -42,7 +42,9 @@ unless the work needs a narrower one.
 | --- | --- | --- |
 | `pipeline-data-integrity` | `codex/pipeline-data-integrity` | urgent pipeline data distortion, IV units, row reconciliation, grain, PIT, calendars, cache |
 | `strategy-metrics` | `codex/strategy-metrics` | strategy PnL layer, transaction costs, metric truthfulness |
+| `backtest-readiness` | `codex/backtest-readiness` | minimum sequencing and gates before data is trusted for backtests |
 | `storage-contracts` | `codex/storage-contracts` | CSV bundle and compatibility exports |
+| `pricing-models` | `codex/pricing-models` | option pricing engines, exercise-style support, model-domain guards |
 | `dashboard-domain` | `codex/dashboard-domain` | domain-language dashboard status and labels |
 | `equity-audit` | `codex/equity-audit` | equity options, equity price, PIT factor data audits |
 | `test-harness` | `codex/test-harness` | end-to-end fixtures, golden snapshots, public test artifacts |
@@ -83,9 +85,20 @@ No active P0 issues. Completed P0 issues are tracked under
 
 ### P1 High
 
+`backtest-readiness`
+
+- `P1-high/backtest-readiness/035-backtest-readiness-implementation-sequence.md`
+
 `storage-contracts`
 
 - `P1-high/storage-contracts/005-csv-bundle-storage-redesign.md`
+- `P1-high/storage-contracts/034-product-identity-resolver-and-option-on-futures-contract.md`
+
+`pricing-models`
+
+- `P1-high/pricing-models/031-american-futures-option-pricing-engine-selection.md`
+- `P1-high/pricing-models/032-negative-futures-price-pricing-domain-guards.md`
+- `P1-high/pricing-models/033-multi-model-pricing-engine-rollout-plan.md`
 
 `dashboard-domain`
 

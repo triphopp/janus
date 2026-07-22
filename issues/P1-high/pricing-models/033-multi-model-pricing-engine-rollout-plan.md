@@ -2,12 +2,15 @@
 
 Urgency: `P1-high`
 
-Status: `draft`
+Status: `in_progress`
 
 Source issues:
 
 - `031-american-futures-option-pricing-engine-selection.md`
 - `032-negative-futures-price-pricing-domain-guards.md`
+- `030-risk-free-rate-sourcing-and-pit-join.md` (rate input dependency)
+- `034-product-identity-resolver-and-option-on-futures-contract.md` (identity
+  and adapter-routing dependency)
 
 ## Summary
 
@@ -27,13 +30,108 @@ small validated steps:
 6. Tree/reference engines.
 7. Optional PDE/high-trust reference.
 
+## Implementation Status
+
+Updated: `2026-07-07`
+
+Implemented prerequisites:
+
+- Issue `030` introduced `core/rates.py` and moved pricing/Greek rate
+  resolution to a single stamped `df["r"]` contract.
+- `resolve_greek_inputs()` now treats missing `r` as `missing_rate` instead of
+  inventing a fallback.
+- `run_greeks.py --input`, adapter prep, and option-chain export now consume
+  the same row-level `r` contract.
+
+Implemented pricing-model foundation:
+
+- `core/pricing_models.py` now provides a shared registry and metadata contract.
+- `black76_european` is implemented as an explicit runtime alias of current
+  `black76`; existing `black76`, `bs`, and `bsm` behavior remains unchanged.
+- CLI choices, export schema allowed values, scalar pricing, Greeks, and PCP
+  parity mode now resolve through the registry.
+- Scalar `core.pricing.price()`, `core.pricing.solve_iv()`,
+  `core.greeks.single_leg_greeks()`, and `core.greeks.bump_greeks()` now fail
+  closed for invalid lognormal domains without NumPy runtime warnings.
+- `resolve_greek_inputs()` now splits `missing_underlying` from
+  `nonpositive_underlying`.
+- Export manifests now include model family, dynamics, exercise style,
+  approximation, and parity-check mode.
+
+Still open:
+
+- `bachelier`/`normal`, `black76_shifted`, `black76_baw`, and reference engines
+  are registered as planned metadata but are not runtime pricing/Greek engines.
+- Row-level `pricing_domain_valid` / `pricing_domain_reason` columns are not yet
+  stamped across prepared option artifacts.
+- American no-arbitrage bounds are not implemented; non-European PCP equality is
+  disabled by registry parity mode for now.
+
+Recommended next step:
+
+- Choose the next runtime engine based on validation priority: Phase 3
+  Bachelier/normal for negative-price stress coverage, or Phase 5 BAW for
+  American exercise residuals.
+
+## Target Option Behavior Matrix
+
+The future behavior should be explicit by instrument family and exercise style.
+Product identity chooses the family and contract terms; pricing model selection
+chooses the valuation engine. A model must never infer or overwrite product
+identity.
+
+| Input contract type | Identity output | Adapter | Canonical model target | Expected behavior |
+|---|---|---|---|---|
+| WTI futures support row | `instrument_type=future`, `product_family=futures_options` | `futures_options` support row | none | Preserve the futures row and use it as the PIT underlying map for matching option rows. |
+| European option on futures | `instrument_type=option`, `option_underlying_type=future`, `exercise_style=european` | `futures_options` | `black76_european` | Price/solve IV/Greeks with Black-76, run European futures PCP equality, export model metadata. |
+| American option on futures | `instrument_type=option`, `option_underlying_type=future`, `exercise_style=american` | `futures_options` | `black76_baw` first, tree reference later | Price with an American approximation once implemented, disable European PCP equality, stamp numerical Greek method until analytic Greeks are validated. |
+| European equity/index option | `instrument_type=option`, `option_underlying_type=spot`, `product_family=equity_options`, `exercise_style=european` | `equity_options` | `bsm` / `bs` | Use spot `S`, dividend yield `q`, BSM IV/Greeks, and equity-style PCP equality. |
+| American equity option | `instrument_type=option`, `option_underlying_type=spot`, `product_family=equity_options`, `exercise_style=american` | `equity_options` | `bsm_baw` or tree reference | Do not label plain BSM Greeks as American Greeks; route to planned American equity engine or mark unsupported. |
+| Negative or zero futures underlying | Same identity as the contract, plus domain diagnostics | family-specific adapter | `bachelier` or explicit shifted model | Preserve real data, mark lognormal models unsupported, price only under a user-selected negative-domain-capable model. |
+| Unknown, mixed, or inconsistent product | `product_identity_status=unknown/conflict` | none for official runs | none | Fail closed or quarantine; no canonical IV/Greeks/export until identity is resolved. |
+
+Current implementation status against this matrix:
+
+- European futures options and European equity options are implemented through
+  `black76`/`black76_european`, `bs`, and `bsm`.
+- American futures and American equity engines are registered but not runtime
+  implementations.
+- Negative-domain engines are registered as planned metadata only.
+- Product-family and exercise-style routing depends on issue `034`; today the
+  settlement loader still infers option/future shape before any evidence-backed
+  product identity resolver exists.
+
+Compatibility rules:
+
+- `product_family=futures_options` may use `black76`, `black76_european`,
+  `black76_baw`, `black76_shifted`, `black76_shifted_baw`, `bachelier`, or
+  reference tree/PDE engines when explicitly selected.
+- `product_family=equity_options` may use `bs`, `bsm`, `bsm_baw`, `bachelier`,
+  or reference tree/PDE engines when explicitly selected.
+- If `exercise_style=american` and the selected model is European-only, the run
+  must either mark `pricing_model_contract_mismatch` or run in an explicitly
+  declared approximation mode.
+- `pricing_model=auto` resolves a target model from product identity and
+  contract style. If that target is not implemented, official runs must block;
+  diagnostic runs may use a configured temporary fallback only when
+  approximation is explicitly allowed.
+- If a model's domain rejects a row, the row should receive
+  `pricing_domain_valid=false` and a reason; the system must not silently switch
+  to another model.
+
 ## Design Principles
 
 - User-selected model, not implicit model switching.
 - One canonical `pricing.model` per run.
 - Optional `pricing.compare_models` for diagnostics.
 - Every output records model identity and assumptions.
+- Product identity and exercise style come from the identity resolver or
+  instrument config, not from the model name.
+- Adapter routing must fail closed when row identity and configured family
+  disagree.
 - Invalid model domain is a data-quality state, not a crash.
+- Pricing engines consume row-level `r` resolved by `core/rates.py`; they do
+  not own rate sourcing or fallback policy.
 - Negative futures prices can be real data; they are not automatically vendor
   errors.
 - American approximation models must not reuse European put-call parity equality
@@ -142,38 +240,76 @@ Exit criteria:
 
 ## Phase 1 - Registry and Selector
 
-- Create `core/pricing_models.py`.
-- Move supported model names, aliases, metadata, and allowed config values into
+- Completed `2026-07-07`: create `core/pricing_models.py`.
+- Completed `2026-07-07`: move supported implemented model names, aliases,
+  metadata, and allowed config values into
   the registry.
-- Update `core/pricing.py`, `core/greeks.py`, `run_greeks.py`,
+- Completed `2026-07-07`: update `core/pricing.py`, `core/greeks.py`, `run_greeks.py`,
   `adapters/options_base.py`, and `core/option_chain_export.py` to resolve
   models through the registry.
-- Preserve `black76`, `bs`, and `bsm` outputs exactly.
-- Make unknown model errors list supported model names.
+- Completed `2026-07-07`: preserve `black76`, `bs`, and `bsm` outputs exactly.
+- Completed `2026-07-07`: make unknown model errors list supported model names.
 
 Exit criteria:
 
-- `pricing.model` uses registry validation everywhere.
-- CLI choices are generated from or checked against the registry.
+- `pricing.model` uses registry validation in core pricing, Greeks, CLI,
+  adapter PCP, and export metadata.
+- CLI choices are generated from the implemented registry subset.
 - Existing golden tests pass unchanged.
 
 ## Phase 2 - Domain Guards
 
-- Add a shared domain validator for each dynamics family:
+- Completed `2026-07-07`: add a shared domain validator for active/planned
+  dynamics families:
   - lognormal: `S_or_F > 0`, `K > 0`, `T > 0`, `sigma > 0`
   - normal: finite `S_or_F`, `K`, `T > 0`, `sigma > 0`
   - shifted lognormal: `S_or_F + shift > 0`, `K + shift > 0`
-- Make `price()`, `solve_iv()`, `single_leg_greeks()`, and `bump_greeks()`
+- Completed `2026-07-07`: make `price()`, `solve_iv()`, `single_leg_greeks()`, and `bump_greeks()`
   fail closed without NumPy runtime warnings.
 - Add row-level diagnostics:
   `pricing_domain_valid`, `pricing_domain_reason`,
   `pricing_model_supported`.
-- Split `missing_underlying` from `nonpositive_underlying`.
+- Completed `2026-07-07`: split `missing_underlying` from `nonpositive_underlying`.
 
 Exit criteria:
 
 - Invalid lognormal domains return `NaN` or clear domain errors by policy.
 - Negative WTI rows are preserved but marked unsupported for `black76`.
+
+## Phase 2B - Family and Exercise-Style Compatibility Gates
+
+- Consume row-level identity fields from issue `034` when available:
+  `product_family`, `option_underlying_type`, `exercise_style`,
+  `settlement_type`, and `product_identity_status`.
+- Validate the selected adapter against identity:
+  - futures options require `option_underlying_type=future` for option rows and
+    matching futures support rows;
+  - equity options require `option_underlying_type=spot` and a PIT underlying
+    spot price;
+  - unknown/conflict rows cannot enter official pricing/export.
+- Validate the selected model against identity:
+  - European-only models on American contracts are allowed only when
+    `pricing.exercise_approximation_policy` explicitly permits approximation;
+  - American models cannot reuse European PCP equality;
+  - model family mismatches fail before IV solving or Greek computation.
+- Stamp diagnostics:
+
+```text
+pricing_model_contract_match
+pricing_model_contract_reason
+selected_model_exercise_style
+contract_exercise_style
+option_underlying_type
+```
+
+Exit criteria:
+
+- Equity option data cannot be accidentally treated as futures options just
+  because it has `C/P + strike`.
+- WTI settlement rows cannot be exported under a CME-style root unless the
+  product identity crosswalk explicitly provides that root.
+- American contracts priced with a European approximation are visibly labelled
+  as approximations in summaries and exports.
 
 ## Phase 3 - Bachelier / Normal Model
 
@@ -215,6 +351,9 @@ Exit criteria:
 - First Greek policy: numerical bump Greeks from the selected price engine,
   stamped as `greek_method=numerical_bump`.
 - Add optional `bsm_baw` only after futures BAW is stable.
+- Add an explicit compatibility policy for American equity options: until
+  `bsm_baw` or a reference tree engine is implemented, plain `bsm` may be used
+  only as a declared European approximation and must be stamped as such.
 - Evaluate alternative approximations:
   - `bjerksund_stensland`
   - `ju_zhong`

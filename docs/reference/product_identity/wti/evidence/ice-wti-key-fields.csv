@@ -1,0 +1,5 @@
+source_file,ice_product_id,product_name,exchange,contract_symbol,exercise_style,settlement_or_exercise,evidence_role
+ice-wti-crude-futures-213-contract-spec.pdf,213,WTI Crude Futures,ICE Futures Europe,T,,cash settled against NYMEX WTI penultimate settlement,underlying futures identity for local WTI feed tuple
+ice-wti-american-style-options-908-contract-spec.pdf,908,WTI American-Style Options,ICE Futures Europe,T,american,exercises into ICE WTI Crude Futures (T),best match for local WTI option rows with CONTRACT=T and C/P type
+ice-eu-style-wti-options-11527595-contract-spec.pdf,11527595,EU-Style WTI Options,ICE Futures U.S.,WUL,european,cash-settled option based on ICE WTI Bullet (WTB),counterexample showing European WTI uses different ICE symbol
+ice-daily-eu-style-wti-option-64286938-contract-spec.pdf,64286938,Option on Daily EU-Style WTI Future,ICE Futures U.S.,TDE,european,short-life cash-settled daily option,counterexample showing daily European WTI uses different ICE symbol

@@ -2,7 +2,7 @@
 
 Urgency: `P1-high`
 
-Status: `draft`
+Status: `in_progress`
 
 Source signal:
 
@@ -26,6 +26,34 @@ Fix by separating:
   `sigma > 0`, `T > 0`, and valid right;
 - model support: non-positive futures regimes require a different user-selected
   pricing model such as Bachelier/normal or shifted Black, not plain Black-76.
+
+## Implementation Status
+
+Updated: `2026-07-07`
+
+Implemented:
+
+- `core/pricing_models.py` now carries a shared scalar domain validator.
+- Lognormal scalar pricing/IV/Greek paths fail closed for `S_or_F <= 0`,
+  `K <= 0`, `sigma <= 0`, missing `r`, invalid `right`, and bad `T`.
+- `core.pricing.price()`, `core.pricing.solve_iv()`,
+  `core.greeks.single_leg_greeks()`, and `core.greeks.bump_greeks()` return
+  `NaN`/clear runtime errors instead of emitting NumPy invalid-log warnings.
+- `validate_provided_iv()` no longer invents `r=0.05`; rows without stamped
+  rate are not invertible.
+- `resolve_greek_inputs()` distinguishes `missing_underlying` from
+  `nonpositive_underlying`.
+- `black76_baw` is documented in the registry as still lognormal and therefore
+  not valid for `F <= 0` unless a shifted implementation is explicitly added.
+
+Still open:
+
+- Prepared option artifacts do not yet stamp row-level
+  `pricing_domain_valid`, `pricing_domain_reason`, or
+  `pricing_model_supported`.
+- Raw futures validation still needs an instrument-aware policy for preserving
+  real negative settlements while keeping option premiums strictly positive.
+- No Bachelier/normal or shifted-Black runtime engine is implemented yet.
 
 ## Why It Matters
 
@@ -157,20 +185,20 @@ market_domain:
 
 ## Acceptance Criteria
 
-- [ ] `price("black76", F <= 0, ...)` does not emit runtime warnings; it
+- [x] `price("black76", F <= 0, ...)` does not emit runtime warnings; it
       returns `NaN` or raises a clear domain error by policy.
-- [ ] `solve_iv("black76", ..., F <= 0, ...)` returns `NaN` immediately and
+- [x] `solve_iv("black76", ..., F <= 0, ...)` returns `NaN` immediately and
       does not call the root solver.
-- [ ] `single_leg_greeks("black76", F <= 0, ...)` returns all `NaN` without
+- [x] `single_leg_greeks("black76", F <= 0, ...)` returns all `NaN` without
       warnings, matching `batch_greeks()`.
-- [ ] Greek input diagnostics distinguish missing underlying from non-positive
+- [x] Greek input diagnostics distinguish missing underlying from non-positive
       underlying.
 - [ ] `validate_provided_iv()` excludes invalid lognormal-domain rows from
       near-money IV mismatch calculations and reports the count.
 - [ ] Futures raw contract validation can preserve real negative settlements
       when the instrument config allows them; option premiums remain strictly
       positive.
-- [ ] `black76_baw` is documented as still invalid for `F <= 0` unless a shifted
+- [x] `black76_baw` is documented as still invalid for `F <= 0` unless a shifted
       implementation is explicitly selected.
 - [ ] A fixture with `F = -37.63`, positive option premium, and positive strike
       proves the pipeline marks the row as unsupported for lognormal pricing

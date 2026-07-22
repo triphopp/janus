@@ -25,6 +25,8 @@ import pandas as pd
 
 from core.greek_inputs import resolve_greek_inputs
 from core.greeks import batch_greeks
+from core import pricing_models as _pricing_models
+from core.rates import stamp_rate
 
 _SCHEMA_VERSION = 1
 
@@ -123,7 +125,7 @@ def run_greek_only(
     dtype: str = "float64",
     div_yield: float | None = None,
     iv_source: str = "computed",
-    rf_rate_default: float = 0.0,
+    rf_rate_default: float | None = None,
     cfg: dict | None = None,
     min_dte: int | None = None,
     max_dte: int | None = None,
@@ -138,6 +140,18 @@ def run_greek_only(
         (output_df, summary)
     """
     cfg = cfg or {}
+    model_params = _pricing_models.runtime_model_params(cfg)
+    model_spec = _pricing_models.get_model_spec(model)
+    if iv_source == "provided":
+        provided_unit = cfg.get(
+            "provided_iv_volatility_unit", "fraction_per_sqrt_year"
+        )
+        if str(provided_unit) != model_spec.volatility_unit:
+            raise ValueError(
+                "Provided IV unit is incompatible with pricing model: "
+                f"provided={provided_unit}, model={model}, "
+                f"required={model_spec.volatility_unit}"
+            )
     # Resolve q: explicit arg wins, including an intentional 0.0 override.
     cfg_div_yield = cfg.get("div_yield", 0.0)
     q = float(div_yield) if div_yield is not None else float(cfg_div_yield or 0.0)
@@ -165,10 +179,15 @@ def run_greek_only(
     filtered = df[mask].copy()
     n_filtered = len(filtered)
 
+    rate_cfg = dict(cfg)
+    if rf_rate_default is not None:
+        rate_cfg["rf_rate"] = float(rf_rate_default)
+    filtered, rate_summary = stamp_rate(filtered, rate_cfg)
+
     # Resolve inputs (full coercion + invalid reasons)
     resolved, input_summary = resolve_greek_inputs(
         filtered, cfg=cfg, iv_source=iv_source,
-        rf_rate_default=rf_rate_default, dte_cfg=dte_cfg,
+        dte_cfg=dte_cfg,
     )
 
     # Warn if iv_provided rows have quality flags
@@ -180,6 +199,8 @@ def run_greek_only(
             config_warnings.append(
                 f"{n_failed} iv_provided rows have _iv_quality_flag set — review before trusting Greeks"
             )
+    for warning in rate_summary.get("warnings", []):
+        config_warnings.append(f"rate: {warning}")
 
     # Compute Greeks
     greeks_result = batch_greeks(
@@ -194,6 +215,8 @@ def run_greek_only(
         backend=backend,
         batch_size=batch_size,
         dtype=dtype,
+        shift=model_params.get("shift"),
+        model_params=model_params,
     )
 
     # Build output — identity columns first, then Greeks
@@ -203,6 +226,9 @@ def run_greek_only(
     out["greek_model"] = model
     out["greek_backend"] = backend
     out["greek_dtype"] = dtype
+    out["greek_method"] = _pricing_models.default_greek_method(model)
+    out["volatility_unit"] = _pricing_models.get_model_spec(model).volatility_unit
+    out["pricing_shift"] = model_params.get("shift")
     out["greek_input_valid"] = resolved["greek_input_valid"].values
     out["greek_invalid_reason"] = resolved["greek_invalid_reason"].values
 
@@ -215,13 +241,17 @@ def run_greek_only(
         "model": model,
         "backend": backend,
         "dtype": dtype,
-        "div_yield": q if model in ("bs", "bsm") else None,
+        "div_yield": q if _pricing_models.model_uses_dividend_yield(model) else None,
+        "greek_method": _pricing_models.default_greek_method(model),
+        "volatility_unit": _pricing_models.get_model_spec(model).volatility_unit,
+        "model_params": model_params,
         "universe_filter": {
             "input_rows": n_input,
             "rows_after_filter": n_filtered,
             "rows_dropped": n_input - n_filtered,
         },
         "input_quality": input_summary,
+        "rate_summary": rate_summary,
         "output_rows": len(out),
         "conventions": _CONVENTIONS,
         "config_warnings": config_warnings,
@@ -247,6 +277,9 @@ def run_instrument_mode(
     max_dte: int | None = None,
     min_option_price: float | None = None,
     max_iv: float | None = None,
+    pricing_shift: float | None = None,
+    tree_steps: int | None = None,
+    provided_iv_volatility_unit: str | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Load raw chain via config, run minimal option prep, compute Greeks.
 
@@ -263,6 +296,14 @@ def run_instrument_mode(
     if data_file:
         cfg["data_file"] = data_file
         cfg.setdefault("provider", "settlement")
+    if pricing_shift is not None:
+        cfg.setdefault("pricing", {})["pricing_shift"] = float(pricing_shift)
+        cfg["pricing_shift"] = float(pricing_shift)
+    if tree_steps is not None:
+        cfg.setdefault("pricing", {})["tree_steps"] = int(tree_steps)
+        cfg["tree_steps"] = int(tree_steps)
+    if provided_iv_volatility_unit is not None:
+        cfg["provided_iv_volatility_unit"] = provided_iv_volatility_unit
     cfg = apply_runtime_overrides(
         cfg,
         compute_greeks=True,
@@ -324,6 +365,9 @@ def run_instrument_mode(
     out["greek_model"] = model
     out["greek_backend"] = backend
     out["greek_dtype"] = dtype
+    out["greek_method"] = _pricing_models.default_greek_method(model)
+    out["volatility_unit"] = _pricing_models.get_model_spec(model).volatility_unit
+    out["pricing_shift"] = _pricing_models.runtime_model_params(adapted_cfg).get("shift")
 
     # Force NaN on invalid rows for Greek columns
     for col in ("delta", "gamma", "vega", "theta", "rho"):
@@ -359,12 +403,16 @@ def run_instrument_mode(
         "model": model,
         "backend": backend,
         "dtype": dtype,
+        "greek_method": _pricing_models.default_greek_method(model),
+        "volatility_unit": _pricing_models.get_model_spec(model).volatility_unit,
+        "model_params": _pricing_models.runtime_model_params(adapted_cfg),
         "raw_rows": len(raw_df),
         "prepared_rows": len(df),
         "output_rows": len(out),
         "valid_greek_rows": int(out["greek_input_valid"].sum()) if "greek_input_valid" in out.columns else len(out),
         "invalid_greek_rows": n_invalid,
         "underlying_missing_rows": underlying_missing,
+        "rate_summary": (adapted_cfg.get("option_quality") or {}).get("rate_summary"),
         "conventions": _CONVENTIONS,
         "provenance": prov,
         "config_warnings": [],
@@ -408,14 +456,24 @@ Examples:
     inp.add_argument("--end", metavar="DATE", help="End date (YYYY-MM-DD).")
 
     mdl = p.add_argument_group("Model")
-    mdl.add_argument("--model", default="black76", choices=["black76", "bs", "bsm"],
+    mdl.add_argument("--model", default="black76", choices=list(_pricing_models.implemented_greek_model_names()),
                      help="Pricing model. (default: black76)")
     mdl.add_argument("--iv-source", default="computed", choices=["computed", "provided"],
                      help="IV column to use. (default: computed)")
-    mdl.add_argument("--rf-rate", type=float, default=0.0,
-                     help="Risk-free rate fallback. (default: 0.0)")
+    mdl.add_argument("--rf-rate", type=float, default=None,
+                     help="Risk-free rate override. Defaults to core rate policy.")
     mdl.add_argument("--div-yield", type=float, default=None,
                      help="Dividend yield for BSM model. Defaults to config div_yield, then 0.0.")
+    mdl.add_argument("--pricing-shift", type=float, default=None,
+                     help="Explicit displacement for shifted-Black models.")
+    mdl.add_argument("--tree-steps", type=int, default=None,
+                     help="Number of CRR reference-tree steps. (default: 400)")
+    mdl.add_argument(
+        "--provided-iv-volatility-unit",
+        choices=["fraction_per_sqrt_year", "absolute_price_per_sqrt_year"],
+        default=None,
+        help="Unit of provided IV; required when it is not fractional Black volatility.",
+    )
 
     bck = p.add_argument_group("Backend")
     bck.add_argument("--backend", default="numpy", choices=["numpy", "loop", "auto", "cuda"],
@@ -461,6 +519,9 @@ def main(argv: list[str] | None = None) -> int:
                 max_dte=args.max_dte,
                 min_option_price=args.min_option_price,
                 max_iv=args.max_iv,
+                pricing_shift=args.pricing_shift,
+                tree_steps=args.tree_steps,
+                provided_iv_volatility_unit=args.provided_iv_volatility_unit,
             )
         except Exception as exc:
             print(f"ERROR (instrument mode): {exc}", file=sys.stderr)
@@ -483,6 +544,13 @@ def main(argv: list[str] | None = None) -> int:
         }
 
         try:
+            direct_cfg = {}
+            if args.pricing_shift is not None:
+                direct_cfg["pricing_shift"] = args.pricing_shift
+            if args.tree_steps is not None:
+                direct_cfg["tree_steps"] = args.tree_steps
+            if args.provided_iv_volatility_unit is not None:
+                direct_cfg["provided_iv_volatility_unit"] = args.provided_iv_volatility_unit
             out_df, summary = run_greek_only(
                 df,
                 model=args.model,
@@ -497,6 +565,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_option_price=args.min_option_price,
                 max_iv=args.max_iv,
                 provenance=prov,
+                cfg=direct_cfg,
             )
         except (ValueError, RuntimeError) as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
