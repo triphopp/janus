@@ -38,6 +38,9 @@ data/
 # Agent working memory — internal notes only
 memory/
 
+# Ad-hoc local analysis outputs (large generated CSVs) — keep scripts, drop data
+local/*/output/
+
 # Instrument configs with local machine-specific data paths
 # Use configs/instruments/wti.yaml.example as a template
 configs/instruments/wti.yaml
